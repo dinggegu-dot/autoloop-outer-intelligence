@@ -65,6 +65,47 @@ def decision(task, kind, **fields):
     flow(task)['decisions'].append({'kind': kind, 'at': now(), **fields})
 
 
+def outer_binding(task):
+    state = flow(task)
+    outer = state.get('outer')
+    if not outer:
+        return None
+    return {
+        **{key: outer[key] for key in ('ticket_id','goal_revision','acceptance_revision',
+                                     'mandate_revision','approval_event_id','actor_id','correlation_id')},
+        'contract_digest':digest(outer['acceptance_contract']),
+        'goal_digest':digest(outer['goal_contract']),
+        'authorization_digest':digest(outer['mandate']),
+        'stop_generation':state['stop_generation'],
+    }
+
+
+def validate_outer_authorization(outer, *, ticket_id, workspace, budget_seconds):
+    """在正式批准与派工时核对同一组授权绑定。"""
+    from superagent.outer_verification import validate_constraint_controls
+
+    contract = outer['acceptance_contract']
+    mandate = outer['mandate']
+    goal = outer['goal_contract']
+    if (outer['ticket_id'] != ticket_id or goal['ticket_id'] != ticket_id or
+            contract['ticket_id'] != ticket_id or mandate['ticket_id'] != ticket_id or
+            goal['revision'] != outer['goal_revision'] or goal['status'] != 'APPROVED' or
+            contract['goal_revision'] != outer['goal_revision'] or
+            contract['revision'] != outer['acceptance_revision'] or
+            mandate['goal_revision'] != outer['goal_revision'] or
+            mandate['acceptance_revision'] != outer['acceptance_revision'] or
+            contract['status'] != 'APPROVED' or contract['verification_gaps'] or
+            contract.get('human_review_requirements') or not contract.get('criteria') or
+            mandate['revision'] != outer['mandate_revision'] or
+            mandate['approval_event_id'] != outer['approval_event_id'] or
+            mandate['actor_id'] != outer['actor_id'] or
+            mandate['workspace'] != str(workspace) or
+            type(mandate['budget_seconds']) is not int or
+            not 0 < mandate['budget_seconds'] <= budget_seconds):
+        raise ValueError('V2 授权绑定不一致')
+    validate_constraint_controls(goal,contract,mandate)
+
+
 def pause_or_block(task, message, *, budget=False):
     task.update(error=message, status='budget_exhausted' if budget else 'blocked')
     decision(task, 'blocked', reason=message)
@@ -113,6 +154,8 @@ class GoalEngine:
             raise Problem('请选择有效决定')
         def apply(task):
             state = flow(task)
+            if state.get('outer'):
+                raise Problem('V2 目标须通过正式目标授权入口',409)
             if task['paused'] or state['stop_requested']:
                 raise Problem('目标已停止',409)
             if type(version) is not int or task['version'] != version:
@@ -203,6 +246,16 @@ class GoalEngine:
             if task['paused'] or task['status'] not in ('created','queued','executing'):
                 return
             phase = state['stage']
+            if (state.get('validation') or {}).get('recovery_blocked'):
+                pause_or_block(task,'暂停前派工没有可核对的原版本检查点')
+                return
+            outer = state.get('outer')
+            if outer:
+                try:
+                    self._ensure_outer_mandate(task)
+                except (KeyError, TypeError, ValueError):
+                    pause_or_block(task,'V2 目标的授权、验收或预算绑定无法确认')
+                    return
             active = active_assignments(task)
             plan = task['plan'] or {}
             steps = plan.get('steps', [])
@@ -216,15 +269,54 @@ class GoalEngine:
             if state['mandate'] and state['mandate']['policy'] != POLICY_VERSION:
                 pause_or_block(task,'授权策略已变化，请核对范围')
                 return
-            remaining = task['time_budget_seconds'] - task['elapsed_seconds'] - sum(row['max_seconds'] for row in active)
+            budget = state['mandate']['budget_seconds'] if outer else task['time_budget_seconds']
+            remaining = budget - task['elapsed_seconds'] - sum(row['max_seconds'] for row in active)
+            if outer and task.get('max_calls') is not None and task['calls'] >= task['max_calls']:
+                pause_or_block(task,'执行调用预算用完',budget=True)
+                return
+            if outer and phase == 'review':
+                from superagent.outer_verification import selected_criteria
+                criteria = selected_criteria(outer['acceptance_contract'], plan, task['step'])
+                minimum = 10 + 9 * sum(row['verifier_id']=='python-json-cli' for row in criteria)
+                if remaining < minimum:
+                    pause_or_block(task,'剩余预算不足以完成本轮验收',budget=True)
+                    return
             if packages:
                 self._prepare_team(task, packages, active, int(remaining), package_slots)
                 return
             if remaining < 10:
                 pause_or_block(task,'执行时间预算用完',budget=True)
                 return
-            self._enqueue(task,phase,int(remaining))
+            details = {}
+            if phase == 'coordinate':
+                state.setdefault('rechecks',0)
+                details['coordination_context'] = self._outer_coordination_context(task)
+            self._enqueue(task,phase,int(remaining),**details)
         return self.store.change(ticket, apply)
+
+    def _ensure_outer_mandate(self, task):
+        state = flow(task)
+        outer = state['outer']
+        if state.get('team_enabled') or state.get('verification_contract'):
+            raise ValueError('V2 与固定 V1 契约必须各自通过对应入口')
+        validate_outer_authorization(outer,ticket_id=task['id'],workspace=self.store.workspace(task['id']),
+                                     budget_seconds=task['time_budget_seconds'])
+        mandate = outer['mandate']
+        binding = outer_binding(task)
+        authorized = {
+            'policy': POLICY_VERSION, 'goal': task['goal'], 'acceptance': task['acceptance'],
+            'workspace': task['id'], 'approval': mandate['approval_event_id'],
+            'source': task['source'], 'model': MODEL, 'budget_seconds': mandate['budget_seconds'],
+            'outer': {key:value for key,value in binding.items() if key!='stop_generation'},
+            'scope': mandate['scope'], 'forbidden_operations':mandate['forbidden_operations'],
+        }
+        if state['mandate'] is None:
+            state['mandate'] = authorized
+            decision(task,'authorized',version=outer['mandate_revision'],
+                     approval=mandate['approval_event_id'],actor=mandate['actor_id'],
+                     correlation_id=outer['correlation_id'])
+        elif state['mandate'] != authorized:
+            raise ValueError('执行授权在当前派工前已变化')
 
     def recheck(self,ticket,version,checkpoint):
         """验收环境修复后，原授权只允许重新审核登记过的同一检查点。"""
@@ -252,6 +344,9 @@ class GoalEngine:
             'step':task['step'], 'created_at':now(), 'model':MODEL,
             'max_seconds':min(CALL_LIMIT_SECONDS, seconds), **details,
         }
+        binding = outer_binding(task)
+        if binding is not None:
+            assignment['outer_binding'] = binding
         state['assignments'].append(assignment)
         if task['status']!='executing':
             task.update(status='queued',error='')
@@ -339,7 +434,7 @@ class GoalEngine:
 
     def observe(self, ticket, key, transport):
         status = {'plan':'planning','replan':'planning','execute':'executing','repair':'executing',
-                  'review':'reviewing','package':'executing','assemble':'executing'}
+                  'review':'reviewing','coordinate':'reviewing','package':'executing','assemble':'executing'}
         def apply(task):
             assignment = current(task,key)
             if not assignment:
@@ -364,8 +459,14 @@ class GoalEngine:
                     or assignment['mandate_digest'] != digest(state['mandate'])
                     or assignment.get('verification_digest',digest(None)) != digest(state.get('verification_contract'))):
                 raise Problem('旧版本派工不能修改目标',409)
+            binding = assignment.get('outer_binding')
+            live = outer_binding(task)
+            if binding is not None and binding != ({**live,'stop_generation':binding['stop_generation']}
+                                                     if state['stop_requested'] and live else live):
+                raise Problem('旧版本派工不能修改 V2 目标',409)
             valid = (isinstance(report,dict) and report.get('id') == key and report.get('run') == run
-                     and report.get('version') == assignment['version'])
+                     and report.get('version') == assignment['version']
+                     and report.get('outer_binding') == binding)
             assignment.update(state='settled', transport=transport, settled_at=now(), report=report if valid else None)
             if state['stop_requested']:
                 if transport == 'done' and valid:
@@ -381,6 +482,13 @@ class GoalEngine:
                     # 停办与实施回执可能交错，续办时先验留在磁盘的效果。
                     state['stage'] = 'review'
                     state['validation'] = {'recovering_execute':True,'reason':'停办时有实施轮次'}
+                    if binding:
+                        checkpoint = recovery_checkpoint or (report.get('checkpoint') if valid else None)
+                        if checkpoint and checkpoint.get('digest'):
+                            state['checkpoint'] = checkpoint
+                            state['validation']['pinned_digest'] = checkpoint['digest']
+                        else:
+                            state['validation']['recovery_blocked'] = True
                     task['phase'] = 'review'
                 self._after_stop(task,key)
                 return
@@ -405,6 +513,12 @@ class GoalEngine:
                 self._failed_assignment(task,assignment,'执行终态已确认，业务回执缺失')
                 return
             if report.get('error'):
+                if binding and assignment['phase'] in ('execute','repair') and recovery_checkpoint:
+                    state['checkpoint'] = recovery_checkpoint
+                    self._recover(task,assignment,'实施轮次失败，先核对原派工的文件')
+                    if state['stage'] == 'review':
+                        state['validation']['pinned_digest'] = recovery_checkpoint['digest']
+                    return
                 self._failed_assignment(task,assignment,str(report['error'])[:300])
                 return
             try:
@@ -413,7 +527,8 @@ class GoalEngine:
                 reason=f'执行回执或证据无法验证：{str(exc)[:160]}'
                 if assignment['phase']=='package':
                     self._fail_package(task,assignment,reason)
-                elif assignment['phase']=='plan' and state.get('team_enabled') and not state['mandate']:
+                elif assignment['phase']=='plan' and (state.get('outer') or
+                                                        (state.get('team_enabled') and not state['mandate'])):
                     state['validation'] = {'planning_feedback':reason}
                     self._recover(task,assignment,reason)
                 else:
@@ -472,7 +587,10 @@ class GoalEngine:
         counter = f"{assignment['version']}:{assignment['step']}:{stage}"
         attempts = state['attempts'].get(counter, 0)
         if attempts >= 1:
-            pause_or_block(task,reason)
+            if state.get('outer') and stage not in ('plan','coordinate','replan'):
+                self._request_outer_coordination(task, assignment, reason)
+            else:
+                pause_or_block(task,reason)
             return
         state['attempts'][counter] = attempts+1
         decision(task,'recovery_reconciled',assignment=assignment['id'],reason=reason)
@@ -485,6 +603,12 @@ class GoalEngine:
         state = flow(task)
         phase = assignment['phase']
         result = report['result']
+        if state.get('outer') and phase == 'review':
+            self._advance_outer_review(task,assignment,report)
+            return
+        if state.get('outer') and phase == 'coordinate':
+            self._apply_outer_coordination(task,assignment,report)
+            return
         if phase=='assemble':
             checkpoint = report['checkpoint']
             if report.get('workspace_id')!=assignment['id'] or not checkpoint.get('digest'):
@@ -506,6 +630,8 @@ class GoalEngine:
         if phase in ('plan','replan'):
             revision = len(state['revisions'])+1
             planned = plan_result(result,revision)
+            if state.get('outer'):
+                self._bind_outer_plan(task, assignment, planned)
             if not contract and report.get('verifier_profile') == 'csv-v1' and len(planned['steps']) != 1:
                 raise Problem('CSV 验收器只认证一个实施阶段，请合并步骤')
             if contract:
@@ -533,9 +659,14 @@ class GoalEngine:
                     raise Problem('重规划改变了经批准的工作包边界，需要本人授权')
                 planned['steps'] = completed + planned['steps']
             decision(task,'plan_saved',assignment=assignment['id'],revision=revision)
-            state['revisions'].append({'version':revision,'plan':planned,'reason':state['validation']})
+            from copy import deepcopy
+            state['revisions'].append({'version':revision,'plan':deepcopy(planned),'reason':state['validation'],
+                                       'previous':task['version'] if phase=='replan' else None})
             task.update(plan=planned,version=revision)
-            if phase == 'plan':
+            if phase == 'plan' and state.get('outer'):
+                state['stage'] = 'execute'
+                task.update(status='queued', phase='execute')
+            elif phase == 'plan':
                 task.update(status='awaiting_approval',phase='execute',
                             approval={'id':uuid.uuid4().hex,'kind':'plan','version':revision,
                                       'state':'open','digest':digest(planned)})
@@ -544,6 +675,8 @@ class GoalEngine:
                 reuse = (team.get('step')==task['step'] and state.get('workspace_base')
                          and set(team['accepted'])=={p['id'] for p in remaining[0].get('packages',[])})
                 state['stage'] = 'repair' if reuse else 'execute'
+                if state.get('outer'):
+                    task['phase'] = 'execute'
             return
         if phase in ('execute','repair'):
             checkpoint = report['checkpoint']
@@ -618,6 +751,176 @@ class GoalEngine:
         decision(task,'delivered',assignment=assignment['id'],digest=checkpoint['digest'])
 
     @staticmethod
+    def _bind_outer_plan(task, assignment, planned):
+        state = flow(task)
+        outer = state['outer']
+        contract = outer['acceptance_contract']
+        known = {row['criterion_id']:row for row in contract['criteria']}
+        used = set()
+        for step in planned['steps']:
+            keys = step['acceptance']
+            if (len(keys) != len(set(keys)) or used.intersection(keys) or not set(keys) <= known.keys()
+                    or not any(known[key]['required'] for key in keys)):
+                raise Problem('实施计划的每个阶段必须绑定真实且不重复的必需验收项')
+            used.update(keys)
+            step['verification'] = ' / '.join(known[key]['description'] for key in keys)
+        if assignment['phase']=='plan' and any(row['required'] and key not in used for key,row in known.items()):
+            raise Problem('实施计划未覆盖已批准的必要验收项')
+        planned['acceptance_revision'] = outer['acceptance_revision']
+        planned['verification_digest'] = digest(contract)
+
+    def _advance_outer_review(self, task, assignment, report):
+        from superagent.outer_verification import validate_results
+        state = flow(task)
+        contract = state['outer']['acceptance_contract']
+        checkpoint = report['checkpoint']
+        baseline = state['checkpoint']
+        if (report['verifier_profile'] != 'outer-v2' or not isinstance(checkpoint,dict) or not baseline
+                or checkpoint != baseline or not checkpoint.get('digest')):
+            raise Problem('独立验收和实施检查点必须绑定同一交付版本')
+        rows = report['validation']['checks']
+        passed = validate_results(contract,task['plan'],assignment,checkpoint,rows)
+        final = task['step']+1 == len(task['plan']['steps'])
+        state['validation'] = {'passed':passed,'checks':rows,'artifact_sha256':checkpoint['digest'],
+                               'acceptance_revision':state['outer']['acceptance_revision'],
+                               'level':'goal' if final else 'stage'}
+        decision(task,'evaluated',assignment=assignment['id'],run=assignment['run'],
+                 passed=passed,level=state['validation']['level'],
+                 evidence_refs=[row['evidence_ref'] for row in rows],
+                 correlation_id=state['outer']['correlation_id'])
+        if not passed:
+            self._request_outer_coordination(task,assignment,'已批准的必要验收项尚未全部通过')
+            return
+        if contract['status'] != 'APPROVED' or contract['verification_gaps']:
+            raise Problem('仍有须明确确认的验收缺口')
+        delivery = report.get('delivery')
+        if (not isinstance(delivery,dict) or delivery.get('assignment')!=assignment['id']
+                      or not checkpoint.get('files') or delivery.get('files')!=checkpoint['files']
+                or delivery.get('artifact_sha256')!=checkpoint['digest']
+                or delivery.get('level') != ('goal' if final else 'stage')):
+            raise Problem('缺少与当前验收版本和派工匹配的归档')
+        task['plan']['steps'][task['step']]['state'] = 'completed'
+        task['step'] += 1
+        state['repairs'] = 0
+        if not final:
+            state.setdefault('stage_deliveries',[]).append(delivery)
+            state['outcome'] = 'PARTIAL_DELIVERY'
+            state['stage'] = 'execute'
+            task['phase'] = 'execute'
+            return
+        state['stage'] = 'verified_complete'
+        state['outcome'] = 'VERIFIED_COMPLETE'
+        task.update(status='completed',phase='review',artifacts=list(checkpoint['artifacts']),
+                    checks=rows,review={'passed':True,'findings':['当前验收契约必需项全部通过']},
+                    goal_delivery=delivery)
+        decision(task,'delivered',assignment=assignment['id'],digest=checkpoint['digest'],
+                 outcome=state['outcome'],correlation_id=state['outer']['correlation_id'])
+
+    def _request_outer_coordination(self, task, assignment, reason):
+        state = flow(task)
+        validation = state['validation'] or {}
+        required = {row['criterion_id'] for row in state['outer']['acceptance_contract']['criteria']
+                    if row['required']}
+        failed = [row for row in validation.get('checks',[]) if row['id'] in required and row['status']!='PASS']
+        identity = digest({'step':task['step'],'artifact':(state['checkpoint'] or {}).get('digest'),
+                           'results':[(row['id'],row['status'],row['detail']) for row in failed],
+                           'reason':reason})
+        seen = state.setdefault('outer_failures',{})
+        seen[identity] = seen.get(identity,0)+1
+        if seen[identity] > 2:
+            pause_or_block(task,'同一交付版本和失败条件反复出现，已保留验收证据')
+            state['outcome'] = 'BLOCKED'
+            return
+        state['coordination'] = {'assignment':assignment['id'],'reason':reason,'failure':identity,
+                                 'evidence_refs':[row['evidence_ref'] for row in failed] or [assignment['id']]}
+        state['stage'] = 'coordinate'
+        state['outcome'] = 'PARTIAL_DELIVERY' if task['step'] else None
+        task['phase'] = 'review'
+
+    @staticmethod
+    def _outer_coordination_context(task):
+        state = flow(task)
+        outer = state['outer']
+        request = state['coordination']
+        validation = state['validation'] or {}
+        remaining = max(0,int(state['mandate']['budget_seconds'] - task['elapsed_seconds']))
+        actions = ['REQUEST_APPROVAL','BLOCKED']
+        # 缺少验收环境或证据时允许一次复验，不能用这类错误驱动代码返工。
+        rows = validation.get('checks',[])
+        references = set(request['evidence_refs'])
+        failed = [row for row in rows if row['evidence_ref'] in references and row['status']!='PASS']
+        if remaining >= 30:
+            if failed and all(row['status']=='ERROR' for row in failed):
+                if not state['rechecks']:
+                    actions.append('CONTINUE')
+            elif not any(row['status'] in ('ERROR','INCONCLUSIVE','NOT_RUN') for row in failed):
+                if state['repairs'] < REPAIR_LIMIT:
+                    actions.append('REPAIR')
+                if state['replans'] < 1:
+                    actions.append('REPLAN')
+        checks = [
+            {key:row[key] for key in ('criterion_id','status','detail','evidence_ref','artifact_sha256')}
+            for row in rows
+        ]
+        stage_evidence = [
+            {key:delivery[key] for key in ('assignment','artifact_sha256','level')}
+            for delivery in state.get('stage_deliveries',[])
+        ]
+        context = {
+            'ticket_id':outer['ticket_id'],'goal_revision':outer['goal_revision'],
+            'acceptance_revision':outer['acceptance_revision'],'mandate_revision':outer['mandate_revision'],
+            'plan_revision':task['version'],'stage':task['step'],
+            'goal':task['goal'],'plan':task['plan'],'acceptance':[
+                {key:row[key] for key in ('criterion_id','description','requirement_ids','required')}
+                for row in outer['acceptance_contract']['criteria']
+            ],
+            'scope': state['mandate']['scope'], 'forbidden_operations':state['mandate']['forbidden_operations'],
+            'failure':request,'verification_checks':checks,'remaining_budget_seconds':remaining,
+            'retained_outputs':(state['checkpoint'] or {}).get('artifacts',[])[:32],
+            'verified_stages':stage_evidence,
+            'evidence_refs':request['evidence_refs'],'available_actions':actions,
+        }
+        context['input_snapshot_revision'] = digest([context,outer_binding(task)])
+        return context
+
+    def _apply_outer_coordination(self, task, assignment, report):
+        from superagent.outer_verification import validate_coordination
+        state = flow(task)
+        context = dict(assignment['coordination_context'])
+        proposal = validate_coordination(report['result'],context)
+        invocation = report['evidence']
+        if (invocation.get('snapshot_revision') != context['input_snapshot_revision']
+                or invocation.get('invocation_id') != assignment['id']):
+            raise Problem('协调建议未绑定有效的模型调用')
+        current_context = self._outer_coordination_context(task)
+        action = proposal['action']
+        if (action not in current_context['available_actions'] or
+                (action in ('CONTINUE','REPAIR','REPLAN') and task.get('max_calls') is not None
+                 and task['calls'] >= task['max_calls'])):
+            pause_or_block(task,'协调完成时剩余预算不足或建议已过期',budget=True)
+            return
+        decision(task,'coordinated',assignment=assignment['id'],run=assignment['run'],proposal=proposal,
+                 invocation=invocation,correlation_id=state['outer']['correlation_id'])
+        if action == 'REQUEST_APPROVAL':
+            pause_or_block(task,proposal['reason'])
+            state['outcome'] = 'AWAITING_REVIEW'
+        elif action == 'BLOCKED':
+            pause_or_block(task,proposal['reason'])
+            state['outcome'] = 'BLOCKED'
+        elif action == 'CONTINUE':
+            state['rechecks'] += 1
+            state['stage'] = 'review'
+        else:
+            if action == 'REPLAN':
+                state['replans'] += 1
+                state['repairs'] = 0
+            else:
+                state['repairs'] += 1
+            state['validation'] = dict(state['validation'] or {}, coordination=proposal)
+            state['stage'] = action.lower()
+            task['phase'] = 'plan' if action=='REPLAN' else 'execute'
+
+    @staticmethod
     def _accept_checkpoint(task, assignment, checkpoint):
         state = flow(task)
         state.update(checkpoint=checkpoint,stage='review')
@@ -653,16 +956,32 @@ class GoalEngine:
             return None
         if (assignment['run'] != run or assignment['version'] != task['version']
                 or assignment['mandate_digest'] != digest(state['mandate'])
-                or assignment.get('verification_digest',digest(None)) != digest(state.get('verification_contract'))):
+                or assignment.get('verification_digest',digest(None)) != digest(state.get('verification_contract'))
+                or assignment.get('outer_binding') != outer_binding(task)):
             raise Problem('派工与中台轮次或授权不匹配',409)
         context = {'notes':self.store.notes(ticket),'verification':state['validation'],
                    'team_enabled':state.get('team_enabled',False)}
+        if assignment.get('outer_binding'):
+            # 保留已批准的原始需求和限制。授权仍由独立的 Mandate 约束。
+            context['approved_goal_contract'] = state['outer']['goal_contract']
+            if assignment['phase']=='coordinate':
+                context['coordinator'] = assignment['coordination_context']
+            context['execution_contract'] = {
+                **assignment['outer_binding'], 'assignment':assignment['id'], 'run':run,
+                'plan_revision':assignment['version'], 'work_package':None, 'stage':assignment['step'],
+                'workspace_id':ticket, 'baseline':(state.get('checkpoint') or {}).get('digest'),
+                'prior_stage_evidence':state.get('stage_deliveries',[]),
+                'max_seconds':assignment['max_seconds'],
+                'scope':state['mandate']['scope'],
+                'forbidden_operations':state['mandate']['forbidden_operations'],
+            }
         if assignment['phase']=='package':
             context.update(package=assignment['package'], retry=assignment.get('retry_context'),
                            dependency_outputs=[item['files'] for item in assignment['inputs']])
         return dict(assignment, goal=task['goal'], acceptance=task['acceptance'], mandate=state['mandate'],
                     plan=task['plan'], context=context, checkpoint=state['checkpoint'],
-                    verification_contract=state.get('verification_contract'),workspace_base=state.get('workspace_base'))
+                    verification_contract=state.get('verification_contract'),workspace_base=state.get('workspace_base'),
+                    outer_acceptance=(state.get('outer') or {}).get('acceptance_contract'))
 
     @contextmanager
     def launch_gate(self,ticket,key,run):
@@ -673,6 +992,7 @@ class GoalEngine:
             if (not assignment or assignment['run'] != run or task['paused']
                     or flow(task)['stop_requested'] or assignment['version'] != task['version']
                     or assignment['mandate_digest'] != digest(flow(task)['mandate'])
-                    or assignment.get('verification_digest',digest(None)) != digest(flow(task).get('verification_contract'))):
+                    or assignment.get('verification_digest',digest(None)) != digest(flow(task).get('verification_contract'))
+                    or assignment.get('outer_binding') != outer_binding(task)):
                 raise Problem('派工已停止或变更，未放行模型',409)
             yield

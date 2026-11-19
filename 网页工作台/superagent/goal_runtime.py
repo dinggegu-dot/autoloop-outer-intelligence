@@ -181,23 +181,38 @@ class GoalRuntime:
                 raise
             path = attempt_file(self.store.root,ticket,key,'report.json')
             report = json.loads(path.read_text()) if path.is_file() else None
+            outer = assignment.get('outer_binding')
             valid = (isinstance(report,dict) and report.get('id') == key and report.get('run') == run
-                     and report.get('version') == assignment['version'])
+                     and report.get('version') == assignment['version']
+                     and report.get('outer_binding') == outer)
             recovery_checkpoint = None
             recovery_error = None
-            if not valid and assignment['phase'] in ('execute','repair') and not flow(task)['stop_requested']:
+            if assignment['phase'] in ('execute','repair') and (
+                    (not valid and not flow(task)['stop_requested']) or
+                    (outer and (not valid or report.get('error') or flow(task)['stop_requested']))):
                 # 中台已确认终态且原模型已退出。只从原派工的工作区取证。
                 candidate = (path.parent/'candidate' if flow(task).get('workspace_base')
                              else self.store.workspace(ticket))
                 try:
-                    if report is not None or (path.parent/'entered').read_text() != str(run):
+                    if (report is not None and not valid) or (path.parent/'entered').read_text() != str(run):
                         recovery_error = '缺少与原 Run 一致的执行记录'
                     elif candidate.is_symlink() or not candidate.is_dir():
                         recovery_error = '缺少原派工的工作区，无法核对其产物'
                     else:
-                        recovery_checkpoint = manifest(candidate)
-                except (OSError, UnicodeError, Problem):
+                        if outer:
+                            from superagent.outer_verification import capture
+                            recovery_checkpoint = capture(candidate)[0]
+                        else:
+                            recovery_checkpoint = manifest(candidate)
+                except (OSError, RuntimeError, ValueError, Problem):
                     recovery_error = '原派工的执行记录或产物无法核对'
+            if valid and outer and assignment['phase']=='review' and report.get('delivery'):
+                from superagent.outer_verification import capture
+                try:
+                    if capture(path.parent/'verified')[0] != report.get('checkpoint'):
+                        raise Problem('验收归档已改变')
+                except (OSError, RuntimeError, ValueError, Problem):
+                    report = dict(report,error='独立归档不存在、已改变或无法安全读取')
             settled = self.engine.settle(ticket,key,run,status,report,recovery_checkpoint=recovery_checkpoint,
                                          recovery_error=recovery_error)
             if not valid:
@@ -299,11 +314,19 @@ def worker(store, verification):
 def execute_assignment(store, assignment, directory, verification):
     from superagent.goal_codex import invoke
     contract = assignment.get('verification_contract')
+    outer = assignment.get('outer_binding')
     report = {'id':assignment['id'],'run':assignment['run'],'version':assignment['version'],
               'verifier_profile':'contract-v1' if contract else verification}
     phase = assignment['phase']
     workspace = store.workspace(assignment['ticket'])
     try:
+        if outer:
+            report.update(outer_binding=outer,verifier_profile='outer-v2')
+            if phase == 'review':
+                return execute_outer_review(assignment,workspace,directory,report)
+            if phase == 'coordinate':
+                return execute_coordination(store,assignment,directory,report)
+            prepare_outer_execution(assignment)
         base_id = assignment.get('workspace_base')
         if base_id:
             workspace = directory.parent/base_id/'candidate'
@@ -416,7 +439,11 @@ def execute_assignment(store, assignment, directory, verification):
             else:
                 report['outputs'] = outputs
         if phase in ('execute','repair','review'):
-            after = manifest(workspace)
+            if outer:
+                from superagent.outer_verification import capture
+                after = capture(workspace)[0]
+            else:
+                after = manifest(workspace)
             if before is not None and before['digest'] != after['digest']:
                 raise Problem('审核期间工作区发生变化')
             report['checkpoint'] = after
@@ -426,6 +453,84 @@ def execute_assignment(store, assignment, directory, verification):
     except Exception as exc:
         report['error'] = f'{type(exc).__name__}: {str(exc)[:240]}'
     return report
+
+
+def prepare_outer_execution(assignment):
+    contract = assignment['outer_acceptance']
+    context = assignment['context']
+    step = assignment['step']
+    phase = assignment['phase']
+    keys = None
+    if phase == 'replan':
+        keys = {key for stage in assignment['plan']['steps'][step:] for key in stage['acceptance']}
+    elif phase != 'plan':
+        keys = set(assignment['plan']['steps'][step]['acceptance'])
+    if phase == 'repair' and step + 1 == len(assignment['plan']['steps']):
+        keys = None  # 最后一步返工可以修复最终复验发现的前序回归。
+    context['approved_criteria'] = [
+        {key: row[key] for key in ('criterion_id','requirement_ids','description','required','verifier_id')}
+        | {'interface':{key:value for key,value in row['test_spec'].items() if key not in ('args','files')}}
+        for row in contract['criteria'] if keys is None or row['criterion_id'] in keys
+    ]
+    context['contract_instruction'] = (
+        '按已批准目标和验收项实现真实行为。最终验收会在隔离环境复跑全部验收项。'
+        'steps[].checks 只填写对应的 criterion_id。每个阶段包含至少一项必需验收，'
+        '全部必需验收项必须出现在计划中，每项只在一个阶段。'
+    )
+    if phase == 'replan':
+        context['contract_instruction'] += '仅调整后续阶段的实施方案，保持现有阶段顺序和验收项不变。'
+
+
+def execute_outer_review(assignment, workspace, directory, report):
+    from superagent.outer_verification import capture, validate_results, verify
+    start = time.time_ns()
+    checkpoint, files, occupied = capture(workspace)
+    if checkpoint != assignment['checkpoint']:
+        raise Problem('待验产物与执行检查点不匹配')
+    contract = assignment['outer_acceptance']
+    rows = verify(contract,assignment,checkpoint,files,occupied)
+    passed = validate_results(contract,assignment['plan'],assignment,checkpoint,rows)
+    if capture(workspace)[0] != checkpoint:
+        raise Problem('验收期间工作区发生变化')
+    report.update(result={'passed':passed},checkpoint=checkpoint,validation={'checks':rows},
+                  evidence={'started_ns':start,'ended_ns':time.time_ns()})
+    if passed:
+        # 从已实际验证的同一批字节归档，避免二次从候选路径读入不同文件。
+        verified = directory/'verified'
+        verified.mkdir(mode=0o700)
+        for relative, content in files.items():
+            destination = verified/relative
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            with destination.open('xb') as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            destination.chmod(0o400)
+        if capture(verified)[0] != checkpoint:
+            raise Problem('验收归档与验证字节不一致')
+        level = 'goal' if assignment['step']+1==len(assignment['plan']['steps']) else 'stage'
+        report['delivery'] = {'assignment':assignment['id'],'files':checkpoint['files'],
+                              'artifact_sha256':checkpoint['digest'],'level':level}
+        report['evidence']['ended_ns'] = time.time_ns()
+    return report
+
+
+def execute_coordination(store, assignment, directory, report):
+    from superagent.outer_model import CodexOuterModel, role_invoke
+    from superagent.outer_verification import COORDINATOR_SCHEMA, validate_coordination
+    context = assignment['context']['coordinator']
+    start = time.time_ns()
+    engine = GoalEngine(store)
+    adapter = CodexOuterModel(timeout=min(45,assignment['max_seconds'])).with_execution(
+        directory, lambda: engine.launch_gate(assignment['ticket'],assignment['id'],assignment['run'])
+    )
+    invocation = role_invoke(adapter, 'goal_coordinator', context, COORDINATOR_SCHEMA)
+    proposal = validate_coordination(invocation['result'],context)
+    evidence = {key:invocation[key] for key in ('invocation_id','model','usage','elapsed_ms',
+                                                'prompt_version') if key in invocation}
+    evidence.update(invocation_id=assignment['id'],snapshot_revision=context['input_snapshot_revision'],
+                    started_ns=start,ended_ns=time.time_ns())
+    return dict(report,result=proposal,evidence=evidence)
 
 
 def main():
