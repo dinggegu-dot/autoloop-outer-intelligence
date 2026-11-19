@@ -424,6 +424,13 @@ class OuterIntake:
                             'prior_messages': {row['id']: _model_text(json.loads(row['body']).get('text', ''), 1000)
                                                for row in rows if row['id'] != event['id']}},
         )
+        if event['role'] == 'intake_assessor' and message.get('replace_requirement_ids'):
+            selected = set(message['replace_requirement_ids'])
+            context['replace_requirements'] = [
+                {'field': field, 'requirement_id': item['requirement_id'], 'description': item['description']}
+                for field in _FIELDS for item in ticket['goal_contract'].get(field, [])
+                if item['requirement_id'] in selected]
+            context['available_actions'] = ['PROPOSE_CHANGE', 'ESCALATE']
         if event['role'] == 'acceptance_designer':
             context['verifier_catalogue'] = self._registry().catalogue()
             context['prior_acceptance'] = ticket['acceptance_contract']
@@ -611,6 +618,8 @@ class OuterIntake:
                 if any(row['description'] == description for row in normalized):
                     continue
                 if description in previous:
+                    if previous[description]['requirement_id'] in replacements:
+                        raise ValueError('新版草案原样保留了用户指定替换的旧要求')
                     normalized.append(previous[description])
                     continue
                 refs = list(dict.fromkeys(item['source_refs']))

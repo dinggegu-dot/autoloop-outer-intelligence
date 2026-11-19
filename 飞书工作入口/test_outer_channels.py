@@ -139,6 +139,22 @@ class CrossChannelTest(unittest.TestCase):
         self.assertNotIn('outer_approve',dict(card(ready)['actions']))
         self.assertIn(ready['id'],card(ready)['body'])
 
+    def test_coordination_decision_uses_current_block_and_requires_new_approval(self):
+        from outer_channels import card,journey
+        proposal = dict(action='REQUEST_APPROVAL',reason='原授权不覆盖第二个数据源',
+                        plan_change='请确认是否允许读取备用文件',remaining_risk='替代数据未经核验')
+        decisions = [dict(kind='coordinated',proposal=proposal),dict(kind='blocked',reason=proposal['reason'])]
+        t = dict(id='wb-'+'a'*32,revision=3,goal_revision=1,acceptance_revision=1,status='AUTHORIZED',
+                 execution=dict(status='blocked',version=1,goal_execution=dict(decisions=decisions)))
+        view = journey(t)
+        self.assertEqual(view['station'], 'decision')
+        self.assertEqual(view['instruction'], proposal['reason'])
+        self.assertIn(proposal['remaining_risk'],card(t)['body'])
+        self.assertIn('修改要求',card(t)['body'])
+        self.assertNotIn('outer_approve', dict(card(t)['actions']))
+        decisions.append(dict(kind='blocked',reason='另一轮的预算耗尽'))
+        self.assertFalse(journey(t)['decision_items'])
+
     def test_failed_edit_on_delivered_ticket_displays_event_error(self):
         from outer_bridge import mirror_notifications
         binding={'ticket_id':'wb-'+'f'*32,'revision':6,'goal_revision':2,'acceptance_revision':2}

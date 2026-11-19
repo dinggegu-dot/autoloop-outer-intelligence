@@ -64,7 +64,7 @@ class Model:
             action = 'AUTHORIZED'
         else:
             action = next(item for item in ('ANSWER_CLARIFICATION', 'PROPOSE_CHANGE' if 'change' in text else 'ATTACH_TO_TICKET',
-                                            'CREATE_DRAFT') if item in allowed)
+                                            'PROPOSE_CHANGE', 'CREATE_DRAFT') if item in allowed)
         requirement = dict(description=text, source='USER_EXPLICIT', source_refs=[event])
         invented = dict(description='用户明确要求加载远程插件', source='USER_EXPLICIT', source_refs=[event])
         return dict(schema_version=1, event_id=event, input_snapshot_revision=context['snapshot_revision'],
@@ -315,8 +315,54 @@ class OuterIntakeTest(unittest.TestCase):
                              expected_ticket_revision=updated['revision'],
                              replace_requirement_ids=[kept['requirement_id']])
         revised = self.latest(explicit)
+        snapshot = next(s for role,s in self.model.calls if role == 'intake_assessor'
+                        and s['event_id'] == explicit['event_id'])
+        self.assertEqual(snapshot['replace_requirements'], [dict(field='deliverables',
+                         requirement_id=kept['requirement_id'], description=kept['description'])])
+        self.assertEqual(snapshot['available_actions'], ['PROPOSE_CHANGE', 'ESCALATE'])
         self.assertNotIn(kept, revised['goal_contract']['deliverables'])
         self.assertEqual(revised['goal_contract']['changes']['deliverables']['removed'], [kept['description']])
+
+    def test_selected_replacement_cannot_be_filed_as_note_or_repeat_old_requirement(self):
+        draft = self.latest(self.send('交付原始账单'))
+        self.approve(draft)
+        prior = self.intake.get(draft['id'], 'owner')
+        kept = prior['goal_contract']['deliverables'][0]
+        for action in ('ATTACH_TO_TICKET','PROPOSE_CHANGE'):
+            event = self.send('改为年度账单', event=action, ticket_id=prior['id'],
+                              expected_ticket_revision=prior['revision'],replace_requirement_ids=[kept['requirement_id']])
+            def unchanged(role,context,schema):
+                result = self.model(role,context,schema)
+                result['suggested_action'] = action
+                result['goal_draft']['deliverables'][0]['description'] = kept['description']
+                return result
+            with patch.object(self.intake,'model',unchanged):
+                self.intake.drain()
+            self.assertEqual(self.intake.event(event['event_id'],'owner')['state'],'REJECTED')
+            self.assertEqual(self.intake.get(draft['id'],'owner'),prior)
+        revised = self.latest(self.send('改为年度账单',event='valid-replacement',ticket_id=prior['id'],
+                              expected_ticket_revision=prior['revision'],replace_requirement_ids=[kept['requirement_id']]))
+        self.assertEqual(revised['status'],'AWAITING_APPROVAL')
+        self.assertEqual(revised['goal_contract']['changes']['deliverables']['removed'],[kept['description']])
+        self.assertEqual(revised['goal_contract']['changes']['deliverables']['added'],['改为年度账单'])
+        self.assertEqual(revised['execution'],prior['execution'])
+
+    def test_coordination_trace_stops_at_authorization_boundary(self):
+        from superagent.outer_history import _coordination_trace
+        a = dict(id='coord',run=4,outer_binding={'mandate_revision':1})
+        repair = dict(a,id='fix',phase='repair',run=5,state='settled')
+        review = dict(a,id='verify',phase='review',run=6,state='settled')
+        stale = dict(a,id='other',phase='repair',run=7,state='settled',outer_binding={'mandate_revision':2})
+        ledger = [dict(kind='coordinated',assignment='coord',proposal={'action':'REPAIR'}),
+                  dict(kind='dispatch_prepared',assignment='fix'),dict(kind='dispatch_prepared',assignment='verify'),
+                  dict(kind='evaluated',assignment='verify',passed=True),dict(kind='delivered',assignment='verify',digest='hash')]
+        def trace(records):
+            return _coordination_trace(a,records,[a,repair,review,stale])
+        self.assertIsNone(trace(ledger[1:])['decision'])
+        self.assertEqual([x['run'] for x in trace(ledger)['subsequent_runs']],[5,6])
+        self.assertEqual(trace(ledger)['subsequent_runs'][-1]['delivery_digest'],'hash')
+        for stop in [dict(kind='stop_requested'),dict(kind='authorized'),dict(kind='dispatch_prepared',assignment='other')]:
+            self.assertFalse(trace([ledger[0],stop,*ledger[1:]])['subsequent_runs'])
 
     def test_selection_preserves_pending_question_for_explicit_answer(self):
         initial = self.latest(self.send('vague', source_thread_id='root'))

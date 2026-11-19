@@ -13,7 +13,7 @@ import time
 from .codex_worker import CodexWorkerError, _array, _matches, _object, _read_result
 
 
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 TXT = {'type': 'string'}
 INT = {'type': 'integer'}
 BOOL = {'type': 'boolean'}
@@ -38,6 +38,8 @@ ACCEPTANCE_SCHEMA = _object(schema_version=INT, ticket_id=TXT, goal_revision=INT
 PROMPTS = {
     'intake_assessor': (
         '理解当前用户消息。goal_draft 必须是完整目标草案并保留未被用户更改的既有要求。'
+        '有 replace_requirements 时，用户已选定要替换的旧条目。按 current_message 修改这些条目，'
+        '保留未选要求，只能建议 PROPOSE_CHANGE 或在无法处理时 ESCALATE。'
         'suggested_action 只允许 CREATE_DRAFT、ATTACH_TO_TICKET、ANSWER_CLARIFICATION、PROPOSE_CHANGE、'
         'REQUEST_TICKET_SELECTION、ANSWER_STATUS、IGNORE、ESCALATE。只有快照明确关联的工单可以更新。'
         '重要且没有安全可逆默认值的歧义，提出一个具体问题；无需澄清时将 question_text 留空。'

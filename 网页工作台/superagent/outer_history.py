@@ -20,6 +20,39 @@ def _view(call_id, role, started, state, snapshot, receipt, detail):
     return row
 
 
+def _coordination_trace(assignment, decisions, assignments):
+    """只展示本次已采纳决定之后、同一授权内直到下次验收的账本记录。"""
+    adopted = next((i for i,d in enumerate(decisions) if d.get('kind') == 'coordinated'
+                    and d.get('assignment') == assignment['id']), None)
+    trace = dict(run=assignment.get('run'), decision=None, subsequent_runs=[])
+    if adopted is None:
+        return trace
+    trace['decision'] = decisions[adopted].get('proposal')
+    binding = assignment.get('outer_binding')
+    if not binding or (trace['decision'] or {}).get('action') not in ('REPAIR','REPLAN','CONTINUE'):
+        return trace
+    lookup = {a['id']: a for a in assignments}
+    subsequent = {}
+    for d in decisions[adopted+1:]:
+        kind, key = d.get('kind'), d.get('assignment')
+        if kind in ('authorized','blocked','stop_requested','stopped','resumed','rejected','review_requested','coordinated'):
+            break
+        if kind == 'dispatch_prepared':
+            a = lookup.get(key)
+            if not a or a.get('outer_binding') != binding or a['phase'] == 'coordinate':
+                break
+            if any('passed' in row for row in subsequent.values()):
+                break
+            subsequent[key] = dict(phase=a['phase'], assignment=key, run=a.get('run'), state=a['state'])
+        elif kind == 'evaluated' and key in subsequent:
+            subsequent[key]['passed'] = d.get('passed')
+        elif kind == 'delivered' and key in subsequent:
+            subsequent[key]['delivery_digest'] = d.get('digest')
+            break
+    trace['subsequent_runs'] = list(subsequent.values())
+    return trace
+
+
 def ticket_calls(db, root, ticket, actor, tenant, call_id=None):
     detail = call_id is not None
     rows = []
@@ -42,16 +75,23 @@ def ticket_calls(db, root, ticket, actor, tenant, call_id=None):
                           json.loads(item['snapshot']) if detail else None, json.loads(item['result'] or '{}'), detail))
 
     # 按已批准的历代执行读取，改版后旧协调调用仍可追溯。
+    ledger_fields = """,json_extract(body,'$.goal_execution.decisions'),
+        (SELECT json_group_array(json_object(
+            'id',json_extract(s.value,'$.id'),'phase',json_extract(s.value,'$.phase'),
+            'run',json_extract(s.value,'$.run'),'state',json_extract(s.value,'$.state'),
+            'outer_binding',json_extract(s.value,'$.outer_binding')))
+         FROM json_each(executions.body,'$.goal_execution.assignments') s)""" if detail else (
+        ",json_array_length(body,'$.goal_execution.decisions')")
     assignments = """WITH executions(body) AS (
         SELECT body FROM tasks WHERE id=? UNION ALL
         SELECT body FROM outer_revisions WHERE ticket=? AND kind='execution_archive')
-        SELECT a.value FROM executions,json_each(executions.body,'$.goal_execution.assignments') a
+        SELECT a.value""" + ledger_fields + """ FROM executions,json_each(executions.body,'$.goal_execution.assignments') a
         WHERE json_extract(a.value,'$.phase')='coordinate'"""
     params = (ticket, ticket)
     if detail:
         assignments += " AND json_extract(a.value,'$.id')=?"
         params += (call_id,)
-    for (body,) in db.execute(assignments, params):
+    for body,*ledger in db.execute(assignments, params):
         a = json.loads(body)
         report = a.get('report') or {}
         evidence = report.get('evidence') or {}
@@ -75,7 +115,12 @@ def ticket_calls(db, root, ticket, actor, tenant, call_id=None):
         receipt = {**evidence, **audit, 'error':' · '.join(filter(None, (code, error))) or None,
                    'result':report.get('result', audit.get('returned_proposal'))}
         started = datetime.fromtimestamp(evidence['started_ns'] / 1e9, timezone.utc).isoformat(timespec='milliseconds')
-        rows.append(_view(a['id'], 'goal_coordinator', started, state, a['coordination_context'], receipt, detail))
+        row = _view(a['id'], 'goal_coordinator', started, state, a['coordination_context'], receipt, detail)
+        if detail:
+            row['trace'] = _coordination_trace(a, json.loads(ledger[0] or '[]'), json.loads(ledger[1] or '[]'))
+        else:
+            row['ledger_revision'] = ledger[0]
+        rows.append(row)
     if detail:
         if not rows:
             raise Problem('这张工单没有该调用记录', 404)

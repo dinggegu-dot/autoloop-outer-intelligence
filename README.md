@@ -48,7 +48,7 @@ flowchart TD
     Archive --> Bridge
 ```
 
-三个外层角色由结构化 Codex 调用实现。展开「外层模型调用」可按工单查看实际输入、模型返回、耗时、回执中上报的用量与失败原因。部分旧记录缺少字段，界面会标明。角色提案、本人批准、执行成功和独立验收各有自己的记录。[源码与运行核对](docs/architecture/architecture-alignment.md)
+三个外层角色由结构化 Codex 调用实现。展开「外层模型调用」可按工单查看实际输入、模型返回、耗时、回执中上报的用量与失败原因。打开 Goal Coordinator 可看到程序采纳的动作，以及同一授权下后续执行和验收的 Run。部分旧记录缺少字段，界面会标明。[源码与运行核对](docs/architecture/architecture-alignment.md) · [真实工单复验](docs/testing/roaming-workbench.md)
 
 ## 启用真实执行与飞书
 

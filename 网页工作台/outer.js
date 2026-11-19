@@ -12,6 +12,8 @@ function callHistory(article, call) {
   const roles = {intake_assessor:'Intake Assessor', acceptance_designer:'Acceptance Designer', goal_coordinator:'Goal Coordinator'};
   const states = {accepted:'成功', returned:'已返回提案', running:'调用中', failed:'失败', rejected:'提案未通过', cancelled:'已取消',
     stale:'版本已过期', lease_expired:'领取已过期', missing_receipt:'回执缺失'};
+  const actions = {REPAIR:'修复', REPLAN:'重新规划', CONTINUE:'重新验收', BLOCKED:'停办待处理', REQUEST_APPROVAL:'请用户决定'};
+  const phases = {plan:'规划', replan:'重新规划', execute:'实施', repair:'修复', review:'验收', package:'工作包'};
   let ticket = '';
   let locating = location.hash === '#outer-history';
   const entries = new Map();
@@ -43,6 +45,23 @@ function callHistory(article, call) {
         const d = await call('call',{ticket_id:id,call_id:row.id});
         if (id !== ticket || !node.isConnected) return;
         body.replaceChildren(element('p', '调用 '+d.id+' · 模型 '+(d.model || '未记录')));
+        if (d.trace) {
+          const trace = d.trace, proposal = trace.decision;
+          body.append(element('h4','程序决定'+(trace.run == null ? '' : ' · Run '+trace.run)));
+          body.append(element('p',proposal ? '已采纳「'+(actions[proposal.action] || proposal.action)+'」 · '+proposal.reason
+                                           : '账本尚无本次提案的采纳记录。'));
+          if (trace.subsequent_runs.length) {
+            body.append(element('h4','同一授权下的后续执行'));
+            const runs=element('ol','');body.append(runs);
+            for (const item of trace.subsequent_runs) {
+              const result = item.passed === true ? '验收通过' : item.passed === false ? '验收未通过' : '';
+              const line = element('li', [item.run == null ? '待绑定 Run' : 'Run '+item.run,
+                phases[item.phase] || item.phase,result].filter(Boolean).join(' · '));
+              if (item.delivery_digest) line.append(element('p','交付检查点 SHA-256 '+item.delivery_digest));
+              runs.append(line);
+            }
+          }
+        }
         record(body,'耗时',d.elapsed_ms == null ? '未记录' : d.elapsed_ms+' ms');
         record(body,'用量（tokens）',d.usage ?? '未记录');
         record(body,'失败原因',d.error ?? (['accepted','returned'].includes(d.state) ? '无' : '尚无失败回执'));
@@ -167,8 +186,7 @@ export function mountOuter(request,notice,openTask){
     if(e?.error && v.instruction!==e.error)show(decision,'执行反馈',e.error);
     show(decision,'验收缺口',contract.verification_gaps);
     show(decision,'人工验收',contract.human_review_requirements);
-    const proposal=[...decisions].reverse().find(x=>x.kind==='coordinated')?.proposal;
-    if(proposal && v.station==='decision')show(decision,'最近一次协调建议',proposal);
+    for(const item of v.decision_items || [])show(decision,item.label,item.text);
     const spec=fold(detail,'目标、验收条件与授权范围',v.approve);spec.id='scope';
     const fields={deliverables:'交付物',required_capabilities:'必需能力',nonfunctional_requirements:'质量要求',constraints:'限制',assumptions:'假设',out_of_scope:'范围外'};
     const replaceable=[];

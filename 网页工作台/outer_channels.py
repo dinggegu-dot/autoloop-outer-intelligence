@@ -63,7 +63,9 @@ def journey(draft):
     execution = draft.get('execution') or {}
     state = draft['status']
     phase = execution.get('status') or draft.get('execution_status')
-    outcome = (execution.get('goal_execution') or {}).get('outcome') or draft.get('outcome')
+    flow = execution.get('goal_execution') or {}
+    outcome = flow.get('outcome') or draft.get('outcome')
+    decision_items = []
     label = STATUS.get(state,state)
     station, instruction = 'flight', '系统正在整理目标及验收条件。'
     if state == 'STOPPED' or (state == 'PAUSED' and phase == 'stopping'):
@@ -80,6 +82,16 @@ def journey(draft):
         elif phase in ('blocked','budget_exhausted') or outcome == 'AWAITING_REVIEW':
             station = 'decision'
             instruction = execution.get('error') or '请核对阻塞原因与授权范围，再决定如何调整。'
+            ledger = flow.get('decisions', [])
+            if len(ledger) >= 2 and [entry.get('kind') for entry in ledger[-2:]] == ['coordinated','blocked']:
+                proposal = ledger[-2].get('proposal') or {}
+                if proposal.get('action') in ('REQUEST_APPROVAL','BLOCKED'):
+                    label = '需确认变更' if proposal['action'] == 'REQUEST_APPROVAL' else '协调后受阻'
+                    instruction = proposal.get('reason') or instruction
+                    decision_items = [dict(label=k, text=v) for k,v in (
+                        ('建议调整',proposal.get('plan_change')), ('待确认的风险',proposal.get('remaining_risk')),
+                        ('你的下一步','选择「修改要求」写明你的决定。新版目标和验收条件就绪后，再批准执行。')
+                    ) if v]
         elif phase in ('paused','rejected','stopping'):
             station,instruction = 'dock','查看本单最新执行记录。'
         else:
@@ -101,7 +113,7 @@ def journey(draft):
     can_resume = state == 'PAUSED' and (not draft.get('task_id') or
                  (phase == 'paused' and draft.get('status_before_pause') == 'AUTHORIZED'))
     terminal = state == 'STOPPED' or state == 'AUTHORIZED' and phase in ('completed','rejected')
-    return dict(station=station,label=label,instruction=instruction,approve=can_approve,
+    return dict(station=station,label=label,instruction=instruction,decision_items=decision_items,approve=can_approve,
                 pause=not terminal and state != 'PAUSED' and phase != 'stopping',
                 resume=can_resume,stop=not terminal and phase != 'stopping')
 
@@ -115,6 +127,7 @@ def card(draft):
     title = (draft.get('goal_contract') or {}).get('goal_statement') or draft.get('summary') or '目标工单'
     lines = [view['instruction'], f"工单 {draft['id']} · v{draft['revision']} · 目标 v{draft['goal_revision']} · 验收 v{draft['acceptance_revision']}"]
     actions = []
+    lines.extend(item['label']+' · '+item['text'] for item in view['decision_items'])
     if view['approve'] or status == 'AWAITING_APPROVAL':
         goal=draft.get('goal_contract') or {}
         acceptance=draft.get('acceptance_contract') or {}
