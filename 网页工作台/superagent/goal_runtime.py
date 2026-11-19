@@ -381,7 +381,7 @@ def execute_assignment(store, assignment, directory, verification):
                 assignment['context']['package_instruction'] = (
                     '只交付 context.package 指定的 outputs。依赖已复制到当前目录。'
                     '只处理本包检查。可以运行测试，退出前移除临时文件。')
-        elif verification == 'csv-v1' and phase in ('plan','replan'):
+        elif not outer and verification == 'csv-v1' and phase in ('plan','replan'):
             assignment['context']['fixture_contract'] = (
                 '这个小型 CSV 首验只需要一个实施阶段。交付 csv_check.py，命令为 '
                 'python3 -B csv_check.py /path/input.csv。输出 JSON 键 empty_category_rows '

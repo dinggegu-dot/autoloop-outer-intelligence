@@ -195,6 +195,16 @@ class OuterExecutionTests(unittest.TestCase):
         self.assertEqual(assignment['outer_acceptance']['coverage_assessment']['authorization_controls'],
                          {'scope':'write_outside_workspace'})
 
+    def test_configured_legacy_worker_restricts_outer_plan_to_approved_criteria(self):
+        self.authorize(criterion())
+        assignment = self.launch('plan')
+        with patch('superagent.goal_codex.invoke', return_value={'result':{}}) as invoke:
+            report = execute_assignment(self.store,assignment,self.store.root,'csv-v1')
+        self.assertNotIn('error',report)
+        context = invoke.call_args.args[0]['context']
+        self.assertNotIn('fixture_contract',context)
+        self.assertEqual([row['criterion_id'] for row in context['approved_criteria']],['one'])
+
     def test_engine_rejects_missing_hard_control_for_workspace_constraint(self):
         fields = {'constraints':[{'requirement_id':'scope','description':'不得写入工单工作区之外',
                                   'source':'USER_EXPLICIT'}]}
