@@ -1,5 +1,5 @@
 """网页任务记录与 Autoloop 适配。中台仍拥有派发、取消和审批事实。"""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import base64
 import fcntl
@@ -39,6 +39,11 @@ class Problem(Exception):
 
 class TaskBusy(Problem):
     pass
+
+
+def require_v1_control(task):
+    if (task.get('goal_execution') or {}).get('outer'):
+        raise Problem('请从当前目标契约工单操作', 409)
 
 
 class Store:
@@ -134,15 +139,46 @@ class Store:
         with self.connect() as db:
             db.execute('INSERT INTO progress(task,at,kind,title,detail) VALUES(?,?,?,?,?)', (task_id, now(), kind, title[:300], json.dumps(detail or {}, ensure_ascii=False)))
 
-    def workspace(self, task_id):
+    def workspace(self, task_id, *, generation=None):
         if not TASK_RE.fullmatch(task_id):
             raise Problem('任务编号无效')
-        path = self.root / 'tasks' / task_id / 'workspace'
+        if generation is None:
+            with self.connect() as db:
+                row = db.execute("SELECT json_extract(body,'$.workspace_generation') FROM tasks WHERE id=?",
+                                 (task_id,)).fetchone()
+            generation = (row[0] if row else None) or 1
+        if type(generation) is not int or generation < 1:
+            raise Problem('任务工作区代次无效')
+        parent = self.root / 'tasks' / task_id
+        if generation > 1:
+            parent = parent / 'mandates' / str(generation)
+        path = parent / 'workspace'
         if path.resolve() != path.absolute():
             raise Problem('任务路径不能使用符号链接')
         return path
 
-    def create(self, body, *, source='board', workflow=None, verification_contract=None, team_enabled=False):
+    def _create_workspace(self, task_id, *, generation=1, recoverable=False):
+        workspace = self.workspace(task_id, generation=generation)
+        # 若事务提交前进程退出，可用同一工单号及已指定代次重试。
+        workspace.mkdir(parents=True, mode=0o700, exist_ok=recoverable)
+        guidance = workspace / 'AGENTS.md'
+        if recoverable and any(path != guidance for path in workspace.iterdir()):
+            raise Problem('新授权的工作区必须为空', 409)
+        if guidance.is_symlink():
+            raise Problem('任务工作区指引不能使用符号链接', 409)
+        guidance.write_text('# 本任务工作区\n\n仅修改本目录内文件。先阅读任务中给出的完整目标、已批准方案和已有成果。不得读取凭据、修改工作台控制记录、调用中台本人接口。外部发布、发送、付费、安装以及范围外写入必须先提出具体审批；业务审批不提升操作系统权限。验收需实际运行，未测内容明确说明。\n')
+        return workspace
+
+    @staticmethod
+    def _initialize_outer(outer):
+        from superagent.goal_engine import initial_state
+        source = 'feishu' if outer['mandate']['source'] == 'feishu' else 'board'
+        state = initial_state(source, outer['approval_event_id'])
+        state['outer'] = outer
+        return state
+
+    def create(self, body, *, source='board', workflow=None, verification_contract=None, team_enabled=False,
+               _db=None, _outer=None):
         name = str(body.get('name', '')).strip()
         goal = str(body.get('goal', '')).strip()
         acceptance = str(body.get('acceptance', '')).strip()
@@ -164,10 +200,13 @@ class Store:
             roles=validate_roles(body.get('role_models',DEFAULT_ROLES))
         except ValueError as e:
             raise Problem(str(e)) from None
-        task_id = 'wb-' + uuid.uuid4().hex
+        if _outer is not None and (_db is None or workflow != 'goal' or verification_contract is not None or team_enabled):
+            raise Problem('外层授权必须在接单事务内登记', 409)
+        task_id = _outer['ticket_id'] if _outer else 'wb-' + uuid.uuid4().hex
         task = dict(id=task_id, role_models=roles, initial_role_models=roles, versions=[], changes=[], revision_requests={}, pending_revision=None, name=name, goal=goal, acceptance=acceptance, version=1, status='created', phase='plan', step=0, plan=None, approval=None, decisions=[], artifacts=[], checks=[], calls=0, max_calls=budget, initial_max_calls=budget, initial_execution_mode=mode, initial_budget_minutes=minutes, execution_mode=mode, time_budget_seconds=minutes*60, elapsed_seconds=0, time_accounting_since=now(), recovery_attempts={}, review_failures=0, paused=False, created_at=now(), updated_at=now(), run_id=None, model='gpt-6-astra', error='', review=None)
-        with self.connect() as db:
-            db.execute('BEGIN IMMEDIATE')
+        with (nullcontext(_db) if _db is not None else self.connect()) as db:
+            if _db is None:
+                db.execute('BEGIN IMMEDIATE')
             old = db.execute('SELECT body FROM tasks WHERE request_id=?', (request_id,)).fetchone()
             if old:
                 prior = json.loads(old[0])
@@ -190,12 +229,11 @@ class Store:
             if workflow == 'goal':
                 from superagent.goal_engine import initial_state
                 task['workflow'] = workflow
-                task['goal_execution'] = initial_state(source, request_id, verification_contract,team_enabled)
-            workspace = self.workspace(task_id)
-            workspace.mkdir(parents=True, mode=0o700)
-            (workspace / 'AGENTS.md').write_text('# 本任务工作区\n\n仅修改本目录内文件。先阅读任务中给出的完整目标、已批准方案和已有成果。不得读取凭据、修改工作台控制记录、调用中台本人接口。外部发布、发送、付费、安装以及范围外写入必须先提出具体审批；业务审批不提升操作系统权限。验收需实际运行，未测内容明确说明。\n')
+                task['goal_execution'] = self._initialize_outer(_outer) if _outer else initial_state(source, request_id, verification_contract, team_enabled)
+            workspace = self._create_workspace(task_id, recoverable=_outer is not None)
             db.execute('INSERT INTO tasks VALUES(?,?,?,?)', (task_id, request_id, json.dumps(task, ensure_ascii=False), task['updated_at']))
-        self.event(task_id, 'created', '任务已保存，准备交给中台', {'workspace': str(workspace)})
+            db.execute('INSERT INTO progress(task,at,kind,title,detail) VALUES(?,?,?,?,?)',
+                       (task_id, now(), 'created', '任务已保存，准备交给中台', json.dumps({'workspace': str(workspace)})))
         return task, True
 
     def list(self):
@@ -204,7 +242,7 @@ class Store:
         return [json.loads(row[0]) for row in rows]
 
     def add_note(self, task_id, message, body):
-        self.get(task_id)
+        require_v1_control(self.get(task_id))
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             old = db.execute('SELECT task,body FROM inbox_notes WHERE message=?',(message,)).fetchone()
@@ -251,6 +289,7 @@ class Store:
                 row=db.execute('SELECT body FROM tasks WHERE id=?',(candidate,)).fetchone()
                 queued=db.execute('SELECT 1 FROM outbox WHERE task=? LIMIT 1',(candidate,)).fetchone()
                 task=json.loads(row[0]) if row else {}
+                require_v1_control(task)
                 if queued or task.get('status')!='created' or task.get('calls')!=0:
                     raise Problem('仅可在两张尚未派发的工单之间改投。已派发请走方案修改。',409)
             db.execute('INSERT INTO note_moves VALUES(?,?,?,?,?)',(request,*move))
@@ -261,7 +300,7 @@ class Store:
         return {'saved':True}
 
     def handoff(self, task_id, body):
-        self.get(task_id)
+        require_v1_control(self.get(task_id))
         request = body.get('request_id')
         if not isinstance(request,str) or not re.fullmatch(r'[a-f0-9-]{36}',request):
             raise Problem('缺少切换请求编号')
@@ -391,12 +430,23 @@ class Hub:
 
 
 class Workbench:
-    def __init__(self, store=None, hub=None, goal_enabled=False, goal_contract=None, goal_team=False):
+    def __init__(self, store=None, hub=None, goal_enabled=False, goal_contract=None, goal_team=False, *,
+                 outer_enabled=False, outer_model=None, outer_registry=None):
         self.store = store or Store()
         self.hub = hub or Hub()
         self.goal_enabled = goal_enabled
         self.goal_contract = goal_contract
         self.goal_team = goal_team
+        self.outer_enabled = outer_enabled
+        self._outer_service = None
+        if outer_enabled:
+            from superagent.outer_intake import OuterIntake
+            self._outer_service = OuterIntake(self, outer_model, outer_registry)
+
+    def outer(self):
+        if self._outer_service is None:
+            raise Problem('外层智能接单尚未启用', 503)
+        return self._outer_service
 
     def goal_engine(self):
         if not self.goal_enabled:
@@ -460,6 +510,7 @@ class Workbench:
             tasks.append(self.store.get(focus))
         capability = self.capability()
         capability['goal_enabled'] = self.goal_enabled
+        capability['outer_enabled'] = self.outer_enabled
         capability['ledger_available'] = True
         try:
             runs, cards = self.hub.records()
@@ -472,7 +523,7 @@ class Workbench:
             task['inbox_notes'] = self.store.notes(task['id'],for_board=True)
             with self.store.connect() as db:
                 handoff = db.execute('SELECT state FROM handoffs WHERE task=? ORDER BY rowid DESC LIMIT 1',(task['id'],)).fetchone()
-                task['can_move_notes']=task['status']=='created' and task['calls']==0 and not db.execute('SELECT 1 FROM outbox WHERE task=? LIMIT 1',(task['id'],)).fetchone()
+                task['can_move_notes']=not (task.get('goal_execution') or {}).get('outer') and task['status']=='created' and task['calls']==0 and not db.execute('SELECT 1 FROM outbox WHERE task=? LIMIT 1',(task['id'],)).fetchone()
             task['handoff_state'] = handoff[0] if handoff else None
             pending = self.store.pending_request(task['id'])
             policy = task.get('resume_requests',{}).get(pending)
@@ -488,10 +539,10 @@ class Workbench:
             if goal_route:
                 state = task['goal_execution']
                 task['goal_actions'] = {
-                    'pause': task['status'] == 'stopping' or (
+                    'pause': not state.get('outer') and (task['status'] == 'stopping' or (
                         not task['paused'] and task['status'] in
-                        ('created','queued','planning','executing','reviewing','awaiting_approval')),
-                    'resume': task['status'] == 'paused' and state['stop_requested'],
+                        ('created','queued','planning','executing','reviewing','awaiting_approval'))),
+                    'resume': not state.get('outer') and task['status'] == 'paused' and state['stop_requested'],
                 }
                 task_runs = [{'id':a['run'],'state':a.get('transport','queued'),'summary':a['phase']}
                              for a in reversed(state['assignments']) if a['run'] is not None]
@@ -551,6 +602,7 @@ class Workbench:
 
     def answer(self, task_id, body, *, source='board'):
         task = self.store.get(task_id)
+        require_v1_control(task)
         if task.get('workflow') == 'goal':
             self.goal_engine().approve(task_id,body.get('version'),body.get('card'),source,body.get('choice'))
             return {'recorded':True}
@@ -587,7 +639,9 @@ class Workbench:
         return {'recorded': True, 'duplicate': False}
 
     def pause(self, task_id, *, source='board', binding=None):
-        if self.store.get(task_id).get('workflow') == 'goal':
+        task = self.store.get(task_id)
+        require_v1_control(task)
+        if task.get('workflow') == 'goal':
             task = self.goal_engine().stop(task_id,source=source,binding=binding)
             return {'requested':True,'stopping':task['status']=='stopping','retry_cancel':[]}
         def mark_paused(task):
@@ -609,7 +663,9 @@ class Workbench:
         return {'requested': True, 'stopping': bool(active), 'retry_cancel': failures}
 
     def resume(self, task_id, body, *, source='board'):
-        if self.store.get(task_id).get('workflow') == 'goal':
+        task = self.store.get(task_id)
+        require_v1_control(task)
+        if task.get('workflow') == 'goal':
             task = self.goal_engine().resume(task_id,body.get('request_id'),body.get('stop_generation'),source=source)
             return {'queued':task['status']=='queued','awaiting_approval':task['status']=='awaiting_approval'}
         with self.store.lease(task_id):
