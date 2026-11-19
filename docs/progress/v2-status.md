@@ -1,5 +1,8 @@
 # V2 执行与验收记录
 
+2026-11-19 双端候选已恢复原王国封面，细化十个地标，并接入同单决定、调用与交付入口。新版的飞书客户端操作、两次修改超时和修正回执均有独立记录。[本轮核验](../testing/roaming-workbench.md)
+
+
 2026-11-19，受控试点候选。正式发布以仓库维护者的合并和部署决定为准。[私有 PR #4](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/4)
 
 | 范围 | 实际结果 | 证据入口 |

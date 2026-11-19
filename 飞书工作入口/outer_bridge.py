@@ -39,6 +39,11 @@ def mirror_notifications(bridge):
             continue
         if delivery.get('ticket_id'):
             card=call(bridge,'card',ticket_id=delivery['ticket_id'])
+            if delivery.get('error') or delivery.get('action')=='ESCALATE':
+                reason=str(delivery.get('error') or '需要人工复核')[:600]
+                binding=card['binding']
+                card={'title':'本次请求需要处理','body':f"本次请求未完成。{reason}\n工单 {binding['ticket_id']} · 当前目标 v{binding['goal_revision']} · 验收 v{binding['acceptance_revision']}。请打开现行工单卡，核对后重新提交。",
+                      'binding':binding,'actions':[['outer_status','打开现行工单卡']]}
         elif delivery.get('choices'):
             choices=delivery['choices']
             card={'body':'请选择这条需求对应的工单。','binding':{'event_id':delivery['event_id']},
@@ -50,13 +55,21 @@ def mirror_notifications(bridge):
                   'binding':{},'actions':[]}
         bridge.queue_prompt(key,'outer',json.dumps(card,ensure_ascii=False),card['body'])
 
-def directory(bridge,event):
-    drafts=call(bridge,'directory')
-    if not drafts:return '当前没有目标工单。可以直接发送需求。'
-    actions=[['outer_open_'+str(i),row['id'][-8:]+' · '+row['status']] for i,row in enumerate(drafts)]
-    card={'body':'选择要查看的目标工单。','binding':{'directory':[row['id'] for row in drafts]},'actions':actions}
+def queue_card(bridge,event,card):
     bridge.queue_prompt('reply-'+event['message_id'],'outer',json.dumps(card,ensure_ascii=False),card['body'])
     return card['body']
+
+def directory(bridge,event,page=0):
+    drafts=call(bridge,'directory')
+    if not drafts:return '当前没有目标工单。可以直接发送需求。'
+    page=max(0,min(page,(len(drafts)-1)//6))
+    visible=drafts[page*6:(page+1)*6]
+    actions=[['outer_open_'+str(i),row.get('title','目标工单')[:22]+' · '+row['status']+' · '+row['id'][-6:]]
+             for i,row in enumerate(visible)]
+    if page:actions.append(['outer_back','上一页'])
+    if (page+1)*6<len(drafts):actions.append(['outer_next','下一页'])
+    return queue_card(bridge,event,{'title':'我的工单','body':'选择工单查看进度、修改要求或处理决定。',
+        'binding':{'directory':[row['id'] for row in visible],'page':page},'actions':actions})
 
 def parent_card(bridge, event):
     parent=event.get('reply_to')
@@ -71,6 +84,8 @@ def respond(bridge,event,card):
     action=event.get('action') if event.get('message_type')=='wb_click' else None
     thread=event['reply_to']
     if 'directory' in binding:
+        if action in ('outer_back','outer_next') and action in dict(card['actions']):
+            return directory(bridge,event,binding.get('page',0)+(1 if action=='outer_next' else -1))
         if not action or not re.fullmatch(r'outer_open_[0-7]',action):return '请使用原卡选择工单。'
         idx=int(action.rsplit('_',1)[1])
         if idx>=len(binding['directory']):return '工单选择已失效。'
@@ -102,7 +117,24 @@ def respond(bridge,event,card):
         call(bridge,action.removeprefix('outer_'),ticket_id=ticket,revision=binding['revision'],
              goal_revision=binding['goal_revision'],acceptance_revision=binding['acceptance_revision'],
              request_id=event['message_id'],thread=thread)
-        return '决定已记录。'
+        updated=call(bridge,'card',ticket_id=ticket)
+        queue_card(bridge,event,updated)
+        return '已记录'+dict(card['actions'])[action]+'。'
+    if action == 'outer_edit' and action in dict(card['actions']):
+        choices=binding.get('requirements') or []
+        return queue_card(bridge,event,{'title':'修改当前工单','body':'回复这张卡可补充要求。要替换某项已有要求，请先选择它，再回复新的内容。','binding':binding,
+            'actions':[['outer_replace_'+str(i),row['label'][:38]] for i,row in enumerate(choices[:6])]+
+                      ([['outer_more_6','更多要求']] if len(choices)>6 else [])+[['outer_status','看进度']]})
+    if action and action in dict(card['actions']) and action.startswith('outer_more_'):
+        start=int(action.rsplit('_',1)[1])
+        choices=binding['requirements']
+        actions=[['outer_replace_'+str(i),choices[i]['label'][:38]] for i in range(start,min(start+6,len(choices)))]
+        if start+6<len(choices):actions.append(['outer_more_'+str(start+6),'更多要求'])
+        return queue_card(bridge,event,{'title':'选择要替换的要求','body':'点选后回复新要求。','binding':binding,'actions':actions})
+    if action and action in dict(card['actions']) and action.startswith('outer_replace_'):
+        item=binding['requirements'][int(action.rsplit('_',1)[1])]
+        return queue_card(bridge,event,{'title':'替换工单要求','body':'原要求：'+item['label']+'。回复本卡提交替代文字，将重新核对契约。',
+            'binding':{**binding,'replace_requirement_ids':[item['id']]},'actions':[['outer_status','看进度']]})
     if action is not None:return '操作已失效。'
     return submit(bridge,event,event['content'],ticket_id=ticket,revision=binding['revision'],
-                  question_id=binding.get('question_id'),thread=thread)
+                  question_id=binding.get('question_id'),replace_requirement_ids=binding.get('replace_requirement_ids'),thread=thread)

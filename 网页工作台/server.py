@@ -20,6 +20,12 @@ if LEGACY_BOARD:
     from legacy_snapshot import snapshot
 
 
+KINGDOM_KEYS = ('cap','cascade','sand','lake','wooded','metro','snow','seaside','luncheon','bowser')
+ART_NAMES = {'world.png','ship.png','mario.png','power-moon.png','red-cappy.png'}
+ART_NAMES.update(k+'-person.png' for k in KINGDOM_KEYS)
+ART_NAMES.update(k+'-scene.'+('png' if k in ('metro','snow','luncheon') else 'jpg') for k in KINGDOM_KEYS)
+
+
 class Handler(BaseHTTPRequestHandler):
     def local(self):
         return self.headers.get('Host') in {
@@ -135,18 +141,29 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError, sqlite3.Error, KeyError):
                 self.respond(b'{"error":"Local records unavailable"}', 'application/json', 503)
             return
-        files = {'/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js', '/assets/research-kingdom.png': 'assets/research-kingdom.png'}
-        files['/outer.js']='outer.js'
-        files['/intake_dialog.js']='intake_dialog.js'
-        if LEGACY_BOARD:files['/snapshot.json']='snapshot.json'
-        for name in ('odyssey.css', 'kingdoms.js', 'journey.js', 'task_presentation.js', 'tasks.js', 'tasks.css', 'world.js', 'world.css', 'globe.js', 'assets/odyssey-world-map.png', 'vendor/three.module.js', 'vendor/three.core.js', 'vendor/OrbitControls.js'):
-            files['/' + name] = name
-        if re.fullmatch(r'/assets/odyssey/[a-z0-9-]+\.(png|jpg)', route):
-            files[route] = route.lstrip('/')
-        if route not in files:
+        params = parse_qs(urlsplit(self.path).query)
+        cover = route in ('/', '/index.html') and not ('goal' in params or 'task' in params)
+        pack = getattr(self.server, 'odyssey_assets', None)
+        if cover:
+            body = (ROOT / 'cover.html').read_bytes()
+            if pack:
+                body = body.replace(b'<html lang="zh-CN">', b'<html lang="zh-CN" data-local-art="on">', 1)
+            return self.respond(body, 'text/html; charset=utf-8')
+        files = {path: 'index.html' for path in ('/', '/index.html', '/workbench')}
+        for name in ('style.css','app.js','outer.js','intake_dialog.js','cover.css','cover.js',
+                     'world.css','odyssey.css','kingdoms.js','globe.js','kingdom_relief.js','travel_art.js',
+                     'vendor/three.module.js','vendor/three.core.js','task_presentation.js','journey.js'):
+            files['/'+name] = name
+        if route in files:
+            file = ROOT / files[route]
+        elif pack and route.startswith('/assets/odyssey/') and route[16:] in ART_NAMES:
+            file = pack / route[16:]
+            if file.is_symlink():
+                self.send_error(404)
+                return
+        else:
             self.send_error(404)
             return
-        file = ROOT / files[route]
         if not file.is_file():
             self.send_error(404)
             return
@@ -194,7 +211,10 @@ if __name__ == '__main__':
     parser.add_argument('--goal-contract',type=Path, help='目标试点默认验收契约 JSON')
     parser.add_argument('--goal-team',action='store_true', help='启用隔离多工作包路线')
     parser.add_argument('--outer-intelligence',action='store_true',help='在隔离目标试点启用版本化智能接单')
+    parser.add_argument('--odyssey-assets',type=Path,default=(ROOT/'assets/odyssey' if (ROOT/'assets/odyssey').is_dir() else None),help='本机原版画册目录，仅开放已知地图素材')
     args = parser.parse_args()
+    if args.odyssey_assets and not all((args.odyssey_assets/name).is_file() and not (args.odyssey_assets/name).is_symlink() for name in ART_NAMES):
+        parser.error('画册不完整或包含链接，请指定原版素材目录')
     if args.outer_intelligence and not (args.goal_pilot and args.runtime and args.hub_home):
         parser.error('智能接单需要显式指定目标试点、runtime 和 hub-home')
     if args.outer_intelligence and (args.goal_contract or args.goal_team):
@@ -225,6 +245,7 @@ if __name__ == '__main__':
                                     Hub(args.hub_home) if args.hub_home else None,
                                     goal_enabled=args.goal_pilot, goal_contract=goal_contract,goal_team=args.goal_team,
                                     outer_enabled=args.outer_intelligence)
+        server.odyssey_assets = args.odyssey_assets.resolve() if args.odyssey_assets else None
         server.task_actions = threading.Lock()
         if args.feishu_socket:
             from private_intake import serve_private

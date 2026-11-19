@@ -59,6 +59,13 @@ CREATE TABLE IF NOT EXISTS outer_deliveries(
 """
 
 
+# 这次输入的处理结果与工单上已生效的契约分别展示。
+_LAST_REQUEST_ERROR = """SELECT CASE WHEN e.state IN ('NEEDS_ATTENTION','REJECTED')
+    THEN COALESCE(json_extract(e.result,'$.error'),'需要人工核对') END
+    FROM outer_events e WHERE e.ticket=d.id AND json_extract(e.body,'$.type')='message'
+    ORDER BY e.received_at DESC,e.rowid DESC LIMIT 1"""
+
+
 def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
 
@@ -307,6 +314,8 @@ class OuterIntake:
         actor, tenant = self._owner(actor_id, tenant)
         with self.store.connect() as db:
             ticket = self._ticket(db, ticket_id, actor, tenant)
+            ticket['last_request_error'] = db.execute(
+                f'SELECT ({_LAST_REQUEST_ERROR}) FROM outer_tickets d WHERE d.id=?',(ticket_id,)).fetchone()[0]
             if ticket['task_id']:
                 ticket['execution'] = omit_call_payloads(self.store.get(ticket['task_id']))
             return ticket
@@ -315,10 +324,10 @@ class OuterIntake:
         actor, tenant = self._owner(actor_id, tenant)
         with self.store.connect() as db:
             rows = db.execute(
-                "SELECT d.body, json_extract(t.body,'$.status') FROM outer_tickets d "
+                f"SELECT d.body, json_extract(t.body,'$.status'),json_extract(t.body,'$.goal_execution.outcome'),({_LAST_REQUEST_ERROR}) FROM outer_tickets d "
                 "LEFT JOIN tasks t ON t.id=d.id WHERE d.actor=? AND d.tenant=? "
                 "ORDER BY d.updated_at DESC LIMIT 100", (actor,tenant)).fetchall()
-        return [dict(json.loads(row[0]),execution_status=row[1]) for row in rows]
+        return [dict(json.loads(row[0]),execution_status=row[1],outcome=row[2],last_request_error=row[3]) for row in rows]
 
     def calls(self, ticket_id, actor_id, *, tenant='default', call_id=None):
         from .outer_history import ticket_calls
@@ -550,7 +559,10 @@ class OuterIntake:
                 if event['attempt'] < _MAX_ATTEMPTS and response['error'] not in ('context_budget', 'invalid_config'):
                     db.execute("UPDATE outer_events SET state='PENDING',lease=NULL,lease_until=NULL WHERE id=?", (event_id,))
                 else:
-                    self._needs_attention(db, event, ticket, '外层智能判断失败，需人工处理')
+                    reason={'timeout':'模型调用超时','process_timeout':'模型进程超时','context_budget':'输入超出预算',
+                            'invalid_config':'模型配置无效','invalid_output':'模型返回格式无效',
+                            'output_budget':'模型输出超出预算'}.get(response['error'],'外层模型调用失败')
+                    self._needs_attention(db,event,ticket,f"第 {event['attempt']} 次判断失败（{reason}），需人工处理")
             else:
                 try:
                     db.execute('SAVEPOINT outer_proposal')
@@ -912,6 +924,8 @@ class OuterIntake:
         from .goal_engine import active_assignments, decision
         row = db.execute('SELECT body FROM tasks WHERE id=?', (ticket['id'],)).fetchone()
         task = json.loads(row[0])
+        if task['status'] in ('completed','rejected') and ticket.get('status') == 'AUTHORIZED':
+            raise Problem('这版执行已结束，请刷新工单', 409)
         state = task['goal_execution']
         active = active_assignments(task)
         if operation == 'resume':

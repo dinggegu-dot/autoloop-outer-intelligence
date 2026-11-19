@@ -41,6 +41,7 @@ function render(task,tasks){
       await request(base+'/answer',{card:card.id,version:card.version,choice});notice('决定已送达，等待续办。');
     })));
   }
+  if(!task.goal_execution?.outer){
   detail.append(node('h3','跨端接续'),node('p','来源：'+(task.source==='feishu'?'本人飞书私聊':'看板')));
   for(const note of task.inbox_notes)detail.append(node('p',note.at+' · '+(note.source==='board'?'看板':'本人飞书')+' · '+note.body));
   detail.append(button('补充资料或纠正归属',async()=>{
@@ -56,6 +57,7 @@ function render(task,tasks){
   if(['queued','planning','executing','reviewing','awaiting_approval'].includes(task.status))detail.append(button('暂停此任务',async()=>{
     if(confirm('暂停这张工单？')){await request(base+'/pause',{});notice('已请求暂停，请核对实际状态。');}
   }));
+  }
   detail.append(node('h3','成果与验收'),node('p',task.review?.summary||'尚无验收结论'));
   for(const path of task.artifacts){const link=node('a',path);link.href=base+'/artifact?path='+encodeURIComponent(path)+'&version='+task.version;detail.append(link,node('br',''));}
   if(task.events?.length){
@@ -100,8 +102,9 @@ let outerMounted=false;
 async function start(){try{csrf=(await request('/api/session')).csrf;
   if(!outerMounted && (await request('/api/outer')).enabled){
     const {mountOuter}=await import('./outer.js');
-    mountOuter(request,notice,async id=>{selected=id;await refresh();detail.scrollIntoView();});outerMounted=true;
+    mountOuter(request,notice,async id=>{selected=id;byId('execution').open=true;await refresh();detail.scrollIntoView();});outerMounted=true;
   }
+  if(!outerMounted&&new URLSearchParams(location.search).has("new")){form.elements.name.focus();}
   await refresh();}catch(error){notice(error.message);}}
 byId('refresh').onclick=start;start();
 setInterval(()=>{if(!busy&&!document.hidden&&csrf)refresh();},5000);

@@ -93,6 +93,86 @@ class CrossChannelTest(unittest.TestCase):
         self.assertIsNotNone(self.bridge.store.db.execute(
             'SELECT task FROM watches WHERE task=?',(d['id'],)).fetchone())
 
+    def test_cover_and_explicit_ticket_entry_points(self):
+        for route,marker in [('/',b'kingdom-screen'),('/workbench',b'ticket-list'),
+                             ('/?goal=example',b'ticket-list'),('/?task=example',b'ticket-list'),
+                             ('/globe.js',b'buildGlobe'),('/kingdom_relief.js',b'InstancedMesh')]:
+            with self.subTest(route=route), self.client.open(self.base+route) as response:
+                self.assertIn(marker,response.read())
+        with self.assertRaises(HTTPError) as denied:
+            self.client.open(self.base+'/assets/odyssey/sources.json')
+        self.assertEqual(denied.exception.code,404)
+
+    def test_directory_pagination_binds_displayed_ticket(self):
+        from outer_bridge import directory,respond
+        bridge=Mock()
+        rows=[{'id':'ticket-'+str(i),'title':'同名目标','status':'待批准'} for i in range(8)]
+        bridge.board.call.side_effect=lambda api,command,payload: rows if command=='directory' else {
+            'binding':{'ticket_id':payload['ticket_id']},'actions':[],'body':'当前要求'}
+        event={'message_id':'om_list'}
+        directory(bridge,event)
+        first=json.loads(bridge.queue_prompt.call_args.args[2])
+        self.assertEqual(len(first['binding']['directory']),6)
+        self.assertIn('outer_next',dict(first['actions']))
+        event.update(message_type='wb_click',action='outer_next',reply_to='om_parent')
+        respond(bridge,event,first)
+        page=json.loads(bridge.queue_prompt.call_args.args[2])
+        rows.reverse()
+        respond(bridge,{**event,'action':'outer_open_1'},page)
+        self.assertEqual(bridge.board.call.call_args.kwargs['payload']['ticket_id'],'ticket-7')
+
+    def test_new_cards_and_terminal_permissions(self):
+        from outer_channels import card,journey
+        ticket={'id':'wb-'+'a'*32,'revision':7,'goal_revision':3,'acceptance_revision':2,
+                'status':'AUTHORIZED','execution_status':'completed','task_id':'wb-'+'a'*32}
+        view=journey(ticket)
+        self.assertEqual(view['station'],'delivery')
+        self.assertFalse(any(view[k] for k in ('approve','pause','resume','stop')))
+        self.assertNotIn('outer_pause',dict(card(ticket)['actions']))
+        stopping={**ticket,'status':'PAUSED','execution_status':'stopping','status_before_pause':'AUTHORIZED'}
+        self.assertFalse(journey(stopping)['resume'])
+        self.assertFalse(journey(stopping)['stop'])
+        ready={**stopping,'execution_status':'paused','status_before_pause':'AWAITING_APPROVAL',
+               'approval_terms':{'budget_seconds':600}}
+        self.assertIn('outer_approve',dict(card(ready)['actions']))
+        ready['goal_contract']={'goal_statement':'长目标'*2000}
+        self.assertNotIn('outer_approve',dict(card(ready)['actions']))
+        self.assertIn(ready['id'],card(ready)['body'])
+
+    def test_failed_edit_on_delivered_ticket_displays_event_error(self):
+        from outer_bridge import mirror_notifications
+        binding={'ticket_id':'wb-'+'f'*32,'revision':6,'goal_revision':2,'acceptance_revision':2}
+        def call(api,command,payload):
+            if command=='notifications':return [{'id':'failed-edit','ticket_id':binding['ticket_id'],'error':'timeout'}]
+            if command=='card':return {'title':'已完成','body':'旧版已交付','binding':binding,'actions':[['outer_edit','修改要求']]}
+        self.bridge.board=Mock()
+        self.bridge.board.call.side_effect=call
+        mirror_notifications(self.bridge)
+        saved=self.bridge.store.db.execute('SELECT context FROM click_prompts WHERE outbox_id=?',('outer-failed-edit',)).fetchone()
+        card=json.loads(saved[0])
+        self.assertIn('timeout',card['body'])
+        self.assertIn('当前目标 v2',card['body'])
+        self.assertEqual(card['binding'],binding)
+        self.assertEqual(dict(card['actions']),{'outer_status':'打开现行工单卡'})
+
+    def test_execution_milestone_retains_outer_card_and_cancels_stale_notice(self):
+        task='wb-'+'d'*32
+        binding={'ticket_id':task,'revision':6,'goal_revision':2,'acceptance_revision':2}
+        current={'known':True,'outer':True,'key':'1:completed','body':'旧版提醒'}
+        def project(api,**kwargs):
+            if api=='milestone':return current
+            return {'body':'成果已归档','title':'工单已完成','binding':binding,'actions':[['outer_status','看进度']]}
+        with self.bridge.store.db:self.bridge.store.db.execute('INSERT INTO watches(task,generation) VALUES(?,0)',(task,))
+        self.mobile.call=Mock(side_effect=project)
+        self.bridge.monitor_watches()
+        row=self.bridge.store.db.execute("SELECT id,body FROM outbox WHERE id LIKE 'watch-%'").fetchone()
+        rendered,actions=self.bridge.button_card(row['id'],row['body'])
+        self.assertEqual(actions,['outer_status'])
+        self.assertEqual(rendered['header']['title']['content'],'工单已完成')
+        current['key']=None
+        self.bridge.monitor_watches()
+        self.assertEqual(self.bridge.store.db.execute('SELECT state FROM outbox WHERE id=?',(row['id'],)).fetchone()[0],'cancelled')
+
     def test_unsigned_mobile_and_legacy_route_declined(self):
         client=LocalBoard(self.mobile.path,b'x'*32)
         with self.assertRaises(RuntimeError):

@@ -21,7 +21,7 @@ def dispatch(store, item, workbench=None):
         if action=='answer':return answer(workbench,item['task'],item['binding'],item['choice'])
         if action=='control':return control(workbench,item['task'],item['binding'],item['event'])
         task=selected(workbench,item['task'])
-        if action=='milestone':return milestone(task)
+        if action=='milestone':return dict(milestone(task),outer=bool((task.get('goal_execution') or {}).get('outer')))
         if action=='controls':return control_card(task)
         return proposal(task) if action=='proposal' else task_brief(task).as_private_reply()
     if action == 'intake':
@@ -77,9 +77,10 @@ def serve_private(path,store,workbench=None,action_lock=None,decision_key=None):
                     payload=item['payload']
                     service=workbench.outer()
                     if command=='directory':
-                        from outer_channels import STATUS, EXECUTION_STATUS
-                        data=[{'id':entry['id'],'status':EXECUTION_STATUS.get(entry['execution_status'])
-                               or STATUS.get(entry['status'],entry['status'])} for entry in service.list('owner')[:8]]
+                        from outer_channels import journey
+                        data=[{'id':entry['id'],'status':journey(entry)['label'],
+                               'title':(entry.get('goal_contract') or {}).get('goal_statement') or entry.get('summary') or '目标工单'}
+                              for entry in service.list('owner')]
                     elif command=='notifications':
                         data=service.pending_outbox(limit=10,source='feishu')
                     elif command=='card':

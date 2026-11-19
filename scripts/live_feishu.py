@@ -40,8 +40,12 @@ class PilotBridge(Bridge):
     def handle(self, event):
         content = event['content']
         if content.startswith(prefix) and not event.get('reply_to'):
+            request=content[len(prefix):].lstrip(' ：:')
+            if request in ('/tasks','我的工单'):
+                from outer_bridge import directory
+                return directory(self,event)
             try:
-                return submit(self, event, content[len(prefix):].lstrip(' ：:'))
+                return submit(self,event,request)
             except MobileProblem as error:
                 return str(error)
         return super().handle(event)
@@ -49,7 +53,7 @@ class PilotBridge(Bridge):
 bridge = PilotBridge({
     'owner': owner, 'lark': settings['lark'], 'data_dir': str(stage / 'bridge'),
     'workbench_socket': str(stage / 'board.sock'), 'workbench_decision_key': str(stage / 'decision'),
-    'workbench_only': True, 'outer_intelligence': True,
+    'workbench_only': True, 'outer_intelligence': True, 'delivery_namespace':prefix,
 })
 transport = Lark(bridge.s)
 running = True

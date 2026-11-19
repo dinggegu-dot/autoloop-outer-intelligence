@@ -1,0 +1,64 @@
+{
+  "client_test": {
+    "directory_button": "actual Feishu client click opened the existing synthetic ticket",
+    "edit_button": "actual Feishu client click opened requirement replacement view",
+    "replace_button": "actual Feishu client click opened requirement confirmation card",
+    "card_reply": "owner identity used by the agent in the Feishu desktop client, anchored to replacement card",
+    "model_result": {
+      "state": "NEEDS_ATTENTION",
+      "attempts": [
+        [
+          "intake_assessor",
+          "failed",
+          "timeout"
+        ],
+        [
+          "intake_assessor",
+          "failed",
+          "timeout"
+        ]
+      ],
+      "requirement_ids_count": 1
+    },
+    "failure_notification": "old completed card without the current change failure was actually sent",
+    "final_ticket_revisions": {
+      "revision": 6,
+      "goal_revision": 2,
+      "acceptance_revision": 2,
+      "mandate_revision": 1
+    },
+    "approved_again": false
+  },
+  "local_simulation": {
+    "scenario": "simulate waiting for approval on a synthetic draft copy using previous verified test contract",
+    "sent_to_feishu": false,
+    "stored_in_engine": false,
+    "rendered_wire_fields": {
+      "ticket_goal_and_acceptance_versions": true,
+      "read_workspace": true,
+      "write_workspace": true,
+      "local_tests": true,
+      "no_network": true,
+      "no_payment": true,
+      "no_outside_write": true,
+      "time_budget": true,
+      "model": true,
+      "verifier": true,
+      "input_0": true,
+      "input_100": true,
+      "approval_bound_to_card": true
+    }
+  },
+  "isolation": "Existing production listener projected only test entries. Namespaced outgoing idempotency keys to avoid another candidate/production card collision.",
+  "correction_delivery": {
+    "server_acknowledgement": true,
+    "client_read_verified": false,
+    "format": "plain_text_no_buttons",
+    "confirmed_failure": "two actual model timeouts",
+    "goal_revision": 2,
+    "acceptance_revision": 2,
+    "engine_mutations": 0,
+    "new_model_calls": 0,
+    "outbound_message_count": 1
+  }
+}

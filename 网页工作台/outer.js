@@ -1,8 +1,9 @@
+const stations={decision:'待我决定',flight:'进行中',delivery:'已交付',dock:'停靠中'};
 // 行节点按调用 ID 复用，轮询不会收起已展开的回执。
 function callHistory(article, call) {
   const panel = document.createElement('section');
   panel.id = 'outer-history';
-  article.before(panel);
+  article.after(panel);
   const element = (tag, text) => Object.assign(document.createElement(tag), {textContent:text});
   const heading = element('h3', '外层模型调用');
   const status = element('p', '');
@@ -82,187 +83,211 @@ function callHistory(article, call) {
   return {select,refresh};
 }
 
-export function mountOuter(request, notice, openTask) {
-  const area = document.getElementById('outer');
-  const form = area.querySelector('form');
-  const selector = area.querySelector('select');
-  const detail = area.querySelector('article');
-  const historyPanel = callHistory(detail, call);
-  const statusNames = {DRAFT:'草案', ASSESSING:'正在整理', AWAITING_CLARIFICATION:'等待澄清',
-    AWAITING_APPROVAL:'等待批准', AUTHORIZED:'已授权', PAUSED:'已暂停', STOPPED:'已停止',
-    NEEDS_ATTENTION:'需要处理', VERIFICATION_GAP:'需要补充验收方法'};
-  const executionStates={created:'已创建',queued:'等待派工',planning:'正在规划',executing:'正在执行',
-    reviewing:'正在验收',stopping:'正在停办',blocked:'执行受阻',budget_exhausted:'预算已用完',
-    completed:'验收完成',paused:'已暂停',rejected:'已拒绝'};
-  let chosen = new URLSearchParams(location.search).get('goal') || '';
-  let event = '';
-  let pending = '';
-  let active = false;
-  let revisionKey = '';
-  let generation = 0;
-  function element(tag, text) {
-    const node = document.createElement(tag);
-    node.textContent = text;
-    return node;
+export function mountOuter(request,notice,openTask){
+  const by=id=>document.getElementById(id);
+  const element=(tag,text='')=>Object.assign(document.createElement(tag),{textContent:text});
+  const call=(cmd,body)=>request('/api/outer/'+cmd,body);
+  const area=by('outer'),detail=by('mission'),composer=by('composer'),form=composer.querySelector('form');
+  const historyPanel=callHistory(detail,call);
+  const title=d=>d.goal_contract?.goal_statement || d.summary || d.id;
+  const query=new URLSearchParams(location.search);
+  let chosen=query.get('goal') || '', filter=Object.hasOwn(stations,query.get('station'))?query.get('station'):'', rows=[], event='', active=false, generation=0, key='', listKey='', pending='';
+  const oldTask=query.get('task');
+  function updateUrl(){
+    const url=new URL(location.href);
+    if(filter)url.searchParams.set('station',filter);else url.searchParams.delete('station');
+    if(chosen)url.searchParams.set('goal',chosen);else url.searchParams.delete('goal');
+    if(url.hash==='#outer-history')url.hash='';
+    history.replaceState(null,'',url);
   }
-  function action(label, run) {
-    const button = element('button', label);
-    button.type = 'button';
-    button.onclick = async () => {
-      if (active) return;
-      active = true;
-      try { await run(); }
-      catch (err) { notice(err.message); }
-      finally { active = false; await refresh(); }
-    };
-    detail.append(button);
+  function select(id){
+    if(active)return;
+    chosen=id;event='';key='';generation++;
+    historyPanel.select(id);detail.replaceChildren();by('ticket-ref').textContent='';
+    updateUrl();drawList();refresh();
   }
-  async function call(cmd, body) { return request('/api/outer/' + cmd, body); }
-  function showRecord(title, value) {
-    if (!value || (Array.isArray(value) && !value.length)) return;
-    detail.append(element('h4',title));
-    detail.append(element('pre', typeof value === 'string' ? value : JSON.stringify(value,null,2)));
+  function changeFilter(id){
+    if(active)return;
+    filter=id;const visible=rows.filter(r=>!id||r.journey.station===id);
+    select(visible.some(r=>r.id===chosen)?chosen:(visible[0]?.id || ''));
   }
-  function showDraft(d) {
-    const key = [d.id,d.revision,d.status,d.task_id,d.execution?.status,d.execution?.step].join('/');
-    if (key === revisionKey) return;
-    revisionKey = key;
-    detail.replaceChildren(element('h3',statusNames[d.status] || d.status),
-      element('p',d.id+' · 工单 v'+d.revision+' · 目标 v'+d.goal_revision+' · 验收 v'+d.acceptance_revision));
-    const goal=d.goal_contract || {};
-    if (goal.goal_statement) detail.append(element('p',goal.goal_statement));
-    const groups={deliverables:'交付物',required_capabilities:'必需能力',nonfunctional_requirements:'质量要求',
-      constraints:'限制',assumptions:'假设',out_of_scope:'范围外'};
+  function drawList(){
+    by('all-stations').setAttribute('aria-pressed',String(!filter));
+    for(const b of by('stations').children){
+      const station=b.dataset.station;
+      b.textContent=stations[station]+' · '+rows.filter(r=>r.journey.station===station).length;
+      b.setAttribute('aria-pressed',String(filter===station));
+    }
+    by('map-link').href=chosen?'/?trip='+encodeURIComponent(chosen):'/';
+    const visible=rows.filter(r=>!filter || r.journey.station===filter);
+    const signature=JSON.stringify([chosen,filter,visible.map(r=>[r.id,title(r),r.journey.label,r.revision])]);
+    if(signature===listKey)return;
+    listKey=signature;by('count').textContent=visible.length+' 张';
+    const list=by('ticket-list');list.replaceChildren();
+    if(filter&&chosen&&rows.some(r=>r.id===chosen&&r.journey.station!==filter))list.append(element('p','当前详情已转入其他状态。'));
+    if(!visible.length)list.append(element('p',filter?'此状态暂无工单。':'发布一个目标，开始第一段航程。'));
+    for(const r of visible){
+      const b=element('button');b.className='ticket';b.setAttribute('aria-current',String(r.id===chosen));
+      b.append(element('small',r.journey.label+' · '+r.id.slice(-6)),element('strong',title(r)));
+      b.onclick=()=>{select(r.id);if(matchMedia('(max-width:720px)').matches)detail.scrollIntoView();};list.append(b);
+    }
+  }
+  function fold(parent,title,open=false){
+    const box=element('details');box.open=open;box.append(element('summary',title));parent.append(box);return box;
+  }
+  function show(parent,label,value){
+    if(value==null || value==='' || Array.isArray(value)&&!value.length)return;
+    parent.append(element('h4',label),element('pre',typeof value==='string'?value:JSON.stringify(value,null,2)));
+  }
+  function action(parent,label,run,primary=false){
+    const button=element('button',label);button.type='button';if(primary)button.className='primary';
+    button.onclick=async()=>{
+      if(active)return;active=true;generation++;button.disabled=true;
+      try{await run();}catch(err){notice(err.message);}
+      finally{active=false;button.disabled=false;await refresh();}
+    };parent.append(button);
+  }
+  function showDraft(d){
+    const e=d.execution, flow=e?.goal_execution, decisions=flow?.decisions || [];
+    const signature=JSON.stringify([d.id,d.revision,d.status,d.journey,e?.status,e?.step,e?.error,decisions.length]);
+    if(signature===key)return;
+    const oldInput=detail.querySelector('textarea'),keep=oldInput?.dataset.binding===d.id+'/'+d.revision;
+    const saved=keep?oldInput.value:'';
+    const checked=new Set(keep?[...detail.querySelectorAll('input:checked')].map(i=>i.value):[]);
+    key=signature;detail.replaceChildren();by('ticket-ref').textContent=d.id.slice(-8)+' / v'+d.revision;
+    const v=d.journey,g=d.goal_contract||{},contract=d.acceptance_contract||{};
+    const binding={ticket_id:d.id,revision:d.revision,goal_revision:d.goal_revision,acceptance_revision:d.acceptance_revision};
+    const command=(name,extra={})=>call(name,{...binding,...extra,request_id:crypto.randomUUID()});
+    const heading=element('h3',title(d));heading.className='ticket-title';detail.append(heading);
+    const meta=element('p',v.label+' · 目标 v'+d.goal_revision+' · 验收 v'+d.acceptance_revision);
+    meta.className='meta';detail.append(meta);
+    const decision=element('section');decision.id='decision';decision.className='decision';
+    decision.append(element('h4',v.station==='decision'?'需要你的决定':v.label),element('p',v.instruction));detail.append(decision);
+    if(d.question?.answer_status!=='answered' && d.question?.reason)decision.append(element('p',d.question.reason));
+    if(e?.error && v.instruction!==e.error)show(decision,'执行反馈',e.error);
+    show(decision,'验收缺口',contract.verification_gaps);
+    show(decision,'人工验收',contract.human_review_requirements);
+    const proposal=[...decisions].reverse().find(x=>x.kind==='coordinated')?.proposal;
+    if(proposal && v.station==='decision')show(decision,'最近一次协调建议',proposal);
+    const spec=fold(detail,'目标、验收条件与授权范围',v.approve);spec.id='scope';
+    const fields={deliverables:'交付物',required_capabilities:'必需能力',nonfunctional_requirements:'质量要求',constraints:'限制',assumptions:'假设',out_of_scope:'范围外'};
     const replaceable=[];
-    for (const [field,title] of Object.entries(groups)) {
-      const rows=goal[field] || [];
-      if (!rows.length) continue;
-      detail.append(element('h4',title));
-      const list=element('ul','');
-      for (const row of rows) {
-        const source={USER_EXPLICIT:'用户原文',USER_CONFIRMED:'用户确认',MODEL_PROPOSED:'模型建议'};
-        list.append(element('li',row.description+' · '+(source[row.source] || row.source)));
-        if (row.source==='USER_EXPLICIT' || row.source==='USER_CONFIRMED') replaceable.push(row);
+    for(const [field,label] of Object.entries(fields)){
+      if(!g[field]?.length)continue;
+      spec.append(element('h4',label));const ul=element('ul');spec.append(ul);
+      for(const r of g[field]){
+        const source={USER_EXPLICIT:'用户原文',USER_CONFIRMED:'用户确认',CONTEXT_DERIVED:'上下文推断',MODEL_PROPOSED:'模型建议'};
+        ul.append(element('li',r.description+' · '+(source[r.source] || r.source)));
+        if(['USER_EXPLICIT','USER_CONFIRMED'].includes(r.source))replaceable.push(r);
       }
-      detail.append(list);
     }
-    const contract=d.acceptance_contract || {};
-    for (const criterion of contract.criteria || []) {
-      detail.append(element('h4',criterion.description));
-      showRecord(criterion.verifier_id+' v'+criterion.verifier_version,
-        {输入:criterion.test_spec,预期:criterion.expected_result});
-    }
-    showRecord('验收缺口',contract.verification_gaps);
-    showRecord('待人工验收',contract.human_review_requirements);
-    showRecord('权限与预算',d.approval_terms);
-    if (d.execution) {
-      const e=d.execution;
-      detail.append(element('h4',executionStates[e.status] || e.status));
-      if (e.artifacts?.length) detail.append(element('p','交付文件 · '+e.artifacts.join('、')));
-    }
-    showRecord('待处理',d.error || d.execution?.error);
-    const binding = {ticket_id:d.id, revision:d.revision, goal_revision:d.goal_revision,
-      acceptance_revision:d.acceptance_revision};
-    function command(name, extra={}) {return call(name,{...binding,...extra,request_id:crypto.randomUUID()});}
-    if (d.status === 'AWAITING_APPROVAL' && d.approval_terms) {
-      action('批准这版目标与验收',async()=>{
-        if (confirm('批准当前展示的目标、验收方法、权限与预算，并开始执行？')) {
-          await command('approve'); notice('授权已保存。');
-        }
-      });
-    }
-    if (!['STOPPED','PAUSED'].includes(d.status)) {
-      action('暂停此单',()=>command('pause'));
-      action('停止此单',async()=>{if (confirm('停止这张工单？')) await command('stop');});
-    }
-    if (d.status === 'PAUSED') action('继续此单',()=>command('resume'));
-    if (d.task_id) action('查看执行与交付',()=>openTask(d.task_id));
-    if (!['STOPPED','PAUSED'].includes(d.status)) {
-      const question=d.question?.answer_status==='answered' ? null : d.question;
-      const label=element('label',question?.question_text || '补充要求或申请修改范围');
-      const replacements=[];
-      if (!question && replaceable.length) {
-        const group=element('details','');
-        group.append(element('summary','替换已有要求'));
-        for (const row of replaceable) {
-          const option=element('label',row.description);
-          const input=document.createElement('input'); input.type='checkbox'; input.value=row.requirement_id;
-          option.prepend(input); group.append(option); replacements.push(input);
-        }
-        detail.append(group);
+    const criteria=element('div');criteria.id='criteria';spec.append(criteria);if(!contract.criteria?.length)criteria.append(element('p','本版验收条件尚待整理。'));
+    for(const c of contract.criteria||[])show(criteria,c.description,{验证器:c.verifier_id,版本:c.verifier_version,输入:c.test_spec,预期:c.expected_result});
+    const budget=element('div');budget.id='budget';spec.append(budget);show(budget,'权限与预算',d.approval_terms);if(!d.approval_terms)budget.append(element('p','当前尚无可批准的授权预算。'));
+    if(v.approve && d.approval_terms)action(spec,'批准本版目标与验收',async()=>{
+      if(confirm('批准上列目标、验收、权限与预算并开始执行？')){await command('approve');notice('本版授权已保存。');}
+    },true);
+    {
+      const plan=e?.plan?.steps || [], checks=flow?.validation?.checks || [];
+      const box=fold(detail,'执行进度与交付'+(plan.length?' · '+Math.min(e.step,plan.length)+' / '+plan.length:''),
+        v.station==='delivery'||v.station==='flight');box.id='progress';
+      if(plan.length){const steps=element('ol');box.append(steps);for(const p of plan)steps.append(element('li',(p.state==='completed'?'✓ ':'')+(p.title||p.objective)));}
+      if(!plan.length)box.append(element('p','尚无已登记的执行步骤。'));
+      const evidence=element('div');evidence.id='checks';box.append(evidence);
+      for(const c of checks)evidence.append(element('p',c.status+' · '+(c.description||c.id)+' · '+(c.detail||'')));
+      if(!checks.length)evidence.append(element('p','尚无逐项验收结果。'));
+      const artifacts=element('div');artifacts.id='artifacts';box.append(artifacts);
+      for(const path of e?.artifacts||[]){
+        const a=element('a','下载 '+path);a.href='/api/tasks/'+encodeURIComponent(e.id)+'/artifact?path='+encodeURIComponent(path)+'&version='+e.version;
+        artifacts.append(a,element('br'));
       }
-      const field=element('textarea','');
-      field.maxLength=6000; label.append(field); detail.append(label);
-      for (const option of question?.options || []) action(String(option),()=>{field.value=String(option);});
-      action(question?'提交澄清':'提交补充',async()=>{
-        if (!field.value.trim()) return notice('请先填写内容。');
-        const selected=replacements.filter(input=>input.checked).map(input=>input.value);
-        if (selected.length && !confirm('用本次说明替换选中的旧要求，并重新核对契约？')) return;
-        const response=await command('submit',{text:field.value.trim(),question_id:question?.question_id,
-          replace_requirement_ids:selected.length ? selected : undefined});
-        event=response.event_id; field.value=''; notice('已记录，等待核对。');
-      });
+      if(!e?.artifacts?.length)artifacts.append(element('p','尚无可下载的交付文件。'));
+      if(e)action(box,'查看完整执行时间线',()=>openTask(e.id));
     }
+    if(!['PAUSED','STOPPED'].includes(d.status)){
+      const q=d.question?.answer_status==='answered'?null:d.question;
+      const edits=fold(detail,q?'回复澄清':'补充或修改要求',Boolean(q)||d.status==='VERIFICATION_GAP'||v.station==='decision'&&!v.approve);
+      edits.id='revisions';const choices=[];
+      if(!q && replaceable.length){
+        const group=fold(edits,'选择要替换的原要求');
+        for(const r of replaceable){
+          const line=element('label',r.description),i=element('input');i.type='checkbox';i.value=r.requirement_id;
+          i.checked=checked.has(i.value);line.prepend(i);group.append(line);choices.push(i);
+        }
+      }
+      const field=element('textarea');field.maxLength=6000;field.value=saved;field.dataset.binding=d.id+'/'+d.revision;
+      const label=element('label',q?.question_text || '补充内容或新的要求');label.append(field);edits.append(label);
+      for(const option of q?.options || []){const b=element('button',String(option));b.onclick=()=>{field.value=String(option);field.focus();};edits.append(b);}
+      action(edits,q?'提交澄清':'提交当前工单修改',async()=>{
+        const selected=choices.filter(i=>i.checked).map(i=>i.value);
+        if(!field.value.trim()){field.focus();return notice('请先填写内容。');}
+        if(selected.length&&!confirm('替换所选要求并重新核对契约？'))return;
+        const res=await command('submit',{text:field.value.trim(),question_id:q?.question_id,replace_requirement_ids:selected.length?selected:undefined});
+        event=res.event_id;field.value='';notice('修改已登记。');
+      },true);
+    }
+    if(!by('revisions')){const msg=element('p','这张工单当前不可修改。');msg.id='revisions';detail.append(msg);}
+    if(v.pause)action(detail,'暂停此单',()=>command('pause'));
+    if(v.resume)action(detail,'继续此单',()=>command('resume'));
+    if(v.stop)action(detail,'停止此单',async()=>{if(confirm('停止这张工单？'))await command('stop');});
   }
-  async function refresh() {
-    if (active || area.hidden) return;
+  let initial=true, destination=location.hash.slice(1);
+  function focusSection(d){
+    if(!destination||destination==='outer-history')return;
+    const id=destination;destination='';
+    if(id==='timeline'&&d.execution){openTask(d.execution.id);return;}
+    const target=by(id)||(id==='timeline'?by('progress'):null)||detail;
+    if(target instanceof HTMLDetailsElement)target.open=true;
+    const parent=target.closest('details');if(parent)parent.open=true;
+    target.scrollIntoView();
+  }
+  async function refresh(){
+    if(active || area.hidden)return;
     const pass=++generation;
-    try {
-      if (event) {
-        const current=await call('event',{event_id:event});
-        if(pass!==generation)return;
-        if(current.ticket_id) {chosen=current.ticket_id; event='';}
-        else if(current.choices?.length) {
-          historyPanel.select('');
-          revisionKey=''; detail.replaceChildren(element('h3','这条消息属于哪张工单？'));
-          const original=event;
-          for (const c of current.choices) action(c.summary || c.id,async()=>{
-            const res=await call('select',{event_id:original,ticket_id:c.id,request_id:crypto.randomUUID()});
-            chosen=res.ticket_id || c.id; event='';
-          });
-          action('新建工单',async()=>{
-            const res=await call('select',{event_id:original,ticket_id:null,request_id:crypto.randomUUID()});
-            chosen=res.ticket_id || ''; event=res.event_id || '';
-          });
-          return;
-        } else if (current.error) notice(String(current.error));
+    try{
+      const data=await request('/api/outer');if(pass!==generation)return;rows=data.drafts||[];
+      if(initial){initial=false;
+        if(oldTask&&!chosen&&!rows.some(r=>r.id===oldTask)){by('execution').open=true;by('execution').scrollIntoView();}
+        else if(filter&&!chosen)chosen=rows.find(r=>r.journey.station===filter)?.id||'';
+        if(!chosen&&!filter&&(!oldTask||rows.some(r=>r.id===oldTask)))chosen=rows.find(r=>r.id===oldTask)?.id || rows.find(r=>r.journey.station==='decision')?.id || rows[0]?.id || '';
       }
-      const state=await request('/api/outer');
-      if(pass!==generation)return;
-      const drafts=state.drafts||[];
-      selector.replaceChildren(...drafts.map(d=>new Option(
-        (d.goal_contract?.goal_statement || d.summary || d.id)+' · '+(executionStates[d.execution_status] || statusNames[d.status] || d.status),d.id)));
-      if (!chosen && drafts.length) chosen=drafts[0].id;
-      selector.value=chosen;
-      historyPanel.select(chosen);
-      if(chosen) {
-        const draft=await call('get',{ticket_id:chosen});
-        if(pass===generation && draft.id===chosen) {
-          showDraft(draft);
-          await historyPanel.refresh(draft.id,()=>pass===generation && draft.id===chosen);
+      if(event){
+        const current=await call('event',{event_id:event});if(pass!==generation)return;
+        if(current.choices?.length){
+          key='';historyPanel.select('');by('ticket-ref').textContent='';detail.replaceChildren(element('h3','这条需求属于哪张工单？'));
+          const original=event;
+          for(const c of [...current.choices,{id:null,summary:'新建工单'}])action(detail,c.summary||c.id,async()=>{
+            const res=await call('select',{event_id:original,ticket_id:c.id,request_id:crypto.randomUUID()});
+            chosen=res.ticket_id||'';event=res.event_id||'';filter='';updateUrl();
+          });drawList();return;
         }
-      } else detail.replaceChildren(element('p',event?'需求已入账，正在整理。':'还没有目标工单。'));
-    } catch(err) { if(pass===generation)notice(err.message); }
+        if(current.ticket_id&&chosen!==current.ticket_id){chosen=current.ticket_id;filter='';updateUrl();}
+        if(['DONE','REJECTED','NEEDS_ATTENTION','CANCELLED'].includes(current.state)){
+          if(current.error||current.state!=='DONE')notice('本次请求需要处理 · '+(current.error||'请核对当前版本后重试。'));
+          event='';
+        }
+      }
+      drawList();historyPanel.select(chosen);
+      if(!chosen){key='';detail.replaceChildren(element('p',event?'目标已登记，正在整理。':'选择工单查看决定与进度。'));return;}
+      const d=await call('get',{ticket_id:chosen});
+      if(pass===generation && d.id===chosen){showDraft(d);focusSection(d);await historyPanel.refresh(d.id,()=>pass===generation && d.id===chosen);}
+    }catch(err){if(pass===generation)notice(err.message);}
   }
-  selector.onchange=()=>{
-    chosen=selector.value; event=''; historyPanel.select(chosen);
-    revisionKey=''; detail.replaceChildren();
-    const url=new URL(location.href); url.searchParams.set('goal',chosen);
-    history.replaceState(null,'',url); refresh();
-  };
+  by('launch').hidden=false;by('launch').onclick=()=>composer.showModal();by('dismiss').onclick=()=>composer.close();
+  for(const [id,label] of Object.entries(stations)){
+    const b=element('button',label);b.dataset.station=id;b.onclick=()=>changeFilter(id);by('stations').append(b);
+  }
+  by('all-stations').onclick=()=>changeFilter('');
   form.oninput=()=>{pending='';};
   form.onsubmit=async ev=>{
-    ev.preventDefault(); if(active)return;
-    active=true; generation++;
-    try{
-      pending ||= crypto.randomUUID();
-      const res=await call('submit',{text:form.elements.goal.value.trim(),request_id:pending});
-      event=res.event_id; chosen=res.ticket_id||''; pending=''; form.reset(); notice('需求已保存。');
-    }catch(err){notice(err.message);}
-    finally{active=false; await refresh();}
+    ev.preventDefault();if(active || !form.elements.goal.value.trim())return;
+    active=true;generation++;
+    try{pending ||= crypto.randomUUID();const res=await call('submit',{text:form.elements.goal.value.trim(),request_id:pending});
+      chosen=res.ticket_id||'';event=res.event_id;filter='';pending='';key='';historyPanel.select(chosen);
+      form.reset();composer.close();updateUrl();by('tickets').scrollIntoView();notice('目标已登记。');
+    }catch(err){notice(err.message);}finally{active=false;await refresh();}
   };
-  area.hidden=false;
-  document.getElementById('new').hidden=true;
-  refresh();
-  setInterval(()=>{if(!document.hidden)refresh();},3500);
+  area.hidden=false;by('execution').open=false;by('new').hidden=true;
+  if(query.has('new')){composer.showModal();const url=new URL(location.href);url.searchParams.delete('new');history.replaceState(null,'',url);}
+  refresh();setInterval(()=>{if(!document.hidden)refresh();},3500);
 }

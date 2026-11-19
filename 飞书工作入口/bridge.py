@@ -658,7 +658,14 @@ class Bridge:
             card=parent_card(self,e)
             if card and e.get('message_type') in ('text','wb_click'):
                 try:return respond(self,e,card)
-                except MobileProblem as error:return str(error)
+                except MobileProblem as error:
+                    binding=card['binding']
+                    if binding.get('ticket_id'):
+                        from outer_bridge import call, queue_card
+                        updated=call(self,'card',ticket_id=binding['ticket_id'])
+                        if updated['binding']['revision']!=binding.get('revision'):
+                            return queue_card(self,e,{**updated,'body':'原卡已过期，请核对当前版本。\n'+updated['body']})
+                    return str(error)
         if e.get('message_type')=='wb_click':return self.handle_click(e)
         if e.get('message_type') != 'text' and not (e.get('message_type')=='post' and re.fullmatch(r'/(?:new|tasks)(?:\s+.+)?',e['content'].strip(),re.S)):
             return '未执行：仅接受私聊文字（单条最多8000字）。新建工单可用 /new。'
@@ -779,7 +786,7 @@ class Bridge:
             body='点击工单，将刚才的补充存入所选工单。' if menu['note'] else '点击工单，查看当前进度和可用操作。'
         elif prompt and prompt['kind']=='outer':
             outer=json.loads(prompt['context'])
-            title='目标工单'
+            title=outer.get('title') or '目标工单'
             actions=outer['actions']
         elif prompt and prompt['kind']=='home':
             title='工作台';actions=nav
@@ -839,7 +846,8 @@ class Bridge:
                     continue
                 if card and card[0] is None:
                     with self.store.db:self.store.db.execute(f'UPDATE {table} SET first_attempt=? WHERE outbox_id=?',(time.time(),row['id']))
-                delivery='fs-'+digest(row['id'])[:40]
+                namespace=self.s.get('delivery_namespace','')
+                delivery='fs-'+digest((namespace+':' if namespace else '')+row['id'])[:40]
                 if card:
                     rendered,shown=self.button_card(row['id'],row['body'])
                     if table=='task_cards':
@@ -895,11 +903,19 @@ class Bridge:
             if not current['known'] or current.get('key')==watch['last_key']:continue
             key=current.get('key')
             generation=watch['generation']+1
+            outer_card=None
+            if key and current.get('outer') and self.s.get('outer_intelligence'):
+                try:outer_card=self.board.call('outer',command='card',payload={'ticket_id':task})
+                except (OSError,RuntimeError,ValueError):continue
             with self.store.db:
                 self.store.db.execute("UPDATE outbox SET state='cancelled' WHERE state='pending' AND id IN (SELECT outbox_id FROM task_cards WHERE task=? AND outbox_id LIKE 'watch-%')",(task,))
                 if key:
                     delivery='watch-'+str(generation)+'-'+digest(task+':'+key)
-                    self.store.enqueue(delivery,current['body']+'\n直接回复此卡「状态」可复核。')
+                    if outer_card:
+                        self.store.enqueue(delivery,outer_card['body'])
+                        self.store.db.execute('INSERT OR IGNORE INTO click_prompts(outbox_id,kind,context) VALUES(?,?,?)',
+                                              (delivery,'outer',json.dumps(outer_card,ensure_ascii=False)))
+                    else:self.store.enqueue(delivery,current['body']+'\n直接回复此卡「状态」可复核。')
                     self.store.db.execute('INSERT OR IGNORE INTO task_cards(outbox_id,task) VALUES(?,?)',(delivery,task))
                 self.store.db.execute('UPDATE watches SET last_key=?,generation=? WHERE task=?',(key,generation,task))
 

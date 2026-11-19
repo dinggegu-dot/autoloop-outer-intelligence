@@ -17,9 +17,10 @@ def render(title,body,actions,form=None):
         submit.update(name='wb_'+action,type='primary',form_action_type='submit')
         elements.append({'tag':'form','name':'request','elements':[
             {'tag':'input','name':'requirement','required':True,'placeholder':text('输入需求或补充内容')},submit]})
-    for i in range(0,len(actions),2):
+    columns_per_row = 1 if any(a.startswith(('outer_open_', 'outer_replace_')) for a,_ in actions) else 2
+    for i in range(0,len(actions),columns_per_row):
         columns=[{'tag':'column','width':'weighted','weight':1,'elements':[button(action,label)]}
-                 for action,label in actions[i:i+2]]
+                 for action,label in actions[i:i+columns_per_row]]
         elements.append({'tag':'column_set','columns':columns})
     return {'schema':'2.0','config':{'update_multi':True,'enable_forward':False},
             'header':{'title':text(title)},'body':{'elements':elements}}
