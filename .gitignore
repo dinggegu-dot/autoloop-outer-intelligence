@@ -1,0 +1,15 @@
+.runtime/
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite3*
+*.db-wal
+*.db-shm
+.env*
+*.key
+*.log
+验收证据/
+settings.json
+private.json
+master.key
+.DS_Store

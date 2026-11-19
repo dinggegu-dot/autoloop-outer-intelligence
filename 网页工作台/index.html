@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>任务工作台</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body><header><span>本机工作区</span><h1>任务工作台</h1><p>目标、方案、决定和结果跟随工单，不跟随会话。</p></header>
+<main><form id="new"><h2>交代新任务</h2><label>名称 <input name="name" maxlength="80" required></label><label>目标 <textarea name="goal" maxlength="6000" required></textarea></label><label>完成标准 <textarea name="acceptance" maxlength="4000"></textarea></label><button>登记并请求 Codex 规划</button></form>
+<section><h2>我的任务</h2><p id="connection" role="status">连接中</p><label>选择工单 <select id="tasks"></select></label><button id="refresh">刷新</button><article id="detail"></article></section></main><p id="notice" role="status"></p></body></html>

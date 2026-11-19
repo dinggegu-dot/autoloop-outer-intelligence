@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "stages": [
+    {
+      "id": "parse",
+      "checks": [
+        {
+          "id": "parse-count",
+          "script": "parser.py",
+          "args": [
+            "fixtures/rows.csv"
+          ],
+          "files": {
+            "fixtures/rows.csv": "id\nA\nB\nA\nC\n"
+          },
+          "expected": {
+            "rows": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "checks": [
+        {
+          "id": "report-summary",
+          "script": "report.py",
+          "args": [
+            "fixtures/rows.csv"
+          ],
+          "files": {
+            "fixtures/rows.csv": "id\nA\nB\nA\nC\n"
+          },
+          "expected": {
+            "unique": 3
+          }
+        }
+      ]
+    }
+  ]
+}
