@@ -21,6 +21,7 @@ bash 网页工作台/superagent/isolated_goal_hub.sh "$pilot" 43672 -- python3 -
 
 ## 工程与验收
 
+- [长期架构依据、实现核对与开放问题](docs/architecture/architecture-alignment.md)和[系统设计共识与架构交接 V1.0 原稿](docs/architecture/design-handoff-v1.0.md)
 - [产品任务与完成定义](docs/product/PRD-v2-outer-loop.md)和[架构设计规格](docs/architecture/outer-intelligence.md)
 - [源码审计、迁移与恢复边界](docs/architecture/system-overview.md)和[架构取舍](docs/decisions/ADR-INDEX.md)
 - [实施计划](docs/plans/v2-implementation-plan.md)、[进度与未决项](docs/progress/v2-status.md)及[需求验收矩阵](docs/testing/acceptance-matrix.md)
