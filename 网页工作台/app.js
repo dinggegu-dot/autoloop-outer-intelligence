@@ -21,6 +21,11 @@ function render(task,tasks){
   const base='/api/tasks/'+encodeURIComponent(task.id);
   detail.append(node('h3',task.name),node('p',task.id+' · v'+task.version+' · '+task.status_label),
     node('p',task.goal),node('p','完成标准：'+(task.acceptance||'待方案定义')));
+  if(task.goal_execution?.outer){
+    const link=node('a','查看本工单的外层模型调用');
+    link.href='?task='+encodeURIComponent(task.id)+'&goal='+encodeURIComponent(task.id)+'#outer-history';
+    detail.append(link);
+  }
   if(task.role_routes)detail.append(node('p','本版实际模型：'+['plan','execute','review'].map(role=>task.role_routes[role]?.model||'未固定').join(' → ')));
   if(task.plan){
     detail.append(node('h3','当前方案'),node('p',task.plan.summary),node('p','范围：'+task.plan.scope));
@@ -53,6 +58,14 @@ function render(task,tasks){
   }));
   detail.append(node('h3','成果与验收'),node('p',task.review?.summary||'尚无验收结论'));
   for(const path of task.artifacts){const link=node('a',path);link.href=base+'/artifact?path='+encodeURIComponent(path)+'&version='+task.version;detail.append(link,node('br',''));}
+  if(task.events?.length){
+    detail.append(node('h3','工单时间线'));
+    const list=node('ol','');
+    for(const event of [...task.events].sort((a,b)=>a.at.localeCompare(b.at))){
+      list.append(node('li',new Date(event.at).toLocaleString('zh-CN')+' · '+event.title));
+    }
+    detail.append(list);
+  }
 }
 async function refresh(){
   const current=selected;

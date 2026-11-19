@@ -196,6 +196,49 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertEqual(invalid['state'], 'NEEDS_ATTENTION')
         self.assertEqual(self.store.list(), [])
 
+    def test_history_follows_late_binding_and_restricts_detail_to_selected_ticket(self):
+        from outer_channels import dispatch
+        self.model.fails = 1
+        first = self.latest(self.send('one', event='one'))['id']
+        second = self.latest(self.send('two', event='two'))['id']
+        history = self.intake.calls(first, 'owner')
+        self.assertCountEqual([r['state'] for r in history], ['failed','accepted','accepted'])
+        failed = next(r for r in history if r['state'] == 'failed')
+        self.assertNotIn('input', failed)
+        one = self.intake.calls(first, 'owner', call_id=failed['id'])
+        self.assertEqual(one['error'], 'timeout')
+        self.assertEqual(one['input']['untrusted_text']['current_message'], 'one')
+        self.assertIsNone(one['usage'])
+        self.assertIsNone(one['output'])
+        self.assertGreaterEqual(one['elapsed_ms'], 0)
+        for ticket, actor, tenant in [(second,'owner','default'),(first,'stranger','default'),(first,'owner','other')]:
+            with self.assertRaises(Problem) as denied:
+                self.intake.calls(ticket, actor, tenant=tenant, call_id=failed['id'])
+            self.assertEqual(denied.exception.status, 404)
+        with self.assertRaises(Problem):
+            dispatch(self.intake, 'feishu','call',dict(ticket_id=first, call_id=failed['id']))
+        pending = self.latest(self.send('select', event='pick'))
+        selected = self.intake.select_ticket(pending['event_id'],second,actor_id='owner',source='web',source_event_id='pick-two')
+        self.latest(selected)
+        with self.store.connect() as db:
+            picker = db.execute('SELECT id FROM outer_invocations WHERE event=?',(pending['event_id'],)).fetchone()[0]
+        self.assertIn(picker, [r['id'] for r in self.intake.calls(second,'owner')])
+        self.assertNotIn(picker, [r['id'] for r in self.intake.calls(first,'owner')])
+
+    def test_archived_coordinator_reads_original_input_and_rejected_proposal(self):
+        ticket = self.latest(self.send('target'))['id']
+        context = {'available_actions':['REPAIR']}
+        evidence = dict(started_ns=1_700_000_000_000_000_000,elapsed_ms=42,usage={'output_tokens':7},
+                        failure_code='proposal_rejected')
+        report = dict(evidence=evidence,error='证据不匹配',model_audit={'final_message':'{"action":"REPAIR"}'})
+        assignment = dict(id='original',phase='coordinate',state='settled',coordination_context=context,report=report)
+        with self.store.connect() as db:
+            self.intake._record_revision(db,ticket,'execution_archive',1,{'goal_execution':{'assignments':[assignment]}})
+        row = self.intake.calls(ticket,'owner',call_id='original')
+        self.assertEqual((row['input'],row['state'],row['elapsed_ms'],row['usage']), (context,'rejected',42,{'output_tokens':7}))
+        self.assertEqual(row['final_message'], report['model_audit']['final_message'])
+        self.assertIn('证据不匹配',row['error'])
+
     def test_pause_during_acceptance_discards_stale_model_response_and_resumes(self):
         event = self.send('simple target')
         self.intake.drain(limit=1)

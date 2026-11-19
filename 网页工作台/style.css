@@ -1,3 +1,7 @@
 :root{color-scheme:light dark;font:16px/1.55 system-ui,sans-serif}body{max-width:72rem;margin:0 auto;padding:1.5rem}header{border-bottom:2px solid #648e94}main{display:grid;grid-template-columns:minmax(15rem,1fr) minmax(19rem,2fr);gap:2rem}label{display:block;margin:.65rem 0}input,select,textarea{display:block;max-width:100%;box-sizing:border-box;font:inherit;padding:.3rem}input,textarea{width:100%}textarea{min-height:4rem}button{margin:.3rem .4rem .3rem 0;padding:.4rem .65rem;font:inherit;cursor:pointer}p,li{white-space:pre-wrap;overflow-wrap:anywhere}#notice{position:sticky;bottom:0;background:Canvas;color:CanvasText}h1,h2,h3{line-height:1.2}@media(max-width:760px){main{display:block}body{padding:.8rem}}
 
 #outer pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}#outer article{min-width:0}button:focus-visible{outline:2px solid currentColor}
+#outer-history details{border-top:1px solid GrayText;padding:.5rem 0;min-width:0}
+#outer-history summary{cursor:pointer;overflow-wrap:anywhere}
+#outer-history pre{max-height:24rem;overflow:auto;font: .86rem/1.5 ui-monospace,monospace}
+#outer-history p:empty{display:none}

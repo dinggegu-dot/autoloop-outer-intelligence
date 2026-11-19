@@ -528,16 +528,23 @@ def execute_coordination(store, assignment, directory, report):
         'invocation_id':assignment['id'], 'snapshot_revision':context['input_snapshot_revision'],
         'started_ns':start, 'prompt_version':PROMPT_VERSION, 'model':adapter.model,
     }
+    save_json(directory / 'coordination-start.json', evidence)
     try:
         invocation = role_invoke(adapter, 'goal_coordinator', context, coordination_schema(context))
         evidence.update({key:invocation[key] for key in ('model','usage','elapsed_ms','prompt_version')})
+        report['model_audit'] = {key:invocation[key] for key in ('request','final_message','output_truncated')
+                                 if key in invocation}
         proposal = validate_coordination(invocation['result'],context)
     except ModelFailure as error:
         evidence.update(usage=error.usage, failure_code=error.code)
+        if 'elapsed_ms' in error.audit:
+            evidence['elapsed_ms'] = error.audit['elapsed_ms']
+        report['model_audit'] = error.audit
         report['error'] = '协调模型调用未产生有效提案'
-    except ValueError:
+    except ValueError as error:
         evidence['failure_code'] = 'proposal_rejected'
-        report['error'] = '协调提案未通过快照、证据或授权校验'
+        report['error'] = str(error)[:240]
+        report['model_audit']['returned_proposal'] = invocation['result']
     else:
         report['result'] = proposal
     evidence['ended_ns'] = time.time_ns()

@@ -400,6 +400,8 @@ class OuterExecutionTests(unittest.TestCase):
             report = self.trusted_review(assignment)
         self.assertNotIn('result',report)
         self.assertEqual(report['evidence']['failure_code'],'proposal_rejected')
+        self.assertEqual(json.loads(report['model_audit']['final_message']),proposal)
+        self.assertIn('证据', report['error'])
         self.assertEqual(report['evidence']['usage']['input_tokens'],3)
         task = self.settle_report(assignment,report)
         self.assertEqual(flow(task)['stage'],'coordinate')

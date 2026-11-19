@@ -54,7 +54,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/outer/'):
                 from outer_channels import dispatch
                 cmd = path.removeprefix('/api/outer/')
-                if cmd not in ('submit','select','get','event','approve','pause','resume','stop'):
+                if cmd not in ('submit','select','get','calls','call','event','approve','pause','resume','stop'):
                     raise Problem('接口不存在',404)
                 if not workbench.outer_enabled:
                     raise Problem('当前实例未启用智能接单',404)

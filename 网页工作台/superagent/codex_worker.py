@@ -84,7 +84,7 @@ def _matches(value, schema):
     return True
 
 
-def _read_result(stdout, schema):
+def _read_result(stdout, schema, *, on_final_message=None):
     session = None
     message = None
     completed = False
@@ -124,6 +124,8 @@ def _read_result(stdout, schema):
                     raise ValueError("invalid token usage")
         if not session or not completed or not isinstance(message, str):
             raise ValueError("missing session, completion, or final message")
+        if on_final_message:
+            on_final_message(message)
         result = _decode(message)
     except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
         raise CodexWorkerError("Invalid or incomplete Codex JSON output", usage=usage) from None

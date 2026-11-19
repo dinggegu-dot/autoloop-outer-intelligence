@@ -35,6 +35,12 @@ def dispatch(service, source, command, body):
         raise Problem('工单编号无效')
     if command == 'get':
         return service.get(ticket, OWNER)
+    if source == 'web' and command == 'calls':
+        return service.calls(ticket, OWNER)
+    if source == 'web' and command == 'call':
+        if not isinstance(body.get('call_id'), str) or not 0 < len(body['call_id']) <= 100:
+            raise Problem('调用编号无效')
+        return service.calls(ticket, OWNER, call_id=body['call_id'])
     if command == 'approve':
         return service.approve_goal_contract(ticket, body['goal_revision'], body['acceptance_revision'],
                                              body['revision'], body['request_id'], actor_id=OWNER,

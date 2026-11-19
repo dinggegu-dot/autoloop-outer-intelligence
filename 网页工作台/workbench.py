@@ -31,6 +31,14 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
 
 
+def omit_call_payloads(task):
+    """通用看板和飞书读取的是任务副本；完整新增回执只从单次调用入口加载。"""
+    for assignment in (task.get('goal_execution') or {}).get('assignments', []):
+        if assignment.get('report'):
+            assignment['report'].pop('model_audit', None)
+    return task
+
+
 class Problem(Exception):
     def __init__(self, message, status=400):
         super().__init__(message)
@@ -520,6 +528,7 @@ class Workbench:
             capability['ready'] = False
             capability['ledger_available'] = False
         for task in tasks:
+            omit_call_payloads(task)
             task['inbox_notes'] = self.store.notes(task['id'],for_board=True)
             with self.store.connect() as db:
                 handoff = db.execute('SELECT state FROM handoffs WHERE task=? ORDER BY rowid DESC LIMIT 1',(task['id'],)).fetchone()
@@ -577,16 +586,16 @@ class Workbench:
             if goal_route:
                 from superagent.goal_engine import MODEL
                 phase_titles = {'plan':'规划','execute':'实施','repair':'修复','review':'独立验收','replan':'重新规划',
-                                'package':'工作包','assemble':'核验并合并产物'}
+                                'package':'工作包','assemble':'核验并合并产物','coordinate':'目标协调'}
                 titles = {'dispatch_prepared':'待派工','run_bound':'中台已接单','authorized':'本人授权已保存',
                           'plan_saved':'计划已保存','checkpoint_saved':'工作区检查点已保存',
                           'evaluated':'证据已核验','recovery_reconciled':'原轮已对账，开始核对产物',
-                          'blocked':'需要处理','delivered':'目标已验收交付','stopped':'已停止'}
+                          'coordinated':'协调决定已记录','blocked':'需要处理','delivered':'目标已验收交付','stopped':'已停止'}
                 task['role_models'] = dict.fromkeys(('plan','execute','review'),MODEL)
                 for item in state['decisions']:
                     title = titles.get(item['kind'],'工单状态更新')
                     if item.get('phase'):
-                        title += ' · '+phase_titles[item['phase']]
+                        title += ' · '+phase_titles.get(item['phase'], item['phase'])
                     if item.get('kind') == 'evaluated':
                         title += ' · '+('通过' if item['passed'] else '待修复')
                     task['events'].append({'at':item['at'],'kind':item['kind'],'title':title,'detail':{}})

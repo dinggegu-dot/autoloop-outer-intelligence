@@ -1,5 +1,6 @@
 """通过本地 CLI 协议替身测试外层模型的受控启动。"""
 import contextlib
+import json
 from copy import deepcopy
 from pathlib import Path
 import sys
@@ -41,6 +42,12 @@ print(json.dumps({'type':'turn.completed','usage': {'input_tokens':10,'output_to
             self.assertEqual(result['result'], {'action': 'REPAIR'})
             self.assertEqual(result['usage']['output_tokens'], 2)
             self.assertEqual(result['tools'], [])
+            self.assertTrue(result['request']['prompt'].endswith(json.dumps(context,ensure_ascii=False)))
+            self.assertEqual(result['request']['output_schema'],schema)
+            self.assertEqual(json.loads(result['final_message']),result['result'])
+            with self.assertRaisesRegex(ModelFailure, 'invalid_output') as rejected:
+                role_invoke(adapter,'goal_coordinator',context,_object(other=TXT))
+            self.assertEqual(json.loads(rejected.exception.receipt()['final_message']),result['result'])
             allow = []
 
             @contextlib.contextmanager
@@ -87,8 +94,12 @@ print(json.dumps({'type':'turn.completed','usage': {'input_tokens':10,'output_to
                 role_invoke(adapter, 'goal_coordinator', {}, _object(action=TXT))
             mocked = local_executable(directory, 'import time\ntime.sleep(10)')
             adapter = CodexOuterModel(executable=mocked, timeout=1)
-            with self.assertRaisesRegex(ModelFailure, 'timeout'):
+            with self.assertRaisesRegex(ModelFailure, 'timeout') as caught:
                 role_invoke(adapter, 'goal_coordinator', {}, _object(action=TXT))
+            receipt = caught.exception.receipt()
+            self.assertGreaterEqual(receipt['elapsed_ms'], 900)
+            self.assertIn('request', receipt)
+            self.assertNotIn('final_message', receipt)
 
 
 if __name__ == '__main__':

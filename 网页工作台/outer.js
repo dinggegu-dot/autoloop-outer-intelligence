@@ -1,9 +1,93 @@
-// 控制请求绑定当前可见版本；DOM 只使用 textContent 展示外部输入。
+// 行节点按调用 ID 复用，轮询不会收起已展开的回执。
+function callHistory(article, call) {
+  const panel = document.createElement('section');
+  panel.id = 'outer-history';
+  article.before(panel);
+  const element = (tag, text) => Object.assign(document.createElement(tag), {textContent:text});
+  const heading = element('h3', '外层模型调用');
+  const status = element('p', '');
+  status.setAttribute('role', 'status');
+  panel.append(heading, status);
+  const roles = {intake_assessor:'Intake Assessor', acceptance_designer:'Acceptance Designer', goal_coordinator:'Goal Coordinator'};
+  const states = {accepted:'成功', returned:'已返回提案', running:'调用中', failed:'失败', rejected:'提案未通过', cancelled:'已取消',
+    stale:'版本已过期', lease_expired:'领取已过期', missing_receipt:'回执缺失'};
+  let ticket = '';
+  let locating = location.hash === '#outer-history';
+  const entries = new Map();
+  function select(id) {
+    if (id === ticket) return;
+    ticket = id;
+    panel.hidden = !id;
+    entries.clear();
+    panel.replaceChildren(heading, status);
+    heading.textContent = '外层模型调用';
+    status.textContent = id ? '正在读取调用记录…' : '';
+  }
+  function record(container, label, value) {
+    container.append(element('h4',label), element('pre',typeof value === 'string' ? value : JSON.stringify(value,null,2)));
+  }
+  function entry(row, id) {
+    const node = element('details','');
+    const time = new Date(row.started_at).toLocaleString('zh-CN', {hour12:false});
+    node.append(element('summary',[time, roles[row.role] || row.role, states[row.state] || row.state,
+      row.elapsed_ms == null ? '' : row.elapsed_ms+' ms'].filter(Boolean).join(' · ')));
+    const body = element('div','');
+    node.append(body);
+    let loading = false, loaded = false;
+    node.ontoggle = async () => {
+      if (!node.open || loaded || loading) return;
+      loading = true;
+      body.textContent = '正在读取明细…';
+      try {
+        const d = await call('call',{ticket_id:id,call_id:row.id});
+        if (id !== ticket || !node.isConnected) return;
+        body.replaceChildren(element('p', '调用 '+d.id+' · 模型 '+(d.model || '未记录')));
+        record(body,'耗时',d.elapsed_ms == null ? '未记录' : d.elapsed_ms+' ms');
+        record(body,'用量（tokens）',d.usage ?? '未记录');
+        record(body,'失败原因',d.error ?? (['accepted','returned'].includes(d.state) ? '无' : '尚无失败回执'));
+        record(body,'实际输入快照',d.input);
+        if (d.request) {
+          record(body,'发送给 Codex 的提示词',d.request.prompt);
+          record(body,'输出 Schema',d.request.output_schema);
+        } else body.append(element('p','此回执仅保存了输入快照。'));
+        record(body,'模型返回'+(d.output_truncated?'（已截断）':''),d.final_message ?? d.output ?? '未记录');
+        loaded = true;
+      } catch (error) {
+        body.textContent = error.message+'。收起后可重新打开。';
+      } finally { loading = false; }
+    };
+    return node;
+  }
+  async function refresh(id, current) {
+    select(id);
+    if (!id) return;
+    let rows;
+    try { rows = await call('calls',{ticket_id:id}); }
+    catch (err) { if (current()) status.textContent=err.message; return; }
+    if (!current() || ticket !== id) return;
+    heading.textContent = '外层模型调用（'+rows.length+'）';
+    status.textContent = rows.length ? '' : '这张工单尚无调用记录。';
+    for (const row of rows) {
+      const signature = JSON.stringify(row);
+      const previous = entries.get(row.id);
+      if (signature === previous?.signature) continue;
+      const node = entry(row, id);
+      if (previous) { node.open=previous.node.open; previous.node.replaceWith(node); }
+      else { panel.append(node); }
+      entries.set(row.id, {signature,node});
+    }
+    if (locating) { locating=false; panel.scrollIntoView(); }
+  }
+  panel.hidden=true;
+  return {select,refresh};
+}
+
 export function mountOuter(request, notice, openTask) {
   const area = document.getElementById('outer');
   const form = area.querySelector('form');
   const selector = area.querySelector('select');
   const detail = area.querySelector('article');
+  const historyPanel = callHistory(detail, call);
   const statusNames = {DRAFT:'草案', ASSESSING:'正在整理', AWAITING_CLARIFICATION:'等待澄清',
     AWAITING_APPROVAL:'等待批准', AUTHORIZED:'已授权', PAUSED:'已暂停', STOPPED:'已停止',
     NEEDS_ATTENTION:'需要处理', VERIFICATION_GAP:'需要补充验收方法'};
@@ -129,6 +213,7 @@ export function mountOuter(request, notice, openTask) {
         if(pass!==generation)return;
         if(current.ticket_id) {chosen=current.ticket_id; event='';}
         else if(current.choices?.length) {
+          historyPanel.select('');
           revisionKey=''; detail.replaceChildren(element('h3','这条消息属于哪张工单？'));
           const original=event;
           for (const c of current.choices) action(c.summary || c.id,async()=>{
@@ -149,13 +234,22 @@ export function mountOuter(request, notice, openTask) {
         (d.goal_contract?.goal_statement || d.summary || d.id)+' · '+(executionStates[d.execution_status] || statusNames[d.status] || d.status),d.id)));
       if (!chosen && drafts.length) chosen=drafts[0].id;
       selector.value=chosen;
+      historyPanel.select(chosen);
       if(chosen) {
         const draft=await call('get',{ticket_id:chosen});
-        if(pass===generation && draft.id===chosen) showDraft(draft);
+        if(pass===generation && draft.id===chosen) {
+          showDraft(draft);
+          await historyPanel.refresh(draft.id,()=>pass===generation && draft.id===chosen);
+        }
       } else detail.replaceChildren(element('p',event?'需求已入账，正在整理。':'还没有目标工单。'));
     } catch(err) { if(pass===generation)notice(err.message); }
   }
-  selector.onchange=()=>{chosen=selector.value; event=''; refresh();};
+  selector.onchange=()=>{
+    chosen=selector.value; event=''; historyPanel.select(chosen);
+    revisionKey=''; detail.replaceChildren();
+    const url=new URL(location.href); url.searchParams.set('goal',chosen);
+    history.replaceState(null,'',url); refresh();
+  };
   form.oninput=()=>{pending='';};
   form.onsubmit=async ev=>{
     ev.preventDefault(); if(active)return;

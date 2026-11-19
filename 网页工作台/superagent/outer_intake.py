@@ -5,10 +5,10 @@ import re
 import time
 import uuid
 
-from workbench import Problem, TASK_RE, now
+from workbench import Problem, TASK_RE, now, omit_call_payloads
 
 from .goal_checks import _SECRET
-from .outer_model import ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, PROMPT_VERSION, CodexOuterModel, ModelFailure, role_invoke
+from .outer_model import ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, CodexOuterModel, ModelFailure, role_invoke
 
 
 _MAX_ATTEMPTS = 2
@@ -308,7 +308,7 @@ class OuterIntake:
         with self.store.connect() as db:
             ticket = self._ticket(db, ticket_id, actor, tenant)
             if ticket['task_id']:
-                ticket['execution'] = self.store.get(ticket['task_id'])
+                ticket['execution'] = omit_call_payloads(self.store.get(ticket['task_id']))
             return ticket
 
     def list(self, actor_id, *, tenant='default'):
@@ -319,6 +319,14 @@ class OuterIntake:
                 "LEFT JOIN tasks t ON t.id=d.id WHERE d.actor=? AND d.tenant=? "
                 "ORDER BY d.updated_at DESC LIMIT 100", (actor,tenant)).fetchall()
         return [dict(json.loads(row[0]),execution_status=row[1]) for row in rows]
+
+    def calls(self, ticket_id, actor_id, *, tenant='default', call_id=None):
+        from .outer_history import ticket_calls
+        actor, tenant = self._owner(actor_id, tenant)
+        with self.store.connect() as db:
+            db.execute('BEGIN')
+            self._ticket(db, ticket_id, actor, tenant)
+            return ticket_calls(db, self.store.root, ticket_id, actor, tenant, call_id)
 
     @staticmethod
     def _delivery(db, event, ticket_id, data):
@@ -513,7 +521,7 @@ class OuterIntake:
                 response = role_invoke(self.model, role, snapshot,
                                        INTAKE_SCHEMA if role == 'intake_assessor' else ACCEPTANCE_SCHEMA)
             except ModelFailure as error:
-                response = {'error': error.code, 'usage': error.usage, 'prompt_version': PROMPT_VERSION}
+                response = error.receipt()
             self._settle(event['id'], lease, snapshot, response)
             settled += 1
         return settled
@@ -522,6 +530,10 @@ class OuterIntake:
         with self._transaction() as db:
             event = db.execute('SELECT * FROM outer_events WHERE id=?', (event_id,)).fetchone()
             if event['lease'] != lease:
+                # 迟到的回执归入原调用，保留停办或租约过期的决定。
+                db.execute("""UPDATE outer_invocations SET result=json_set(?, '$.settlement_reason',json_extract(result,'$.error'))
+                              WHERE id=? AND event=? AND state IN ('cancelled','lease_expired')""",
+                           (_json(response), lease, event_id))
                 return
             ticket = self._ticket(db, event['ticket']) if event['ticket'] else None
             result_status = 'accepted'

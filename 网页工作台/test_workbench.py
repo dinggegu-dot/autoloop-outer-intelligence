@@ -76,6 +76,18 @@ class WorkbenchTest(unittest.TestCase):
         self.assertTrue(task['observation_stale'])
         self.assertEqual(len(task['runs']),20)
 
+    def test_coordinate_and_unknown_phase_keep_timeline_readable(self):
+        from superagent.goal_engine import GoalEngine, decision
+        goal,_ = GoalEngine(self.store).create(dict(self.body,request_id=str(uuid.uuid4())))
+        def add_phases(task):
+            decision(task,'dispatch_prepared',phase='coordinate')
+            decision(task,'coordinated')
+            decision(task,'dispatch_prepared',phase='new_phase')
+        self.store.change(goal['id'],add_phases)
+        row = next(t for t in self.workbench.snapshot(goal['id'])['tasks'] if t['id']==goal['id'])
+        self.assertEqual([event['title'] for event in row['events'][-3:]],
+                         ['待派工 · 目标协调','协调决定已记录','待派工 · new_phase'])
+
     def test_claimed_run_without_model_does_not_show_execution(self):
         self.hub.records.return_value=([{'id':1,'lane':self.id,'state':'claimed'}],[])
         snapshot=self.workbench.snapshot()['tasks'][0]
