@@ -13,7 +13,7 @@ import time
 from .codex_worker import CodexWorkerError, _array, _matches, _object, _read_result
 
 
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 TXT = {'type': 'string'}
 INT = {'type': 'integer'}
 BOOL = {'type': 'boolean'}
@@ -43,10 +43,12 @@ PROMPTS = {
         '重要且没有安全可逆默认值的歧义，提出一个具体问题；无需澄清时将 question_text 留空。'
         'blocking_scope 只能为 deliverables、functionality、acceptance、permissions、cost、irreversible。'
         '模型提出的默认值标为 MODEL_PROPOSED；source_refs 只可引用快照中的真实事件。'
-        'USER_EXPLICIT 项 description 用用户原文中连续、可定位的短句。'
+        'required_capabilities 包括功能和用户给出的具体输入输出例子。每个明确样例保留其原文、来源和预期。'
+        'constraints 仅记录用户明确限制实施方式、权限、预算的要求。示例数值和输出格式属于功能，'
+        '不要重复列作权限限制或假设。USER_EXPLICIT 项 description 使用用户原句或完整分句。'
     ),
     'acceptance_designer': (
-        '按已登记验证器能力设计可核查验收。覆盖每一项必要交付物、功能及非功能要求。'
+        '对直接输入输出样例使用已登记验证器逐一检查。要求关联引用对应的必要需求 ID。按已登记验证器能力设计可核查验收。覆盖每一项必要交付物、功能及非功能要求。'
         'test_spec_json 和 expected_result_json 是 JSON 字符串。未知验证器或无法测试的必要需求列入'
         'verification_gaps。显式 CLI/运行行为的同一 requirement_id 须由同一脚本的至少两条不同输入、'
         '不同预期的必需条件覆盖。html-document 仅证明离线静态 HTML；浏览器交互、API 服务或'
