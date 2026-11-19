@@ -139,6 +139,21 @@ class CrossChannelTest(unittest.TestCase):
         self.assertNotIn('outer_approve',dict(card(ready)['actions']))
         self.assertIn(ready['id'],card(ready)['body'])
 
+    def test_goal_changes_visible_before_approval_in_both_channels(self):
+        from outer_channels import card, journey
+        goal = dict(goal_statement='交付年度账单', changes={'deliverables':{'removed':['月度账单'],'added':['年度账单']}})
+        draft = dict(id='wb-'+'a'*32, revision=7, goal_revision=3, acceptance_revision=2,
+                     status='AWAITING_APPROVAL',goal_contract=goal,approval_terms={'budget_seconds':600})
+        items = journey(draft)['decision_items']
+        self.assertEqual([i['label'] for i in items],['相较目标 v2 移除','相较目标 v2 新增'])
+        for item in items:
+            self.assertIn(item['text'],card(draft)['body'])
+        self.assertIn('outer_approve',dict(card(draft)['actions']))
+        goal['goal_statement'] += '长目标'*1500
+        self.assertNotIn('outer_approve',dict(card(draft)['actions']))
+        self.assertIn('交付物 · 月度账单',card(draft)['body'])
+        self.assertFalse(journey(dict(draft,status='AUTHORIZED'))['decision_items'])
+
     def test_coordination_decision_uses_current_block_and_requires_new_approval(self):
         from outer_channels import card,journey
         proposal = dict(action='REQUEST_APPROVAL',reason='原授权不覆盖第二个数据源',

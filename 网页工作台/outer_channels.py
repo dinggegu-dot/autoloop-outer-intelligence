@@ -108,6 +108,16 @@ def journey(draft):
         not draft.get('task_id') or phase in ('paused','completed','rejected'))
     if state == 'AWAITING_APPROVAL' and not can_approve:
         instruction = '新版契约已就绪，须先暂停旧执行并等待停稳，然后批准新版。'
+    goal = draft.get('goal_contract') or {}
+    if (state == 'AWAITING_APPROVAL' or can_approve) and goal.get('changes') and draft['goal_revision'] > 1:
+        labels = {'deliverables':'交付物','required_capabilities':'功能','nonfunctional_requirements':'质量要求',
+                  'constraints':'限制','assumptions':'假设','out_of_scope':'范围外'}
+        previous = draft['goal_revision'] - 1
+        for key,verb in [('removed','移除'),('added','新增')]:
+            rows = [label+' · '+description for field,label in labels.items()
+                    for description in goal['changes'].get(field,{}).get(key,[])]
+            if rows:
+                decision_items.append(dict(label=f'相较目标 v{previous} {verb}',text='\n'.join(rows)))
     if draft.get('last_request_error') and state!='NEEDS_ATTENTION':
         instruction += ' 最近一次需求未完成（'+str(draft['last_request_error'])+'）。'
     can_resume = state == 'PAUSED' and (not draft.get('task_id') or
@@ -149,8 +159,6 @@ def card(draft):
             lines.append('缺口：'+gap)
         if view['approve'] and draft.get('approval_terms') and len('\n'.join(lines)) <= 3950:
             actions.append(('outer_approve','批准这版目标与验收'))
-        elif len('\n'.join(lines)) > 3950:
-            lines = [view['instruction'],lines[1], '契约全文较长，请到电脑看板核对后决定。']
     elif status == 'AWAITING_CLARIFICATION':
         question = draft.get('question') or {}
         lines.extend([question.get('question_text',''),display(question.get('options') or []),'直接回复这张卡。'])
@@ -186,5 +194,10 @@ def card(draft):
         lines.append('回复本卡可补充资料或提出修改要求。')
     if len('\n'.join(lines)) > 3950:
         lines = [view['instruction'],lines[1],'完整内容请在电脑看板核对。']
+        for item in view['decision_items']:
+            summary = item['text']
+            if len(summary) > 320:
+                summary = summary[:320]+'…'
+            lines.append(item['label']+' · '+summary)
         actions = [a for a in actions if a[0] != 'outer_approve']
     return {'title':view['label']+' · '+title[:36], 'body':'\n'.join(filter(None,lines)), 'binding':binding,'actions':actions}
