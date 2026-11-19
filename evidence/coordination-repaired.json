@@ -1,0 +1,127 @@
+{
+  "fixture": {
+    "approval": "synthetic",
+    "plan_and_initial_execution": "protocol fixture",
+    "hub_event_and_run_ids": "locally bound fixture",
+    "verification": "candidate actual JSON verifier",
+    "regression": "one.json changed from {\"ok\":true} to {\"ok\":false} in stage 2"
+  },
+  "calls": {
+    "coordinator_attempted": 1,
+    "repair_attempted": 1
+  },
+  "stage_one": [
+    [
+      "one",
+      "PASS",
+      "78bae68111af7e11fd02974d7db580c0082766d5f5bc45f19eee79756346b216",
+      "sha256:b5134927141fb85ab4610a6c7470503e3c47df018aeaa13960b82adf603798e1"
+    ]
+  ],
+  "stage_two_regression": [
+    [
+      "one",
+      "FAIL",
+      "f6c8788414481568ae5a9c40bbcc5b0684c833fdffc54bbb019f96a66578de92",
+      "sha256:aeec496853bfc6c34cccb43494e93f4e157b73df2d9ae8435e84f97f500cdf00"
+    ],
+    [
+      "two",
+      "PASS",
+      "f6c8788414481568ae5a9c40bbcc5b0684c833fdffc54bbb019f96a66578de92",
+      "sha256:df5b295f387eed804623e3747af1b0390b6357385b24c0a0413956d125aba277"
+    ]
+  ],
+  "scope": {
+    "available_actions": [
+      "REQUEST_APPROVAL",
+      "BLOCKED",
+      "REPAIR",
+      "REPLAN"
+    ],
+    "evidence_refs": [
+      "sha256:aeec496853bfc6c34cccb43494e93f4e157b73df2d9ae8435e84f97f500cdf00"
+    ],
+    "snapshot_revision": "bd041c6cbc39bbb1e4eb760050978fbf5a73ea26238fe3b21a8264f1e1dd67e4"
+  },
+  "coordinator": {
+    "result": {
+      "schema_version": 1,
+      "input_snapshot_revision": "bd041c6cbc39bbb1e4eb760050978fbf5a73ea26238fe3b21a8264f1e1dd67e4",
+      "action": "REPAIR",
+      "reason": "最新验收显示 one 的 JSON 内容不符合预期，two 已通过。修复可在现有批准范围内进行。",
+      "evidence_refs": [
+        "sha256:aeec496853bfc6c34cccb43494e93f4e157b73df2d9ae8435e84f97f500cdf00"
+      ],
+      "plan_change": "在原计划中补做阶段 1 的局部修复。按现有验收标准定位并修正 one.json 的内容偏差，再独立验收 one。复用已通过的 two.json，若修复影响其验收输入，则一并复验 two。",
+      "retained_outputs": [
+        "two.json"
+      ],
+      "scope_change": false,
+      "approval_required": false,
+      "remaining_risk": "快照未说明 one 的具体内容偏差。两项验收记录引用相同的产物哈希，修复后需核对该改动是否影响 two 的验收输入。"
+    },
+    "evidence": {
+      "invocation_id": "1487ae84665d41179825866799d4f440",
+      "snapshot_revision": "bd041c6cbc39bbb1e4eb760050978fbf5a73ea26238fe3b21a8264f1e1dd67e4",
+      "started_ns": 1795093742007481000,
+      "prompt_version": 1,
+      "model": "gpt-6.2-sol",
+      "usage": {
+        "input_tokens": 15420,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 375,
+        "reasoning_output_tokens": 79
+      },
+      "elapsed_ms": 34752,
+      "ended_ns": 1795093776758338000
+    }
+  },
+  "coordinator_application": {
+    "status": "queued",
+    "stage": "repair"
+  },
+  "repair": {
+    "result": {
+      "summary": "已修复 one.json，将 ok 恢复为 true。本地复验确认其 JSON 内容正确且 SHA-256 与已通过的阶段产物一致。two.json 的内容与哈希复验通过。隔离验收尚未运行。",
+      "artifacts": [
+        "one.json",
+        "two.json"
+      ]
+    },
+    "evidence": {
+      "model": "gpt-6.2-sol",
+      "started_ns": 1795093776778718000,
+      "ended_ns": 1795093833127882000,
+      "usage": {
+        "input_tokens": 76477,
+        "cached_input_tokens": 56448,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 597,
+        "reasoning_output_tokens": 0
+      }
+    }
+  },
+  "final": {
+    "status": "completed",
+    "rows": [
+      [
+        "one",
+        "PASS",
+        "f7e954ff838101e3481a33656f967128f08b8cfdf02fce19e952bb578d846998",
+        "sha256:7b6c8f06b1c2d6d906a99a64d842544d6b57fad66e5e4f1823b75de032ef6bbb"
+      ],
+      [
+        "two",
+        "PASS",
+        "f7e954ff838101e3481a33656f967128f08b8cfdf02fce19e952bb578d846998",
+        "sha256:1f678a1dcfd5f92eae2ed84bf61e41d39cc34357af4f9b01629f6e682f9bff9b"
+      ]
+    ],
+    "artifact_manifest": {
+      "one.json": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+      "two.json": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93"
+    }
+  }
+}

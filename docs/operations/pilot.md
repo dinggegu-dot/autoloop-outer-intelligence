@@ -60,3 +60,34 @@ bash 网页工作台/superagent/isolated_goal_hub.sh --resume "$pilot" 43350
 commit=$(git rev-parse HEAD)
 git push origin "HEAD:refs/heads/ci/included/$commit"
 ```
+
+## 借用已建飞书私聊做真机验收
+
+已有本人私聊桥需使用仓库所示的消息持久化与共享点击结构。现役监听继续接收事件。试验进程只取当前本人、时间窗与随机前缀匹配的消息，以及回复本次已投递卡片的文字或按钮。候选桥通过同一个机器人给本人回执，试验状态保存在单独目录。旧桥对首条消息也可能发来归属提示，后续认准含 V2 工单号和版本的卡片。
+
+建立试验目录并生成试验专用的决定密钥、开始时间和筛选前缀。下面三项用独占创建写入新目录。
+
+```bash
+stage=$(mktemp -d /private/tmp/autoloop-feishu-test-XXXXXXXX)
+python3 - "$stage" <<'PY'
+from datetime import datetime, timezone
+import os, secrets, sys
+from pathlib import Path
+os.umask(0o077)
+root=Path(sys.argv[1])
+for name,content in [('decision',secrets.token_bytes(32)),
+                     ('started',datetime.now(timezone.utc).isoformat().encode()),
+                     ('prefix',('V2验收-'+secrets.token_hex(6).upper()).encode())]:
+    with (root/name).open('xb') as f:
+        f.write(content)
+print((root/'prefix').read_text())
+PY
+```
+
+按启动章节建立独立 Hub 和协调器，启动候选看板时另外传入 `--feishu-socket "$stage/board.sock" --feishu-decision-key "$stage/decision"`。在第四个终端指定同一试验目录及现役设置文件的绝对路径。
+
+```bash
+python3 -B scripts/live_feishu.py "$stage" "$bridge_settings"
+```
+
+在现有本人机器人私聊发“随机前缀 + 空格 + 合成需求”。查看目标、验收、预算，核对后点候选卡批准。也可在同一工单的本机看板批准。结束后停掉本次前台进程并保留验收副本。试验收件窗口最长一小时。飞书 App 配置、用户凭据、现役数据库均留在本机。

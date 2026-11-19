@@ -1493,3 +1493,9 @@ Codex 负责完整代码开发。
 最终交付必须是：
 
 **完整可运行的 Outer Intelligence V2.0 + 保留原有 Autoloop 能力 + GitHub 全链路开发记录 + 真实测试证据 + 可回滚的软件版本。**
+
+## 2026-11-19 候选实现对应关系
+
+- 共享智能适配器位于 `网页工作台/superagent/outer_model.py`。接单与验收使用的来源、事件和租约由 `outer_intake.py` 管理，协调员的输入来自当前 GoalEngine 快照。
+- 执行与验收绑定实现在 `goal_engine.py`、`goal_runtime.py` 和 `outer_verification.py`。验证器不支持的交互或人工条件保留为缺口。Worker 解释器版本作为实际环境证据登记，协调器可以运行在同一宿主的另一 Python 版本。
+- 网页与飞书共用 `outer_channels.py` 的版本化动作。签名 socket 和已投递飞书原卡分别负责来源与用户动作归属。真实工单、故障和容量样本见[执行记录](../progress/v2-status.md)，发布与恢复见[运行手册](../operations/pilot.md)。

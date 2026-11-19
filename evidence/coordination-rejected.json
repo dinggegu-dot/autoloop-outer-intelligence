@@ -1,0 +1,54 @@
+{
+  "fixture": {
+    "approval": "synthetic",
+    "plan_and_initial_execution": "protocol fixture",
+    "hub_event_and_run_ids": "locally bound fixture",
+    "verification": "candidate actual JSON verifier",
+    "regression": "one.json changed from {\"ok\":true} to {\"ok\":false} in stage 2"
+  },
+  "calls": {
+    "coordinator_attempted": 1,
+    "repair_attempted": 0
+  },
+  "stage_one": [
+    [
+      "one",
+      "PASS",
+      "78bae68111af7e11fd02974d7db580c0082766d5f5bc45f19eee79756346b216",
+      "sha256:a8057fabbf3f815d965389c6f7038fbbe16fa416024ef3371027f621e50971ab"
+    ]
+  ],
+  "stage_two_regression": [
+    [
+      "one",
+      "FAIL",
+      "f6c8788414481568ae5a9c40bbcc5b0684c833fdffc54bbb019f96a66578de92",
+      "sha256:33a37cb9652b631890d099627e3f02768fb37866658004d20a640167e9e006df"
+    ],
+    [
+      "two",
+      "PASS",
+      "f6c8788414481568ae5a9c40bbcc5b0684c833fdffc54bbb019f96a66578de92",
+      "sha256:67c9ee6d4a7715e49858ab61be3e9b6e94e210611d8ed4d598b36bf3d5ac704f"
+    ]
+  ],
+  "scope": {
+    "available_actions": [
+      "REQUEST_APPROVAL",
+      "BLOCKED",
+      "REPAIR",
+      "REPLAN"
+    ],
+    "evidence_refs": [
+      "sha256:33a37cb9652b631890d099627e3f02768fb37866658004d20a640167e9e006df"
+    ],
+    "snapshot_revision": "1c4fdfe71ab2e0e3610651d47d678ef6549711619a6ae1cd273e57b13dc415bc"
+  },
+  "coordinator": {
+    "error": "ValueError: 协调建议必须引用实际失败证据"
+  },
+  "coordinator_application": {
+    "status": "queued",
+    "stage": "coordinate"
+  }
+}

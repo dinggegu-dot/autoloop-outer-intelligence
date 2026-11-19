@@ -69,3 +69,7 @@ python3 -B -m unittest discover -q
 | 调用与费用 | 五条输入合计 77,851 input tokens、2,283 output tokens，其中 26,368 个输入 tokens 命中缓存。通过现有登录执行，CLI 回执不含实际金额 |
 
 会议排期的独立新任务还调用了真实接单、验收设计、规划和实施角色。验收设计覆盖三个明确给出的例子，另增加乱序及重复区间。四项分别运行两次均通过。暂停及恢复复验使用原批准版本。拒绝恒定输出等不合格变体的独立对照见上表。会议工单只需一次合成授权，首次终验发生一次环境回执兼容性阻塞，修复后由测试操作者暂停并续办。[工单证据](../../evidence/meeting/verification.json)
+
+跨阶段工单在第一次试验中因模型引用无效而留待处理。加入当前证据枚举后复跑，真实协调器选择 REPAIR，引用失败项并保留第二阶段文件。真实 Codex 修正第一项后，最终检查 2/2 通过。修正后的一个样本完成 1/1，前一次尝试完成 0/1。审批、初始计划、两次初始实施及运输绑定由合成夹具准备；协调、修复与文件检查均真实运行。复跑时在私有临时目录执行 `python3 /绝对路径/scripts/live_coordination.py /仓库绝对路径`。脱敏回执包含两次模型调用的用量。[首次试验](../../evidence/coordination-rejected.json) · [修正后试验](../../evidence/coordination-repaired.json)
+
+在容量 4 与容量 1 的两轮回归中，各有五单完成，独立 Hub 各产生 25 个成功 Run。两轮均使用真实 Worker、Seatbelt 及离线 Codex 夹具。[容量数据及命令](../../evidence/capacity-regression.md)
