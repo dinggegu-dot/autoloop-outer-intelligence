@@ -310,12 +310,13 @@ class OuterIntake:
                 raise Problem('事件不存在或无权访问', 404)
             return self._event_view(row)
 
-    def get(self, ticket_id, actor_id, *, tenant='default'):
+    def get(self, ticket_id, actor_id, *, tenant='default', request_feedback=False):
         actor, tenant = self._owner(actor_id, tenant)
         with self.store.connect() as db:
             ticket = self._ticket(db, ticket_id, actor, tenant)
-            ticket['last_request_error'] = db.execute(
-                f'SELECT ({_LAST_REQUEST_ERROR}) FROM outer_tickets d WHERE d.id=?',(ticket_id,)).fetchone()[0]
+            if request_feedback:
+                ticket['last_request_error'] = db.execute(
+                    f'SELECT ({_LAST_REQUEST_ERROR}) FROM outer_tickets d WHERE d.id=?',(ticket_id,)).fetchone()[0]
             if ticket['task_id']:
                 ticket['execution'] = omit_call_payloads(self.store.get(ticket['task_id']))
             return ticket

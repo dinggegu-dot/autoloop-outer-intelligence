@@ -85,7 +85,7 @@ def serve_private(path,store,workbench=None,action_lock=None,decision_key=None):
                         data=service.pending_outbox(limit=10,source='feishu')
                     elif command=='card':
                         from outer_channels import card
-                        data=card(service.get(payload['ticket_id'],'owner'))
+                        data=card(service.get(payload['ticket_id'],'owner',request_feedback=True))
                     elif command=='delivered':
                         data=service.mark_delivered(payload['id'])
                     elif command=='bind':

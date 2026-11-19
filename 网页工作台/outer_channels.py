@@ -34,7 +34,7 @@ def dispatch(service, source, command, body):
     if not isinstance(ticket, str) or not TICKET.fullmatch(ticket):
         raise Problem('工单编号无效')
     if command == 'get':
-        draft=service.get(ticket, OWNER)
+        draft=service.get(ticket, OWNER,request_feedback=True)
         return dict(draft,journey=journey(draft))
     if source == 'web' and command == 'calls':
         return service.calls(ticket, OWNER)
