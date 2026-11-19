@@ -1,5 +1,6 @@
 """通过本地 CLI 协议替身测试外层模型的受控启动。"""
 import contextlib
+from copy import deepcopy
 from pathlib import Path
 import sys
 import tempfile
@@ -7,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from superagent.codex_worker import _object
-from superagent.outer_model import CodexOuterModel, ModelFailure, TXT, role_invoke
+from superagent.outer_model import CodexOuterModel, ModelFailure, ACCEPTANCE_SCHEMA, TXT, role_invoke
 
 
 def local_executable(directory, program):
@@ -59,6 +60,24 @@ print(json.dumps({'type':'turn.completed','usage': {'input_tokens':10,'output_to
             with patch('superagent.goal_codex._run', side_effect=guarded_runner):
                 self.assertEqual(role_invoke(gated, 'goal_coordinator', context, schema)['result'], result['result'])
             self.assertEqual(allow, [True])
+
+    def test_per_ticket_schema_keeps_event_requirement_and_free_text_lists_independent(self):
+        original = deepcopy(ACCEPTANCE_SCHEMA)
+        goal = {'deliverables':[{'requirement_id':'req-one'}]}
+        context = {'goal_contract':goal, 'relevant_thread_refs':['evt-one']}
+
+        def inspect(role, snapshot, schema):
+            top = schema['properties']
+            fields = top['criteria']['items']['properties']
+            self.assertEqual(fields['requirement_ids']['items']['enum'], ['req-one'])
+            self.assertEqual(fields['source_refs']['items']['enum'], ['evt-one'])
+            self.assertNotIn('enum', fields['evidence_required']['items'])
+            self.assertNotIn('enum', top['artifact_types']['items'])
+            raise ModelFailure('inspected')
+
+        with self.assertRaisesRegex(ModelFailure, 'inspected'):
+            role_invoke(inspect, 'acceptance_designer', context, ACCEPTANCE_SCHEMA)
+        self.assertEqual(ACCEPTANCE_SCHEMA, original)
 
     def test_invalid_fixture_and_timeout_have_fixed_failure_category(self):
         with tempfile.TemporaryDirectory() as directory:

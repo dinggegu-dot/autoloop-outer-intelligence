@@ -89,6 +89,9 @@ class CrossChannelTest(unittest.TestCase):
         with self.assertRaises(MobileProblem):
             self.mobile.call('outer',command='approve',payload={**body,'request_id':'om_oldclick','thread':sent[-1][0]})
         self.assertEqual(len(self.wb.store.list()),1)
+        self.bridge.flush(transport)
+        self.assertIsNotNone(self.bridge.store.db.execute(
+            'SELECT task FROM watches WHERE task=?',(d['id'],)).fetchone())
 
     def test_unsigned_mobile_and_legacy_route_declined(self):
         client=LocalBoard(self.mobile.path,b'x'*32)

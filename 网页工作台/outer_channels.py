@@ -24,7 +24,8 @@ def dispatch(service, source, command, body):
         return service.submit(source=source, source_event_id=body['request_id'], actor_id=OWNER,
                               text=body['text'], source_thread_id=body.get('thread'),
                               ticket_id=body.get('ticket_id'), question_id=body.get('question_id'),
-                              expected_ticket_revision=body.get('revision'))
+                              expected_ticket_revision=body.get('revision'),
+                              replace_requirement_ids=body.get('replace_requirement_ids'))
     ticket = body['ticket_id']
     if not isinstance(ticket, str) or not TICKET.fullmatch(ticket):
         raise Problem('工单编号无效')
@@ -88,8 +89,12 @@ def card(draft):
         actions.append(('outer_pause','暂停此单'))
     if status == 'PAUSED':
         actions.append(('outer_resume','继续此单'))
+        actions.append(('outer_stop','确认停止此单'))
     if draft.get('execution'):
         execution=draft['execution']
         lines.append(f"执行状态 {execution['status']} · 计划 v{execution['version']}")
+        for item in execution.get('artifacts',[])[:8]:
+            if isinstance(item,dict) and item.get('path'):
+                lines.append('交付文件 '+str(item['path'])[:180])
     actions.append(('outer_status','看进度'))
     return {'body':'\n'.join(filter(None,lines)), 'binding':binding,'actions':actions}

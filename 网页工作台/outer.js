@@ -42,8 +42,31 @@ export function mountOuter(request, notice, openTask) {
     revisionKey = key;
     detail.replaceChildren(element('h3',statusNames[d.status] || d.status),
       element('p',d.id+' · 工单 v'+d.revision+' · 目标 v'+d.goal_revision+' · 验收 v'+d.acceptance_revision));
-    showRecord('目标与范围',d.goal_contract);
-    showRecord('验收标准与方法',d.acceptance_contract);
+    const goal=d.goal_contract || {};
+    if (goal.goal_statement) detail.append(element('p',goal.goal_statement));
+    const groups={deliverables:'交付物',required_capabilities:'必需能力',nonfunctional_requirements:'质量要求',
+      constraints:'限制',assumptions:'假设',out_of_scope:'范围外'};
+    const replaceable=[];
+    for (const [field,title] of Object.entries(groups)) {
+      const rows=goal[field] || [];
+      if (!rows.length) continue;
+      detail.append(element('h4',title));
+      const list=element('ul','');
+      for (const row of rows) {
+        const source={USER_EXPLICIT:'用户原文',USER_CONFIRMED:'用户确认',MODEL_PROPOSED:'模型建议'};
+        list.append(element('li',row.description+' · '+(source[row.source] || row.source)));
+        if (row.source==='USER_EXPLICIT' || row.source==='USER_CONFIRMED') replaceable.push(row);
+      }
+      detail.append(list);
+    }
+    const contract=d.acceptance_contract || {};
+    for (const criterion of contract.criteria || []) {
+      detail.append(element('h4',criterion.description));
+      showRecord(criterion.verifier_id+' v'+criterion.verifier_version,
+        {输入:criterion.test_spec,预期:criterion.expected_result});
+    }
+    showRecord('验收缺口',contract.verification_gaps);
+    showRecord('待人工验收',contract.human_review_requirements);
     showRecord('权限与预算',d.approval_terms);
     showRecord('待处理',d.error);
     const binding = {ticket_id:d.id, revision:d.revision, goal_revision:d.goal_revision,
@@ -65,12 +88,26 @@ export function mountOuter(request, notice, openTask) {
     if (!['STOPPED','PAUSED'].includes(d.status)) {
       const question=d.question?.answer_status==='answered' ? null : d.question;
       const label=element('label',question?.question_text || '补充要求或申请修改范围');
+      const replacements=[];
+      if (!question && replaceable.length) {
+        const group=element('details','');
+        group.append(element('summary','替换已有要求'));
+        for (const row of replaceable) {
+          const option=element('label',row.description);
+          const input=document.createElement('input'); input.type='checkbox'; input.value=row.requirement_id;
+          option.prepend(input); group.append(option); replacements.push(input);
+        }
+        detail.append(group);
+      }
       const field=element('textarea','');
       field.maxLength=6000; label.append(field); detail.append(label);
       for (const option of question?.options || []) action(String(option),()=>{field.value=String(option);});
       action(question?'提交澄清':'提交补充',async()=>{
         if (!field.value.trim()) return notice('请先填写内容。');
-        const response=await command('submit',{text:field.value.trim(),question_id:question?.question_id});
+        const selected=replacements.filter(input=>input.checked).map(input=>input.value);
+        if (selected.length && !confirm('用本次说明替换选中的旧要求，并重新核对契约？')) return;
+        const response=await command('submit',{text:field.value.trim(),question_id:question?.question_id,
+          replace_requirement_ids:selected.length ? selected : undefined});
         event=response.event_id; field.value=''; notice('已记录，等待核对。');
       });
     }

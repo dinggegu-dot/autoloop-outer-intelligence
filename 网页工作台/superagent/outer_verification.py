@@ -45,7 +45,7 @@ _REGISTRY = {
         "required_inputs": ["script", "args", "files", "expected_result"],
         "supported_environments": [ENVIRONMENT],
         "permission_requirements": ["isolated_read_only_workspace", "network_denied"],
-        "runner": "seatbelt-python-json-v1", "resource_limits": {"seconds_per_execution": 3, "executions": 2},
+        "runner": "seatbelt-python-json-v1", "resource_limits": {"seconds_per_execution": 3, "executions_per_criterion": 2, "max_contract_criteria": MAX_CRITERIA},
         "trust_status": "TRUSTED",
     },
     "json-artifact": {

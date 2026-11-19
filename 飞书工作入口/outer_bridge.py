@@ -1,6 +1,7 @@
 """V2 本人私聊接入。复用 bridge 的消息鉴权、持久发送队列与按钮白名单。"""
 import json
 import re
+import time
 
 def call(bridge, command, **payload):
     return bridge.board.call('outer', command=command, payload=payload)
@@ -16,6 +17,13 @@ def mirror_notifications(bridge):
     """先持久入桥，飞书确认投递与原卡归属之后再确认引擎通知。"""
     for delivery in call(bridge,'notifications'):
         key='outer-'+delivery['id']
+        if delivery.get('action') == 'AUTHORIZED' and delivery.get('ticket_id'):
+            ticket = delivery['ticket_id']
+            with bridge.store.db:
+                if not bridge.store.meta('goal-watch:'+ticket):
+                    bridge.store.db.execute('INSERT OR IGNORE INTO watches(task,generation) VALUES(?,?)',
+                                            (ticket,time.time_ns()))
+                    bridge.store.set_meta('goal-watch:'+ticket,True)
         row=bridge.store.db.execute('SELECT state,ref FROM outbox WHERE id=?',(key,)).fetchone()
         if row:
             if row['state']=='sent':

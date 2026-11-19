@@ -663,7 +663,7 @@ class Bridge:
         if e.get('message_type') != 'text' and not (e.get('message_type')=='post' and re.fullmatch(r'/(?:new|tasks)(?:\s+.+)?',e['content'].strip(),re.S)):
             return '未执行：仅接受私聊文字（单条最多8000字）。新建工单可用 /new。'
         text = e['content'].strip(); compact = re.sub(r'[\s？?！!。]+','',text).lower(); mid=e['message_id']
-        if self.s.get('outer_intelligence') and not e.get('reply_to') and compact in ('我的工单','/tasks','看进度'):
+        if self.s.get('outer_intelligence') and not e.get('reply_to') and compact in ('我的工单','/tasks','看进度','状态','进度','暂停','暂停任务','停止','停止任务','继续','恢复','恢复任务'):
             from outer_bridge import directory
             return directory(self,e)
         reply = self.work_message(e,text,compact)

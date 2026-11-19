@@ -11,6 +11,7 @@ from uuid import uuid4
 from superagent import outer_verification as registry
 from superagent.goal_engine import MODEL, GoalEngine, current, flow
 from superagent.goal_runtime import execute_assignment
+from superagent.outer_intake import OuterIntake
 from workbench import Store
 
 
@@ -341,11 +342,16 @@ class OuterExecutionTests(unittest.TestCase):
         self.checkpoint()
         review = self.launch('review')
         report = self.trusted_review(review)
-        paused = self.engine.stop(self.ticket)
+        ticket = {'id':self.ticket,'goal_revision':1,'status_before_pause':'AUTHORIZED'}
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            OuterIntake._control_execution(db,ticket,'pause','web','pause')
         task = self.settle_report(review,report)
         self.assertEqual(task['status'],'paused')
         self.assertEqual(task['step'],0)
-        self.engine.resume(self.ticket,'resume',flow(paused)['stop_generation'])
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            OuterIntake._control_execution(db,ticket,'resume','web','resume')
         resumed = self.launch('review')
         task = self.settle_report(resumed,report)
         self.assertNotEqual(task['status'],'completed')

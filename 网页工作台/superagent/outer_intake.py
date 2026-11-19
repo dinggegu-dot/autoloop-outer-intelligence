@@ -351,6 +351,11 @@ class OuterIntake:
                 result = {**result, 'ticket_status': ticket['status'], 'ticket_revision': ticket['revision'],
                           'goal_revision': ticket['goal_revision'], 'acceptance_revision': ticket['acceptance_revision']}
             self._delivery(db, event, ticket_id, result)
+            # 已参与该工单的本人私聊接收跨端决定，各投递仍有独立回执。
+            if ticket_id and event['source'] == 'web' and db.execute(
+                    "SELECT 1 FROM outer_events WHERE ticket=? AND source='feishu' "
+                    "AND tenant=? AND actor=? LIMIT 1", (ticket_id,event['tenant'],event['actor'])).fetchone():
+                self._delivery(db, {**dict(event),'source':'feishu'}, ticket_id, result)
 
     def _new_ticket(self, db, event):
         ticket_id = _id('wb-')

@@ -53,6 +53,7 @@ PROMPTS = {
         '主观条件列为缺口或人工验收。json-artifact 预期须为非空对象或数组。不得编造证据或写入通过结果。'
         'python-json-cli 的 test_spec_json 恰为 {"script":"tool.py","args":["参数"],"files":{}}。'
         'files 是合成输入文件名到内容字符串的对象，未使用文件则为空对象。不能是数组，不能包含程序。'
+        '每个明确输入输出示例独立列为一个验收项。每项的重复执行次数由系统完成。'
         'expected_result_json 填预期 JSON。每个运行验收适用的输入组都绑定同一对应 requirement_id。'
         'human-review 使用空对象 test_spec_json 和 null 的 expected_result_json。'
         'html-document 只接受 {"path":"index.html"}，预期为包含 title、headings、element_ids 的对象。'
@@ -89,8 +90,8 @@ def role_invoke(adapter, role, context, output_schema):
             output_schema = deepcopy(output_schema)
             fields = output_schema['properties']['criteria']['items']['properties']
             if requirements:
-                fields['requirement_ids']['items'] = {'type':'string','enum':requirements}
-            fields['source_refs']['items'] = {'type':'string','enum':context['relevant_thread_refs']}
+                fields['requirement_ids'] = _array({'type':'string','enum':requirements})
+            fields['source_refs'] = _array({'type':'string','enum':context['relevant_thread_refs']})
         started = time.monotonic()
         raw = adapter(role, context, output_schema)
         envelope = raw if isinstance(raw, dict) and 'result' in raw else {'result': raw}

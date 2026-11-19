@@ -140,6 +140,33 @@ class OuterIntakeTest(unittest.TestCase):
             self.intake.mark_delivered(item['id'])
         self.assertFalse(self.intake.pending_outbox(source='feishu'))
 
+    def test_legacy_engine_cannot_change_v2_control_state(self):
+        ready = self.latest(self.send('生成 JSON 报告'))
+        authorized = self.approve(ready)
+        ticket = authorized['id']
+        engine = self.workbench.goal_engine()
+
+        with self.assertRaisesRegex(Problem, '当前目标契约'):
+            engine.stop(ticket)
+        paused = self.control(authorized, 'pause', 'pause-v2')
+        state = self.store.get(ticket)
+        generation = state['goal_execution']['stop_generation']
+        with self.assertRaisesRegex(Problem, '当前目标契约'):
+            engine.resume(ticket, 'legacy-resume', generation)
+        self.assertEqual(self.store.get(ticket), state)
+
+        authorized = self.control(paused, 'resume', 'resume-v2')
+        self.assertEqual(self.store.get(ticket)['status'], 'queued')
+        self.control(authorized, 'stop', 'stop-v2')
+        stopped = self.store.get(ticket)
+        generation = stopped['goal_execution']['stop_generation']
+        with self.assertRaisesRegex(Problem, '当前目标契约'):
+            engine.resume(ticket, 'legacy-restart', generation)
+        with self.assertRaisesRegex(Problem, '当前目标契约'):
+            engine.recheck(ticket, stopped['version'], 'legacy-checkpoint')
+        self.assertEqual(self.store.get(ticket), stopped)
+        self.assertEqual(self.intake.get(ticket, 'owner')['status'], 'STOPPED')
+
     def test_duplicate_scope_and_selection(self):
         a = self.latest(self.send('one', event='one'))
         b = self.latest(self.send('two', event='two'))

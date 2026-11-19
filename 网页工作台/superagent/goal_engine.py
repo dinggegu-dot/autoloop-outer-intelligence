@@ -4,7 +4,7 @@ import json
 import uuid
 from contextlib import contextmanager
 
-from workbench import Problem, now
+from workbench import Problem, now, require_v1_control
 
 
 MODEL = 'gpt-6.2-sol'
@@ -191,6 +191,7 @@ class GoalEngine:
 
     def stop(self, ticket, source='board', *, binding=None):
         def apply(task):
+            require_v1_control(task)
             state = flow(task)
             if binding is not None and (
                 binding.get('task') != ticket or binding.get('operation') != 'pause'
@@ -213,6 +214,7 @@ class GoalEngine:
         if not isinstance(request,str) or not request or type(generation) is not int:
             raise Problem('缺少续办请求或明确的停办版本')
         def apply(task):
+            require_v1_control(task)
             state = flow(task)
             prior = state.setdefault('resume_requests',{})
             if request in prior:
@@ -321,6 +323,7 @@ class GoalEngine:
     def recheck(self,ticket,version,checkpoint):
         """验收环境修复后，原授权只允许重新审核登记过的同一检查点。"""
         def apply(task):
+            require_v1_control(task)
             state = flow(task)
             if (task['status']!='blocked' or current(task) or state['stop_requested']
                     or task['version']!=version or state['stage'] not in ('review','replan','repair')
