@@ -257,6 +257,36 @@ class OuterExecutionTests(unittest.TestCase):
         self.assertEqual(task['status'],'blocked')
         self.assertIsNone(current(task))
 
+    def test_review_preserves_worker_python_and_validates_other_environment_fields(self):
+        self.authorize(criterion())
+        self.plan(['one'])
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        self.checkpoint()
+        assignment = self.launch('review')
+        with patch.object(registry.platform,'python_version',return_value='3.9.6'):
+            report = self.trusted_review(assignment)
+        self.assertNotIn('error',report,report)
+        rows = report['validation']['checks']
+        self.assertEqual(rows[0]['environment']['python'],'3.9.6')
+        args = (assignment['outer_acceptance'],assignment['plan'],assignment,report['checkpoint'])
+        with patch.object(registry.platform,'python_version',return_value='3.11.9'):
+            for field, value in (
+                ('profile','forged-profile'), ('platform','unknown'), ('os_release','99.0'),
+                ('python','forged-interpreter'), ('extra','unexpected'),
+            ):
+                with self.subTest(field=field):
+                    row = dict(rows[0],environment=dict(rows[0]['environment'],**{field:value}))
+                    body = {key:item for key,item in row.items() if key not in ('id','passed','evidence_ref')}
+                    row['evidence_ref'] = f"sha256:{registry.sha256(body)}"
+                    with self.assertRaises(ValueError):
+                        registry.validate_results(*args,[row])
+            changed = dict(rows[0],environment=dict(rows[0]['environment'],python='3.12.4'))
+            with self.assertRaisesRegex(ValueError,'缺少有效证据'):
+                registry.validate_results(*args,[changed])
+            task = self.settle_report(assignment,report)
+        self.assertEqual(task['status'],'completed')
+        self.assertEqual(task['checks'][0]['environment']['python'],'3.9.6')
+
     def test_tampered_result_and_model_only_pass_are_rejected(self):
         self.authorize(criterion())
         self.plan(['one'])

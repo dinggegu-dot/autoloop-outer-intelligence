@@ -399,7 +399,7 @@ def _binding(criterion, contract, assignment, checkpoint):
         "verifier_id": criterion["verifier_id"], "verifier_version": criterion["verifier_version"],
         "fixture_version": sha256([criterion["test_spec"], criterion["expected_result"]]),
         "environment": {"profile": criterion["environment"], "platform": sys.platform,
-                        "python": platform.python_version(), "os_release": platform.release()},
+                        "os_release": platform.release()},
     }
 
 
@@ -426,6 +426,7 @@ def verify(contract, assignment, checkpoint, files, occupied):
     for criterion in selected_criteria(contract, assignment["plan"], assignment["step"]):
         status, detail = _criterion_result(criterion, files, occupied)
         row = dict(_binding(criterion, contract, assignment, checkpoint), status=status, detail=detail)
+        row["environment"]["python"] = platform.python_version()
         rows.append(dict(row, id=criterion["criterion_id"], passed=status == "PASS",
                          evidence_ref=f"sha256:{sha256(row)}"))
     return rows
@@ -437,7 +438,13 @@ def validate_results(contract, plan, assignment, checkpoint, rows):
         raise ValueError("缺少与阶段绑定的逐项验收结果")
     for criterion, row in zip(criteria, rows):
         binding = _binding(criterion, contract, assignment, checkpoint)
-        if not isinstance(row, dict) or any(row.get(key) != value for key, value in binding.items()):
+        environment = row.get("environment") if isinstance(row, dict) else None
+        worker_python = environment.get("python") if isinstance(environment, dict) else None
+        if not isinstance(worker_python,str) or not re.fullmatch(r"3\.[0-9]{1,3}\.[0-9]{1,3}(?:(?:a|b|rc)[0-9]{1,3})?", worker_python):
+            raise ValueError("验收结果缺少有效的 Worker Python 版本")
+        # Worker 解释器由可信回执记录。协调器仍独立核对批准环境和同一宿主机的 OS。
+        binding["environment"]["python"] = worker_python
+        if any(row.get(key) != value for key, value in binding.items()):
             raise ValueError("验收结果绑定的产物、版本或环境不匹配")
         status = row.get("status")
         valid_status = status in _RESULT_SCHEMA["status"]

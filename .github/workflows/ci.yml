@@ -18,4 +18,4 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: python3 -B scripts/check.py
+      - run: /usr/bin/python3 -B scripts/check.py

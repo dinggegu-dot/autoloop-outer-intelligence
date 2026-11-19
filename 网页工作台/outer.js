@@ -7,6 +7,9 @@ export function mountOuter(request, notice, openTask) {
   const statusNames = {DRAFT:'草案', ASSESSING:'正在整理', AWAITING_CLARIFICATION:'等待澄清',
     AWAITING_APPROVAL:'等待批准', AUTHORIZED:'已授权', PAUSED:'已暂停', STOPPED:'已停止',
     NEEDS_ATTENTION:'需要处理', VERIFICATION_GAP:'需要补充验收方法'};
+  const executionStates={created:'已创建',queued:'等待派工',planning:'正在规划',executing:'正在执行',
+    reviewing:'正在验收',stopping:'正在停办',blocked:'执行受阻',budget_exhausted:'预算已用完',
+    completed:'验收完成',paused:'已暂停',rejected:'已拒绝'};
   let chosen = new URLSearchParams(location.search).get('goal') || '';
   let event = '';
   let pending = '';
@@ -37,7 +40,7 @@ export function mountOuter(request, notice, openTask) {
     detail.append(element('pre', typeof value === 'string' ? value : JSON.stringify(value,null,2)));
   }
   function showDraft(d) {
-    const key = [d.id,d.revision,d.status,d.task_id].join('/');
+    const key = [d.id,d.revision,d.status,d.task_id,d.execution?.status,d.execution?.step].join('/');
     if (key === revisionKey) return;
     revisionKey = key;
     detail.replaceChildren(element('h3',statusNames[d.status] || d.status),
@@ -68,7 +71,12 @@ export function mountOuter(request, notice, openTask) {
     showRecord('验收缺口',contract.verification_gaps);
     showRecord('待人工验收',contract.human_review_requirements);
     showRecord('权限与预算',d.approval_terms);
-    showRecord('待处理',d.error);
+    if (d.execution) {
+      const e=d.execution;
+      detail.append(element('h4',executionStates[e.status] || e.status));
+      if (e.artifacts?.length) detail.append(element('p','交付文件 · '+e.artifacts.join('、')));
+    }
+    showRecord('待处理',d.error || d.execution?.error);
     const binding = {ticket_id:d.id, revision:d.revision, goal_revision:d.goal_revision,
       acceptance_revision:d.acceptance_revision};
     function command(name, extra={}) {return call(name,{...binding,...extra,request_id:crypto.randomUUID()});}
@@ -138,7 +146,7 @@ export function mountOuter(request, notice, openTask) {
       if(pass!==generation)return;
       const drafts=state.drafts||[];
       selector.replaceChildren(...drafts.map(d=>new Option(
-        (d.goal_contract?.goal_statement || d.summary || d.id)+' · '+(statusNames[d.status] || d.status),d.id)));
+        (d.goal_contract?.goal_statement || d.summary || d.id)+' · '+(executionStates[d.execution_status] || statusNames[d.status] || d.status),d.id)));
       if (!chosen && drafts.length) chosen=drafts[0].id;
       selector.value=chosen;
       if(chosen) {

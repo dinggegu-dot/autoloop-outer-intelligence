@@ -23,10 +23,47 @@ def main():
             and directory.name=='workbench' and hub_home.name=='hub' and directory.parent.parent==Path('/private/tmp')):
         raise SystemExit('需要 isolated_goal_hub.sh 新建的独立测试实例')
     store = Store(directory)
-    if store.list():
-        raise SystemExit('测试需要空工单库')
     hub = Hub(hub_home)
     outer = Workbench(store,hub,goal_enabled=True,outer_enabled=True,outer_model=CodexOuterModel(timeout=100)).outer()
+    if sys.argv[1:] == ['--resume-review']:
+        tickets=outer.list('owner')
+        if len(tickets)!=1:
+            raise SystemExit('恢复需要原隔离库中的唯一合成工单')
+        draft=tickets[0]
+        task=store.get(draft['id'])
+        with store.connect() as db:
+            event=db.execute("SELECT body FROM outer_events WHERE id=?", (draft['original_request_refs'][0],)).fetchone()
+        if (not event or json.loads(event[0]).get('text')!=REQUEST or task['status']!='blocked'
+                or task['phase']!='review' or task['goal_execution']['stage']!='review'
+                or '验收结果绑定' not in task.get('error','')):
+            raise SystemExit('只可复验已批准且因运行环境记录差异受阻的这张合成工单')
+        for control in ('pause','resume'):
+            current=outer.get(draft['id'],'owner')
+            outer.control(draft['id'],control,current['revision'],'synthetic-review-recovery-'+control,actor_id='owner')
+    elif not sys.argv[1:]:
+        if store.list() or outer.list('owner'):
+            raise SystemExit('新建测试需要空工单库')
+        draft=create_and_approve(outer)
+    else:
+        raise SystemExit('用法：live_acceptance.py [--resume-review]')
+    runtime=GoalRuntime(store,hub)
+    deadline=time.monotonic()+540
+    while time.monotonic()<deadline:
+        task=runtime.tick(draft['id'])
+        current=(task['status'],task['phase'],task['step'],len(task['goal_execution']['assignments']))
+        if current!=getattr(main,'previous',None):
+            print('execution',current,flush=True)
+            main.previous=current
+        if task['status']=='completed':
+            print('verified',len(task['checks']), 'criteria,',len(task['artifacts']),'artifacts',flush=True)
+            return
+        if task['status'] in ('blocked','budget_exhausted','paused','rejected'):
+            raise SystemExit('执行受阻：'+task.get('error',''))
+        time.sleep(1)
+    outer.control(draft['id'],'stop',outer.get(draft['id'],'owner')['revision'],'synthetic-time-limit',actor_id='owner')
+    raise SystemExit('已到测试期限，已记录停止意图')
+
+def create_and_approve(outer):
     event=outer.submit(source='web',source_event_id='synthetic-meeting-intervals',actor_id='owner',text=REQUEST)
     for _ in range(5):
         outer.drain(limit=1)
@@ -56,22 +93,7 @@ def main():
     if not set(CASES)<=observed:raise SystemExit('缺必需验收用例')
     outer.approve_goal_contract(draft['id'],draft['goal_revision'],draft['acceptance_revision'],draft['revision'],
                                 'synthetic-owner-confirm',actor_id='owner',source='web')
-    runtime=GoalRuntime(store,hub)
-    deadline=time.monotonic()+540
-    while time.monotonic()<deadline:
-        task=runtime.tick(draft['id'])
-        current=(task['status'],task['phase'],task['step'],len(task['goal_execution']['assignments']))
-        if current!=getattr(main,'previous',None):
-            print('execution',current,flush=True)
-            main.previous=current
-        if task['status']=='completed':
-            print('verified',len(task['checks']), 'criteria,',len(task['artifacts']),'artifacts',flush=True)
-            return
-        if task['status'] in ('blocked','budget_exhausted','paused','rejected'):
-            raise SystemExit('执行受阻：'+task.get('error',''))
-        time.sleep(1)
-    outer.control(draft['id'],'stop',outer.get(draft['id'],'owner')['revision'],'synthetic-time-limit',actor_id='owner')
-    raise SystemExit('已到测试期限，已记录停止意图')
+    return draft
 
 if __name__=='__main__':
     main()

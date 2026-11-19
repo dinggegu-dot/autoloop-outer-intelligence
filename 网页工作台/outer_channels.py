@@ -11,6 +11,10 @@ STATUS = {
     'NEEDS_ATTENTION':'需要处理', 'AUTHORIZED':'已授权', 'PAUSED':'已暂停', 'STOPPED':'已停止',
 }
 
+EXECUTION_STATUS = {'created':'已创建','planning':'正在规划','queued':'等待派工','executing':'正在执行',
+                    'reviewing':'正在验收','stopping':'正在停办','blocked':'受阻','budget_exhausted':'预算已用完',
+                    'paused':'已暂停','completed':'已完成','rejected':'已拒绝'}
+
 def dispatch(service, source, command, body):
     """身份来自本机 session 或已经验证的桥签名，调用方不能指定 actor。"""
     if command == 'list':
@@ -92,9 +96,10 @@ def card(draft):
         actions.append(('outer_stop','确认停止此单'))
     if draft.get('execution'):
         execution=draft['execution']
-        lines.append(f"执行状态 {execution['status']} · 计划 v{execution['version']}")
+        lines.append(f"执行状态 {EXECUTION_STATUS.get(execution['status'],execution['status'])} · 计划 v{execution['version']}")
         for item in execution.get('artifacts',[])[:8]:
-            if isinstance(item,dict) and item.get('path'):
-                lines.append('交付文件 '+str(item['path'])[:180])
+            path = item if isinstance(item,str) else item.get('path') if isinstance(item,dict) else None
+            if path:
+                lines.append('交付文件 '+str(path)[:180])
     actions.append(('outer_status','看进度'))
     return {'body':'\n'.join(filter(None,lines)), 'binding':binding,'actions':actions}

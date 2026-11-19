@@ -77,7 +77,9 @@ def serve_private(path,store,workbench=None,action_lock=None,decision_key=None):
                     payload=item['payload']
                     service=workbench.outer()
                     if command=='directory':
-                        data=[{'id':entry['id'],'status':entry['status']} for entry in service.list('owner')[:8]]
+                        from outer_channels import STATUS, EXECUTION_STATUS
+                        data=[{'id':entry['id'],'status':EXECUTION_STATUS.get(entry['execution_status'])
+                               or STATUS.get(entry['status'],entry['status'])} for entry in service.list('owner')[:8]]
                     elif command=='notifications':
                         data=service.pending_outbox(limit=10,source='feishu')
                     elif command=='card':

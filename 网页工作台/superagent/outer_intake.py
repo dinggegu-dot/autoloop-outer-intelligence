@@ -314,9 +314,11 @@ class OuterIntake:
     def list(self, actor_id, *, tenant='default'):
         actor, tenant = self._owner(actor_id, tenant)
         with self.store.connect() as db:
-            rows = db.execute('SELECT body FROM outer_tickets WHERE actor=? AND tenant=? ORDER BY updated_at DESC LIMIT 100',
-                              (actor, tenant)).fetchall()
-        return [json.loads(row[0]) for row in rows]
+            rows = db.execute(
+                "SELECT d.body, json_extract(t.body,'$.status') FROM outer_tickets d "
+                "LEFT JOIN tasks t ON t.id=d.id WHERE d.actor=? AND d.tenant=? "
+                "ORDER BY d.updated_at DESC LIMIT 100", (actor,tenant)).fetchall()
+        return [dict(json.loads(row[0]),execution_status=row[1]) for row in rows]
 
     @staticmethod
     def _delivery(db, event, ticket_id, data):

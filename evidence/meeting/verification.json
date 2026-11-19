@@ -1,0 +1,132 @@
+{
+  "scenario": "会议排期区间并集，合成工单，真实本机 Hub 和 Codex，审批使用范围受限的测试身份",
+  "outcome": "VERIFIED_COMPLETE",
+  "goal_revision": 1,
+  "acceptance_revision": 1,
+  "artifact_set_sha256": "6654fe3e4b1546ff09cbdf4fd3dfb85a1e3fc08e3eb88dabaab4b6fd42908564",
+  "files": {
+    "intervals.py": "396917ca15e1938a20524737428ad771cd4e35ec4ad39afd68369f181da96cf7"
+  },
+  "outer_calls": [
+    {
+      "role": "intake_assessor",
+      "model": "gpt-6.2-sol",
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 13184,
+        "input_tokens": 15457,
+        "output_tokens": 575,
+        "reasoning_output_tokens": 0
+      },
+      "elapsed_ms": 32258
+    },
+    {
+      "role": "acceptance_designer",
+      "model": "gpt-6.2-sol",
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 16721,
+        "output_tokens": 1530,
+        "reasoning_output_tokens": 89
+      },
+      "elapsed_ms": 57586
+    }
+  ],
+  "assignments": [
+    {
+      "phase": "plan",
+      "state": "settled",
+      "model_usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 0,
+        "input_tokens": 19602,
+        "output_tokens": 275,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "phase": "execute",
+      "state": "settled",
+      "model_usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 110976,
+        "input_tokens": 135144,
+        "output_tokens": 690,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "phase": "review",
+      "state": "settled",
+      "model_usage": null
+    },
+    {
+      "phase": "review",
+      "state": "settled",
+      "model_usage": null
+    }
+  ],
+  "checks": [
+    {
+      "criterion_id": "intervals-overlap-and-gap",
+      "status": "PASS",
+      "environment": {
+        "os_release": "25.6.0",
+        "platform": "darwin",
+        "profile": "macos-seatbelt-python-v1",
+        "python": "3.9.6"
+      },
+      "detail": "两次隔离运行产生与预期一致的实际 JSON 输出",
+      "artifact_sha256": "6654fe3e4b1546ff09cbdf4fd3dfb85a1e3fc08e3eb88dabaab4b6fd42908564",
+      "verifier_id": "python-json-cli",
+      "verifier_version": 1,
+      "evidence_ref": "sha256:a314ed65e101fb58d2026d26f61b2c0c3ea3c4412aae5f9e5dfa4b9523a50140"
+    },
+    {
+      "criterion_id": "intervals-contained",
+      "status": "PASS",
+      "environment": {
+        "os_release": "25.6.0",
+        "platform": "darwin",
+        "profile": "macos-seatbelt-python-v1",
+        "python": "3.9.6"
+      },
+      "detail": "两次隔离运行产生与预期一致的实际 JSON 输出",
+      "artifact_sha256": "6654fe3e4b1546ff09cbdf4fd3dfb85a1e3fc08e3eb88dabaab4b6fd42908564",
+      "verifier_id": "python-json-cli",
+      "verifier_version": 1,
+      "evidence_ref": "sha256:3078bce03de40f511f7c89770596f93c0a128a7b5ab41b992786230fc4a1d3e2"
+    },
+    {
+      "criterion_id": "intervals-empty",
+      "status": "PASS",
+      "environment": {
+        "os_release": "25.6.0",
+        "platform": "darwin",
+        "profile": "macos-seatbelt-python-v1",
+        "python": "3.9.6"
+      },
+      "detail": "两次隔离运行产生与预期一致的实际 JSON 输出",
+      "artifact_sha256": "6654fe3e4b1546ff09cbdf4fd3dfb85a1e3fc08e3eb88dabaab4b6fd42908564",
+      "verifier_id": "python-json-cli",
+      "verifier_version": 1,
+      "evidence_ref": "sha256:3c8a01c811bfc089aebd49ab0f5e7e10e55198dc7d443a2ab72c6485c3fcede3"
+    },
+    {
+      "criterion_id": "intervals-unsorted-and-duplicate",
+      "status": "PASS",
+      "environment": {
+        "os_release": "25.6.0",
+        "platform": "darwin",
+        "profile": "macos-seatbelt-python-v1",
+        "python": "3.9.6"
+      },
+      "detail": "两次隔离运行产生与预期一致的实际 JSON 输出",
+      "artifact_sha256": "6654fe3e4b1546ff09cbdf4fd3dfb85a1e3fc08e3eb88dabaab4b6fd42908564",
+      "verifier_id": "python-json-cli",
+      "verifier_version": 1,
+      "evidence_ref": "sha256:4bf3182c7c29cad1a3f6963d6f835783172c0be2a6fc14033076940e55eae271"
+    }
+  ]
+}
