@@ -516,21 +516,33 @@ def execute_outer_review(assignment, workspace, directory, report):
 
 
 def execute_coordination(store, assignment, directory, report):
-    from superagent.outer_model import CodexOuterModel, role_invoke
-    from superagent.outer_verification import COORDINATOR_SCHEMA, validate_coordination
+    from superagent.outer_model import PROMPT_VERSION, CodexOuterModel, ModelFailure, role_invoke
+    from superagent.outer_verification import coordination_schema, validate_coordination
     context = assignment['context']['coordinator']
     start = time.time_ns()
     engine = GoalEngine(store)
     adapter = CodexOuterModel(timeout=min(45,assignment['max_seconds'])).with_execution(
         directory, lambda: engine.launch_gate(assignment['ticket'],assignment['id'],assignment['run'])
     )
-    invocation = role_invoke(adapter, 'goal_coordinator', context, COORDINATOR_SCHEMA)
-    proposal = validate_coordination(invocation['result'],context)
-    evidence = {key:invocation[key] for key in ('invocation_id','model','usage','elapsed_ms',
-                                                'prompt_version') if key in invocation}
-    evidence.update(invocation_id=assignment['id'],snapshot_revision=context['input_snapshot_revision'],
-                    started_ns=start,ended_ns=time.time_ns())
-    return dict(report,result=proposal,evidence=evidence)
+    evidence = {
+        'invocation_id':assignment['id'], 'snapshot_revision':context['input_snapshot_revision'],
+        'started_ns':start, 'prompt_version':PROMPT_VERSION, 'model':adapter.model,
+    }
+    try:
+        invocation = role_invoke(adapter, 'goal_coordinator', context, coordination_schema(context))
+        evidence.update({key:invocation[key] for key in ('model','usage','elapsed_ms','prompt_version')})
+        proposal = validate_coordination(invocation['result'],context)
+    except ModelFailure as error:
+        evidence.update(usage=error.usage, failure_code=error.code)
+        report['error'] = '协调模型调用未产生有效提案'
+    except ValueError:
+        evidence['failure_code'] = 'proposal_rejected'
+        report['error'] = '协调提案未通过快照、证据或授权校验'
+    else:
+        report['result'] = proposal
+    evidence['ended_ns'] = time.time_ns()
+    report['evidence'] = evidence
+    return report
 
 
 def main():

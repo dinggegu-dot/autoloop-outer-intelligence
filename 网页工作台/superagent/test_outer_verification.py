@@ -356,6 +356,11 @@ class OuterExecutionTests(unittest.TestCase):
             self.assertIn('shell_tool',argv)
             self.assertLessEqual(timeout,assignment['max_seconds'])
             self.assertFalse((workspace/'one.json').exists())
+            schema = json.loads(Path(argv[argv.index('--output-schema')+1]).read_text())['properties']
+            self.assertEqual(schema['action']['enum'],context['available_actions'])
+            self.assertEqual(schema['evidence_refs']['items']['enum'],context['evidence_refs'])
+            self.assertEqual(schema['evidence_refs']['minItems'],1)
+            self.assertEqual(schema['retained_outputs']['items']['enum'],['one.json'])
             with gate():
                 self.assertIn(context['input_snapshot_revision'],prompt.decode())
             lines = "\n".join(json.dumps(event) for event in _events(proposal))
@@ -374,6 +379,32 @@ class OuterExecutionTests(unittest.TestCase):
         self.assertEqual(task['version'],2)
         self.assertEqual(flow(task)['revisions'][-1]['previous'],1)
         self.assertEqual(flow(task)['outer']['acceptance_revision'],1)
+
+    def test_rejected_coordinator_proposal_keeps_usage_without_applying_result(self):
+        from superagent.test_goal_codex import _events
+        self.authorize(criterion())
+        self.plan(['one'])
+        self.checkpoint()
+        review = self.launch('review')
+        self.settle_report(review,self.trusted_review(review))
+        assignment = self.launch('coordinate')
+        context = assignment['context']['coordinator']
+        proposal = {'schema_version':1,'input_snapshot_revision':context['input_snapshot_revision'],
+                    'action':'REPAIR','reason':'需要修复','evidence_refs':[],
+                    'plan_change':'','retained_outputs':[],
+                    'scope_change':False,'approval_required':False,'remaining_risk':'仍须复验'}
+        schema = registry.coordination_schema(context)
+        self.assertEqual(schema['properties']['retained_outputs']['maxItems'],0)
+        stdout = "\n".join(json.dumps(event) for event in _events(proposal)).encode()
+        with patch('superagent.goal_codex._run',return_value=(stdout,b'',0,0,1_000_000_000)):
+            report = self.trusted_review(assignment)
+        self.assertNotIn('result',report)
+        self.assertEqual(report['evidence']['failure_code'],'proposal_rejected')
+        self.assertEqual(report['evidence']['usage']['input_tokens'],3)
+        task = self.settle_report(assignment,report)
+        self.assertEqual(flow(task)['stage'],'coordinate')
+        self.assertEqual(flow(task)['assignments'][-1]['report']['evidence'],report['evidence'])
+        self.assertNotEqual(task['status'],'completed')
 
     def test_pause_delays_final_transition_and_old_review_cannot_be_reused(self):
         self.authorize(criterion())

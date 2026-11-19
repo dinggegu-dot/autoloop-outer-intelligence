@@ -59,7 +59,8 @@ PROMPTS = {
         'html-document 只接受 {"path":"index.html"}，预期为包含 title、headings、element_ids 的对象。'
     ),
     'goal_coordinator': (
-        '提出 CONTINUE、REPAIR、REPLAN、REQUEST_APPROVAL 或 BLOCKED，引用来源中的证据。'
+        '只从 available_actions 选择 action。evidence_refs 从快照同名字段逐字复制至少一个完整失败证据键，'
+        '不要用验收项 ID 或其他记录代替。retained_outputs 从快照同名字段逐字复制文件路径，可为空。'
         '解释修改影响，复用已验证成果，不得要求越权或宣布已完成。'
     ),
 }
@@ -172,8 +173,8 @@ class CodexOuterModel:
                 if len(stdout) > 2_000_000:
                     raise ModelFailure('output_budget')
                 result, _, usage = _read_result(stdout, output_schema)
-        except CodexWorkerError:
-            raise ModelFailure('invalid_output') from None
+        except CodexWorkerError as error:
+            raise ModelFailure('invalid_output', usage=error.usage) from None
         except OSError:
             raise ModelFailure('process_error') from None
         return dict(result=result, model=self.model, usage=usage, config={'effort': effort, 'timeout': self.timeout})

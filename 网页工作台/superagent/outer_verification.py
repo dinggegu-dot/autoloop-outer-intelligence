@@ -459,6 +459,21 @@ def validate_results(contract, plan, assignment, checkpoint, rows):
     return bool(required) and all(row["status"] == "PASS" for row in required)
 
 
+def coordination_schema(context):
+    schema = deepcopy(COORDINATOR_SCHEMA)
+    fields = schema["properties"]
+    fields["input_snapshot_revision"]["enum"] = [context["input_snapshot_revision"]]
+    fields["action"]["enum"] = list(context["available_actions"])
+    fields["evidence_refs"]["items"]["enum"] = list(context["evidence_refs"])
+    fields["evidence_refs"]["minItems"] = 1
+    retained = context["retained_outputs"]
+    if retained:
+        fields["retained_outputs"]["items"]["enum"] = list(retained)
+    else:
+        fields["retained_outputs"]["maxItems"] = 0
+    return schema
+
+
 def validate_coordination(result, context):
     if not isinstance(result, dict) or set(result) != set(COORDINATOR_SCHEMA["required"]):
         raise ValueError("协调建议字段无效")

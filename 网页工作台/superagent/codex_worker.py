@@ -15,6 +15,10 @@ MODEL = "gpt-6.2-sol"
 class CodexWorkerError(RuntimeError):
     """The invocation produced no usable result or completion evidence."""
 
+    def __init__(self, message, *, usage=None):
+        super().__init__(message)
+        self.usage = usage
+
 
 def _object(**properties):
     return {
@@ -116,14 +120,15 @@ def _read_result(stdout, schema):
                     not isinstance(usage, dict)
                     or any(type(count) is not int or count < 0 for count in usage.values())
                 ):
+                    usage = None
                     raise ValueError("invalid token usage")
         if not session or not completed or not isinstance(message, str):
             raise ValueError("missing session, completion, or final message")
         result = _decode(message)
     except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
-        raise CodexWorkerError("Invalid or incomplete Codex JSON output") from None
+        raise CodexWorkerError("Invalid or incomplete Codex JSON output", usage=usage) from None
     if not _matches(result, schema):
-        raise CodexWorkerError("Codex result does not match the role schema")
+        raise CodexWorkerError("Codex result does not match the role schema", usage=usage)
     return result, session, usage
 
 
