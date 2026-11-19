@@ -13,6 +13,8 @@ import threading
 
 def dispatch(store, item, workbench=None):
     action = item['action']
+    if action in ('note','answer','control') and store.get(item['task']).get('goal_execution',{}).get('outer'):
+        raise ValueError('请从目标契约卡操作此单')
     if workbench and action in ('brief','proposal','answer','controls','control','milestone'):
         from mobile_decision import answer,proposal,selected,control_card,control
         from task_brief import milestone,task_brief
@@ -23,6 +25,8 @@ def dispatch(store, item, workbench=None):
         if action=='controls':return control_card(task)
         return proposal(task) if action=='proposal' else task_brief(task).as_private_reply()
     if action == 'intake':
+        if getattr(workbench,'outer_enabled',False):
+            raise ValueError('智能接单实例需要结构化入口')
         goal = item['goal']
         if workbench and workbench.goal_enabled:
             result = workbench.create({'name':goal[:80],'goal':goal,'request_id':item['request'],
@@ -62,7 +66,32 @@ def serve_private(path,store,workbench=None,action_lock=None,decision_key=None):
                 raw=self.rfile.readline(96000)
                 if not raw.endswith(b'\n'):raise ValueError('请求超限')
                 item=json.loads(raw)
-                if item.get('action') in ('answer','proposal','controls','control') and decision_key is None:
+                if item.get('action') == 'outer':
+                    signature = item.pop('signature','')
+                    signed = json.dumps(item,sort_keys=True,separators=(',',':')).encode()
+                    if (not decision_key or not getattr(workbench,'outer_enabled',False)
+                            or not hmac.compare_digest(hmac.new(decision_key,signed,hashlib.sha256).hexdigest(),signature)):
+                        raise ValueError('飞书智能接单身份无效')
+                    from outer_channels import dispatch as outer_dispatch
+                    command=item['command']
+                    payload=item['payload']
+                    service=workbench.outer()
+                    if command=='directory':
+                        data=[{'id':entry['id'],'status':entry['status']} for entry in service.list('owner')[:8]]
+                    elif command=='notifications':
+                        data=service.pending_outbox(limit=10,source='feishu')
+                    elif command=='card':
+                        from outer_channels import card
+                        data=card(service.get(payload['ticket_id'],'owner'))
+                    elif command=='delivered':
+                        data=service.mark_delivered(payload['id'])
+                    elif command=='bind':
+                        data=service.bind_thread(payload['ticket_id'],'feishu',payload['thread'],actor_id='owner',
+                                                 expected_ticket_revision=payload['revision'])
+                    else:
+                        data=outer_dispatch(service,'feishu',command,payload)
+                    result={'result':data}
+                elif item.get('action') in ('answer','proposal','controls','control') and decision_key is None:
                     result={'result':{'message':'手机控制尚未启用。'} if item['action'] in ('proposal','controls') else '手机控制尚未启用，未执行。'}
                 elif workbench and item.get('action') in ('answer','control'):
                     signature=item.pop('signature','')
@@ -85,8 +114,11 @@ def serve_private(path,store,workbench=None,action_lock=None,decision_key=None):
                                 db.execute('UPDATE mobile_replies SET result=? WHERE event=?',(result['result'],item['event']))
                 else:
                     result={'result':dispatch(store,item,workbench)}
-            except Exception:
-                result={'error':'请求未确认'}
+            except Exception as error:
+                if getattr(error,'status',None) in (400,403,404,409) and item.get('action')=='outer':
+                    result={'problem':'当前工单、卡片或版本已变化，请查看最新状态。'}
+                else:
+                    result={'error':'请求未确认'}
             self.wfile.write(json.dumps(result).encode()+b'\n')
 
     server=socketserver.UnixStreamServer(str(path),Handler)

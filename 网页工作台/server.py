@@ -51,7 +51,17 @@ class Handler(BaseHTTPRequestHandler):
                 raise Problem('请求格式无效')
             path = urlsplit(self.path).path
             workbench = self.server.workbench
+            if path.startswith('/api/outer/'):
+                from outer_channels import dispatch
+                cmd = path.removeprefix('/api/outer/')
+                if cmd not in ('submit','select','get','event','approve','pause','resume','stop'):
+                    raise Problem('接口不存在',404)
+                if not workbench.outer_enabled:
+                    raise Problem('当前实例未启用智能接单',404)
+                return self.json_response(dispatch(workbench.outer(),'web',cmd,body))
             if path == '/api/tasks':
+                if getattr(workbench,'outer_enabled',False):
+                    raise Problem('请在智能接单入口登记需求',409)
                 with self.server.task_actions:
                     result = workbench.create(body)
                 return self.json_response(result, 201)
@@ -59,6 +69,8 @@ class Handler(BaseHTTPRequestHandler):
             if not match:
                 raise Problem('接口不存在', 404)
             task_id, action = match.groups()
+            if workbench.store.get(task_id).get('goal_execution',{}).get('outer'):
+                raise Problem('请使用绑定目标与版本的智能工单入口',409)
             handler = {'note':workbench.store.board_note,'move-note':workbench.store.move_note,'handoff':workbench.store.handoff,'answer':workbench.answer, 'resume':workbench.resume, 'revise':workbench.revise, 'reviewer':workbench.reviewer, 'pause':lambda t, _:workbench.pause(t)}[action]
             with self.server.task_actions:
                 result = handler(task_id, body)
@@ -79,6 +91,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({'csrf':self.server.csrf}, headers=[
                 ('Set-Cookie', 'odyssey_session_'+str(self.server.server_port)+'='+self.server.session_token+'; HttpOnly; SameSite=Strict; Path=/api/')
             ])
+        if route == '/api/outer':
+            if not self.session():
+                return self.json_response({'error':'会话已过期，请刷新'},403)
+            wb=self.server.workbench
+            if not getattr(wb,'outer_enabled',False):
+                return self.json_response({'enabled':False})
+            from outer_channels import dispatch
+            try:
+                return self.json_response({'enabled':True,'drafts':dispatch(wb.outer(),'web','list',{})})
+            except (Problem,sqlite3.Error):
+                return self.json_response({'error':'暂时无法读取目标草案'},503)
         if route.startswith('/api/tasks'):
             if not self.session():
                 return self.json_response({'error':'会话已过期，请刷新'}, 403)
@@ -113,6 +136,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(b'{"error":"Local records unavailable"}', 'application/json', 503)
             return
         files = {'/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js', '/assets/research-kingdom.png': 'assets/research-kingdom.png'}
+        files['/outer.js']='outer.js'
         files['/intake_dialog.js']='intake_dialog.js'
         if LEGACY_BOARD:files['/snapshot.json']='snapshot.json'
         for name in ('odyssey.css', 'kingdoms.js', 'journey.js', 'task_presentation.js', 'tasks.js', 'tasks.css', 'world.js', 'world.css', 'globe.js', 'assets/odyssey-world-map.png', 'vendor/three.module.js', 'vendor/three.core.js', 'vendor/OrbitControls.js'):
@@ -169,7 +193,15 @@ if __name__ == '__main__':
     parser.add_argument('--goal-pilot',action='store_true')
     parser.add_argument('--goal-contract',type=Path, help='目标试点默认验收契约 JSON')
     parser.add_argument('--goal-team',action='store_true', help='启用隔离多工作包路线')
+    parser.add_argument('--outer-intelligence',action='store_true',help='在隔离目标试点启用版本化智能接单')
     args = parser.parse_args()
+    if args.outer_intelligence and not (args.goal_pilot and args.runtime and args.hub_home):
+        parser.error('智能接单需要显式指定目标试点、runtime 和 hub-home')
+    if args.outer_intelligence and (args.goal_contract or args.goal_team):
+        parser.error('智能接单采用每张工单已批准的验收契约')
+    if args.outer_intelligence and (args.runtime.resolve()==(ROOT/'.runtime').resolve() or
+                                    args.hub_home.resolve()==(Path.home()/'.agent-autoloop').resolve()):
+        parser.error('智能接单试点需要独立工作台和中台目录')
     if args.snapshot:
         if not LEGACY_BOARD:parser.error('发行版不支持生成历史项目快照')
         (ROOT / 'snapshot.json').write_text(json.dumps(snapshot(), ensure_ascii=False, indent=2))
@@ -191,7 +223,8 @@ if __name__ == '__main__':
                 parser.error(f'验收契约无效：{error}')
         server.workbench = Workbench(Store(args.runtime) if args.runtime else None,
                                     Hub(args.hub_home) if args.hub_home else None,
-                                    goal_enabled=args.goal_pilot, goal_contract=goal_contract,goal_team=args.goal_team)
+                                    goal_enabled=args.goal_pilot, goal_contract=goal_contract,goal_team=args.goal_team,
+                                    outer_enabled=args.outer_intelligence)
         server.task_actions = threading.Lock()
         if args.feishu_socket:
             from private_intake import serve_private
@@ -205,6 +238,16 @@ if __name__ == '__main__':
             server.feishu_intake=serve_private(args.feishu_socket,server.workbench.store,server.workbench,server.task_actions,decision_key)
         server.session_token = secrets.token_urlsafe(32)
         server.csrf = secrets.token_urlsafe(32)
+        if args.outer_intelligence:
+            outer = server.workbench.outer()
+            def outer_loop():
+                while True:
+                    try:
+                        outer.drain(limit=1)
+                    except Exception as error:
+                        print('智能判断待核对',type(error).__name__,flush=True)
+                    time.sleep(1)
+            threading.Thread(target=outer_loop,daemon=True).start()
         def reconcile_loop():
             while True:
                 try:

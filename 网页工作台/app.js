@@ -83,6 +83,12 @@ form.onsubmit=async event=>{
     notice(result.dispatch_error||'已登记。');await refresh();
   }catch(error){notice(error.message);}finally{busy=false;}
 };
-async function start(){try{csrf=(await request('/api/session')).csrf;await refresh();}catch(error){notice(error.message);}}
+let outerMounted=false;
+async function start(){try{csrf=(await request('/api/session')).csrf;
+  if(!outerMounted && (await request('/api/outer')).enabled){
+    const {mountOuter}=await import('./outer.js');
+    mountOuter(request,notice,async id=>{selected=id;await refresh();detail.scrollIntoView();});outerMounted=true;
+  }
+  await refresh();}catch(error){notice(error.message);}}
 byId('refresh').onclick=start;start();
 setInterval(()=>{if(!busy&&!document.hidden&&csrf)refresh();},5000);

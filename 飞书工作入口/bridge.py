@@ -293,6 +293,10 @@ HELP = '''飞书工作入口 · FS-v1.0
 界面入口 http://127.0.0.1:5173 仅本机可打开。'''
 
 
+class MobileProblem(ValueError):
+    pass
+
+
 class LocalBoard:
     def __init__(self,path,decision_key=None,*,pilot_task=None,pilot_board=None):
         self.path=path
@@ -309,8 +313,10 @@ class LocalBoard:
                 raise ValueError('测试单只接受查询和本人暂停')
             return self.pilot_board.call(action,**fields)
         item=dict(action=action,**fields)
-        if action in ('answer','control'):
-            if not self.decision_key:return '手机审批尚未启用，未执行。'
+        if action in ('answer','control','outer'):
+            if not self.decision_key:
+                if action=='outer':raise ValueError('智能入口需要已配置的决定签名')
+                return '手机审批尚未启用，未执行。'
             item['signature']=hmac.new(self.decision_key,json.dumps(item,sort_keys=True,separators=(',',':')).encode(),hashlib.sha256).hexdigest()
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
             client.settimeout(8)
@@ -318,6 +324,7 @@ class LocalBoard:
             client.sendall(json.dumps(item).encode()+b'\n')
             with client.makefile('rb') as stream:
                 result=json.loads(stream.readline(96000))
+        if 'problem' in result:raise MobileProblem(result['problem'])
         if 'result' not in result:raise RuntimeError('本机工作台尚未确认请求')
         return result['result']
 
@@ -557,6 +564,9 @@ class Bridge:
         return self.register_goal(event,create[1].strip())
 
     def register_goal(self,event,goal,reply_event=None):
+        if self.s.get('outer_intelligence'):
+            from outer_bridge import submit
+            return submit(self,event,goal)
         if not 1 <= len(goal) <= 6000:
             return '任务目标须为 1–6000 字，未登记。'
         request = str(uuid.uuid5(uuid.NAMESPACE_URL,'odyssey:feishu:'+event['message_id']))
@@ -600,7 +610,11 @@ class Bridge:
         action=event['action']
         parent=event['reply_to']
         if action=='home':return self.click_prompt(event,'home','',HOME_BODY)
-        if action=='list':return self.ask_target(event)
+        if action=='list':
+            if self.s.get('outer_intelligence'):
+                from outer_bridge import directory
+                return directory(self,event)
+            return self.ask_target(event)
         if action=='new':return self.click_prompt(event,'new','','填写需求后点击「创建工单」。')
         card=self.store.db.execute("SELECT task FROM task_cards JOIN outbox ON id=outbox_id WHERE ref=? AND state='sent'",(parent,)).fetchone()
         if action=='add' and card:return self.click_prompt(event,'note',card[0],'填写要补充到这张工单的内容。')
@@ -639,12 +653,24 @@ class Bridge:
         return '入口已失效。'
 
     def handle(self, e):
+        if self.s.get('outer_intelligence'):
+            from outer_bridge import parent_card, respond
+            card=parent_card(self,e)
+            if card and e.get('message_type') in ('text','wb_click'):
+                try:return respond(self,e,card)
+                except MobileProblem as error:return str(error)
         if e.get('message_type')=='wb_click':return self.handle_click(e)
         if e.get('message_type') != 'text' and not (e.get('message_type')=='post' and re.fullmatch(r'/(?:new|tasks)(?:\s+.+)?',e['content'].strip(),re.S)):
             return '未执行：仅接受私聊文字（单条最多8000字）。新建工单可用 /new。'
         text = e['content'].strip(); compact = re.sub(r'[\s？?！!。]+','',text).lower(); mid=e['message_id']
+        if self.s.get('outer_intelligence') and not e.get('reply_to') and compact in ('我的工单','/tasks','看进度'):
+            from outer_bridge import directory
+            return directory(self,e)
         reply = self.work_message(e,text,compact)
         if reply is not None:return reply
+        if self.s.get('outer_intelligence'):
+            from outer_bridge import submit
+            return submit(self,e,text)
         if self.s.get('workbench_only'):
             return self.clarify(e)
         if compact in ('暂停','暂停任务','暂停开发','停止','停止任务','恢复','恢复任务','恢复开发','继续开发'):
@@ -751,6 +777,10 @@ class Bridge:
             labels=[line.split('. ',1)[1] for line in body.splitlines() if re.match(r'^[1-8]\. ',line)]
             actions=[('pick_'+str(i),label) for i,label in enumerate(labels,1)]
             body='点击工单，将刚才的补充存入所选工单。' if menu['note'] else '点击工单，查看当前进度和可用操作。'
+        elif prompt and prompt['kind']=='outer':
+            outer=json.loads(prompt['context'])
+            title='目标工单'
+            actions=outer['actions']
         elif prompt and prompt['kind']=='home':
             title='工作台';actions=nav
         elif prompt and prompt['kind']=='clarify':
@@ -775,6 +805,10 @@ class Bridge:
         return click_cards.render(title,body,actions,form),shown
 
     def flush(self, transport):
+        if self.s.get('outer_intelligence'):
+            from outer_bridge import mirror_notifications
+            try:mirror_notifications(self)
+            except (OSError,ValueError,RuntimeError):pass  # 引擎 outbox 保留原记录，下轮续投。
         try:self.collect_handoffs()
         except (OSError,RuntimeError,ValueError):pass
         rows=self.store.db.execute("SELECT * FROM outbox WHERE state='pending' AND next_try<=? ORDER BY rowid LIMIT 5",(time.time(),)).fetchall()
