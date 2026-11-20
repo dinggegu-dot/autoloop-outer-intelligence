@@ -99,7 +99,9 @@ def afr(cfg, command, *args, timeout):
 
 def fingerprint(directory):
     stamp = hashlib.sha256()
-    for parent, dirs, files in os.walk(directory):
+    def require_readable(error):
+        raise error
+    for parent, dirs, files in os.walk(directory, onerror=require_readable):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not Path(parent, d).is_symlink())
         for name in sorted(files):
             path = Path(parent, name)
@@ -161,7 +163,7 @@ def scan(cfg):
         code = item.get("error") if isinstance(item, dict) else None
         code = code if isinstance(code, str) and code in SCAN_CODES else "local_read_error"
         codes[code] = codes.get(code, 0) + 1
-    details = {"scan_errors": errors, "error_counts": codes,
+    details = {"scan_errors": errors, "error_counts": codes, "existing_count": result.get("existing", 0),
                "unsupported_count": len(result.get("unsupported", []))}
     if changed:
         return {"state": "settling", "new_count": len(result["added"]), "pending_count": len(pending),

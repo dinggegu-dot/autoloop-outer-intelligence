@@ -56,12 +56,12 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 raise Problem('请求格式无效')
             path = urlsplit(self.path).path
-            workbench = self.server.workbench
             if path.startswith('/api/afr/'):
                 panel = getattr(self.server,'afr_panel',None)
                 if panel is None:
                     raise Problem('当前实例未启用 AFR 本机查询',404)
                 return self.json_response(panel.dispatch(path.removeprefix('/api/afr/'),body))
+            workbench = self.server.workbench
             if path.startswith('/api/outer/'):
                 from outer_channels import dispatch
                 cmd = path.removeprefix('/api/outer/')
@@ -180,6 +180,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         types = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg'}
         body = file.read_bytes()
+        if file.name=='afr.html' and isinstance(self, AfrQueryHandler):
+            body = body.replace(b'<header class="mast">', b'<header hidden>', 1)
         if file.name=='index.html' and getattr(self.server,'afr_panel',None):
             body = body.replace(b'</nav>', '<a href="/afr">AFR 本机查询</a></nav>'.encode(),1)
         self.respond(body, types[file.suffix])
@@ -213,6 +215,27 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+class AfrQueryHandler(Handler):
+    """独立本机读端只复用查询协议，不创建工单执行器。"""
+
+    def do_GET(self):
+        path = urlsplit(self.path).path
+        if path == '/':
+            self.path = '/afr'
+        elif path not in ('/afr', '/afr.js', '/style.css', '/api/session'):
+            return self.send_error(404)
+        super().do_GET()
+
+    def do_POST(self):
+        if self.path not in ('/api/afr/search', '/api/afr/read'):
+            return self.send_error(404)
+        super().do_POST()
+
+    def log_request(self, code='-', size='-'):
+        # 查询诊断只需状态码，忽略可能含私人检索词的 URL。
+        self.log_message("HTTP %s", code)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8765)
@@ -229,6 +252,7 @@ if __name__ == '__main__':
     parser.add_argument('--afr-root',type=Path,help='AFR v1 CLI 所在仓库绝对路径')
     parser.add_argument('--afr-python',type=Path,help='本机运行 AFR CLI 的 Python 3.11+')
     parser.add_argument('--afr-vault',type=Path,help='本机 AFR 查询固定知识库绝对路径')
+    parser.add_argument('--afr-query-only',action='store_true',help='仅运行本机知识库查询服务')
     parser.add_argument('--outer-model-timeout', type=int, metavar='SECONDS',
                         help='试点接单和验收设计单次模型时限，1 至 120 秒')
     args = parser.parse_args()
@@ -242,6 +266,15 @@ if __name__ == '__main__':
             afr_panel = AfrPanel(*afr_settings)
         except (OSError, ValueError):
             parser.error('AFR 程序、解释器、知识库配置无效')
+    if args.afr_query_only:
+        if not afr_panel or args.snapshot or args.feishu_socket or args.outer_intelligence or args.goal_pilot:
+            parser.error('独立查询仅支持配置 AFR 知识库')
+        with ThreadingHTTPServer(('127.0.0.1', args.port), AfrQueryHandler) as server:
+            server.afr_panel = afr_panel
+            server.session_token = secrets.token_urlsafe(32)
+            server.csrf = secrets.token_urlsafe(32)
+            server.serve_forever()
+        raise SystemExit(0)
     outer_model = None
     if args.outer_model_timeout is not None:
         if not args.outer_intelligence or not 1 <= args.outer_model_timeout <= 120:

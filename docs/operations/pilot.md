@@ -95,3 +95,27 @@ python3 -B scripts/live_feishu.py "$stage" "$bridge_settings"
 ```
 
 在现有本人机器人私聊发“随机前缀 + 空格 + 合成需求”。测试目录时发“随机前缀 + 空格 + /tasks”。试点投递按本次前缀独立去重。查看目标、验收、预算，核对后点候选卡批准。也可在同一工单的本机看板批准。结束后停掉本次前台进程并保留验收副本。试验收件窗口最长一小时。飞书 App 配置、用户凭据、现役数据库均留在本机。
+
+## AFR 正式本机入口
+
+将支持的材料放入桌面的「研报」目录。文件写稳后观察器调用 AFR scan，将初读材料写入已配置的 Obsidian 库。打开本机知识查询页，输入检索词并点击命中即可阅读相应版本。[本机查询入口](http://127.0.0.1:8766/afr)
+
+两个服务使用当前账户的 LaunchAgents。程序副本和 local.json 位于 `~/Library/Application Support/Autoloop/afr-local`，扫描计数写入该目录下的 `state/local.autoloop.afr-intake.log`。更新仓库后，运行中的副本需要单独更新。观察器设置 `local_only: true`，未配置 Hub 地址或密钥；其 Seatbelt 配置禁止网络。查询进程使用 `--afr-query-only`，仅绑定回环，禁止主动出站。此设置只管这两个服务。
+
+查看状态：
+
+```sh
+launchctl print "gui/$(id -u)/local.autoloop.afr-intake"
+launchctl print "gui/$(id -u)/local.autoloop.afr-query"
+```
+
+如需停用并取消下次登录启动，执行：
+
+```sh
+for label in local.autoloop.afr-intake local.autoloop.afr-query; do
+  launchctl disable "gui/$(id -u)/$label"
+  launchctl bootout "gui/$(id -u)/$label"
+done
+```
+
+恢复时对这两个标签分别执行 `launchctl enable "gui/$(id -u)/$label"` 和 `launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$label.plist"`。停用服务保留知识库内的初读和已有笔记。
