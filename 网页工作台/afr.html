@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AFR 本机知识查询</title><link rel="stylesheet" href="/style.css"><script defer src="/afr.js"></script></head>
+<body>
+<header class="mast"><a href="/workbench" class="brand">任务工作台</a></header>
+<main>
+  <section aria-labelledby="afr-heading">
+    <h1 id="afr-heading">AFR 本机知识查询</h1>
+    <p>查询与当前工单独立，原文仅显示在本机此页。</p>
+    <form id="afr-search" method="post" action="/api/afr/search">
+      <label>检索词<input name="query" maxlength="300" required autocomplete="off"></label>
+      <button disabled>搜索</button>
+    </form>
+    <p id="afr-status" role="status"></p>
+    <ul id="afr-results" aria-label="搜索结果"></ul>
+    <article id="afr-source" hidden aria-label="选中原文">
+      <h2 id="afr-title"></h2>
+      <pre id="afr-text" style="white-space: pre-wrap; overflow-wrap: anywhere"></pre>
+    </article>
+  </section>
+</main>
+</body></html>

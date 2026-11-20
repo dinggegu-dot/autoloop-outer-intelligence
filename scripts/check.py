@@ -22,6 +22,7 @@ def main():
     run([sys.executable,'-B','-m','unittest','-q',*modules],BOARD,
         PYTHONPATH=os.pathsep.join([str(BOARD),str(BOARD/'superagent')]))
     run([sys.executable,'-B','-m','unittest','discover','-q'],MOBILE)
+    run([sys.executable,'-B','test_route.py'],ROOT/'integrations/afr-autoloop')
 
 if __name__ == '__main__':
     main()

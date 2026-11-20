@@ -448,6 +448,8 @@ class OuterIntake:
                 if item['requirement_id'] in selected]
             context['available_actions'] = ['PROPOSE_CHANGE', 'ESCALATE']
         if event['role'] == 'acceptance_designer':
+            from .outer_verification import authorization_constraint_controls
+            context['enforced_constraint_controls'] = authorization_constraint_controls(ticket['goal_contract'])
             context['verifier_catalogue'] = self._registry().catalogue()
             context['prior_acceptance'] = ticket['acceptance_contract']
         elif not ticket and not message.get('force_new'):

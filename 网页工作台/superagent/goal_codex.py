@@ -92,6 +92,10 @@ class GoalCodexError(RuntimeError):
         self.categories = categories
 
 
+def phase_sandboxes():
+    return {phase: settings[0] for phase, settings in _PHASES.items()}
+
+
 def _prepare(assignment):
     if not isinstance(assignment, dict) or any(k not in assignment for k in _REQUIRED):
         raise GoalCodexError("invalid_assignment", "Assignment is missing required fields")

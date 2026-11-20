@@ -4,6 +4,8 @@
 
 [下载候选分支 ZIP](https://github.com/dinggegu-dot/autoloop-outer-intelligence/archive/refs/heads/codex/v2-outer-intelligence.zip) · [运行与回滚](docs/operations/pilot.md) · [实现与实验边界](docs/architecture/architecture-alignment.md)
 
+[AFR 文件投放、Obsidian 阅读与工单签收](docs/testing/afr-integration.md)
+
 ## 先看地图
 
 在已获仓库访问权的机器上，从候选分支启动。以下命令在本地创建空目录，浏览星球、明信片和王国近景无需模型账号。

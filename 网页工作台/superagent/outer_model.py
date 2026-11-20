@@ -13,7 +13,7 @@ import time
 from .codex_worker import CodexWorkerError, _array, _matches, _object, _read_result
 
 
-PROMPT_VERSION = 5
+PROMPT_VERSION = 6
 TXT = {'type': 'string'}
 INT = {'type': 'integer'}
 BOOL = {'type': 'boolean'}
@@ -47,7 +47,7 @@ PROMPTS = {
         '模型提出的默认值标为 MODEL_PROPOSED；source_refs 只可引用快照中的真实事件。'
         'required_capabilities 包括功能和用户给出的具体输入输出例子。每个明确样例保留其原文、来源和预期。'
         'constraints 仅记录用户明确限制实施方式、权限、预算的要求。示例数值和输出格式属于功能，'
-        '不要重复列作权限限制或假设。USER_EXPLICIT 项 description 使用用户原句或完整分句。'
+        '产物是否忠于输入资料、是否保留隐私属于可检查的质量要求。不要重复列作权限限制或假设。USER_EXPLICIT 项 description 使用用户原句或完整分句。'
     ),
     'acceptance_designer': (
         '对直接输入输出样例使用已登记验证器逐一检查。要求关联引用对应的必要需求 ID。按已登记验证器能力设计可核查验收。覆盖每一项必要交付物、功能及非功能要求。'
@@ -57,7 +57,7 @@ PROMPTS = {
         '本人必须判断的主观条目逐项列为 HUMAN_REVIEW，required 和 human_review_required 为 true，'
         'verifier_id 为 human-review，verifier_version 为 1，test_spec_json 为 "{}"，expected_result_json 为 "null"，'
         '每项关联必要需求并描述本人要判断的条件。human_review_requirements 如有内容则填上述条目 ID 或其描述。'
-        'verification_gaps 每项用短句表达实际未覆盖的需求。执行权限由引擎核对。json-artifact 预期须为非空对象或数组。不得编造证据或写入通过结果。'
+        'verification_gaps 每项用短句表达实际未覆盖的需求。enforced_constraint_controls 列出的需求已由引擎授权与写入边界覆盖，不再为这些已覆盖的条目填 verification_gaps。其余限制不能冒称已强制。json-artifact 预期须为非空对象或数组。不得编造证据或写入通过结果。'
         'python-json-cli 的 test_spec_json 恰为 {"script":"tool.py","args":["参数"],"files":{}}。'
         'files 是合成输入文件名到内容字符串的对象，未使用文件则为空对象。不能是数组，不能包含程序。'
         '每个明确输入输出示例独立列为一个验收项。每项的重复执行次数由系统完成。'

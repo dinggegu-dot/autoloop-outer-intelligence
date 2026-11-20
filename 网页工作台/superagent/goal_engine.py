@@ -856,8 +856,7 @@ class GoalEngine:
         state['outcome'] = 'PARTIAL_DELIVERY' if task['step'] else None
         task['phase'] = 'review'
 
-    @staticmethod
-    def _outer_coordination_context(task):
+    def _outer_coordination_context(self, task):
         state = flow(task)
         outer = state['outer']
         request = state['coordination']
@@ -885,7 +884,16 @@ class GoalEngine:
             {key:delivery[key] for key in ('assignment','artifact_sha256','level')}
             for delivery in state.get('stage_deliveries',[])
         ]
+        from superagent.goal_codex import phase_sandboxes
+        from superagent.outer_intake import _model_text
+        last_implementation = next((row for row in reversed(state['assignments'])
+                                    if row['phase'] in ('execute','repair') and row.get('report')), None)
+        implementation = (last_implementation['report'].get('result') or {}) if last_implementation else {}
+        notes = self.store.notes(task['id'])
         context = {
+            'phase_sandboxes':phase_sandboxes(),
+            'last_implementation_summary':_model_text(str(implementation.get('summary','')),500),
+            'recent_operator_notes':[_model_text(note['body'],500) for note in notes[-3:]],
             'ticket_id':outer['ticket_id'],'goal_revision':outer['goal_revision'],
             'acceptance_revision':outer['acceptance_revision'],'mandate_revision':outer['mandate_revision'],
             'plan_revision':task['version'],'stage':task['step'],
@@ -987,6 +995,8 @@ class GoalEngine:
             context['human_review_feedback']['reason'] = _model_text(reviews[-1]['reason'],2000)
         if assignment.get('outer_binding'):
             # 保留已批准的原始需求和限制。授权仍由独立的 Mandate 约束。
+            from superagent.goal_codex import phase_sandboxes
+            context['phase_sandboxes'] = phase_sandboxes()
             context['approved_goal_contract'] = state['outer']['goal_contract']
             if assignment['phase']=='coordinate':
                 context['coordinator'] = assignment['coordination_context']

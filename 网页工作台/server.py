@@ -57,6 +57,11 @@ class Handler(BaseHTTPRequestHandler):
                 raise Problem('请求格式无效')
             path = urlsplit(self.path).path
             workbench = self.server.workbench
+            if path.startswith('/api/afr/'):
+                panel = getattr(self.server,'afr_panel',None)
+                if panel is None:
+                    raise Problem('当前实例未启用 AFR 本机查询',404)
+                return self.json_response(panel.dispatch(path.removeprefix('/api/afr/'),body))
             if path.startswith('/api/outer/'):
                 from outer_channels import dispatch
                 cmd = path.removeprefix('/api/outer/')
@@ -158,6 +163,8 @@ class Handler(BaseHTTPRequestHandler):
                      'world.css','odyssey.css','kingdoms.js','globe.js','kingdom_relief.js','travel_art.js',
                      'vendor/three.module.js','vendor/three.core.js','task_presentation.js','journey.js'):
             files['/'+name] = name
+        if getattr(self.server,'afr_panel',None):
+            files.update({'/afr':'afr.html','/afr.js':'afr.js'})
         if route in files:
             file = ROOT / files[route]
         elif pack and route.startswith('/assets/odyssey/') and route[16:] in ART_NAMES:
@@ -172,7 +179,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         types = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg'}
-        self.respond(file.read_bytes(), types[file.suffix])
+        body = file.read_bytes()
+        if file.name=='index.html' and getattr(self.server,'afr_panel',None):
+            body = body.replace(b'</nav>', '<a href="/afr">AFR 本机查询</a></nav>'.encode(),1)
+        self.respond(body, types[file.suffix])
 
     def stream_tasks(self,focus=None):
         self.send_response(200)
@@ -216,7 +226,28 @@ if __name__ == '__main__':
     parser.add_argument('--goal-team',action='store_true', help='启用隔离多工作包路线')
     parser.add_argument('--outer-intelligence',action='store_true',help='在隔离目标试点启用版本化智能接单')
     parser.add_argument('--odyssey-assets',type=Path,default=(ROOT/'assets/odyssey' if (ROOT/'assets/odyssey').is_dir() else None),help='本机原版画册目录，仅开放已知地图素材')
+    parser.add_argument('--afr-root',type=Path,help='AFR v1 CLI 所在仓库绝对路径')
+    parser.add_argument('--afr-python',type=Path,help='本机运行 AFR CLI 的 Python 3.11+')
+    parser.add_argument('--afr-vault',type=Path,help='本机 AFR 查询固定知识库绝对路径')
+    parser.add_argument('--outer-model-timeout', type=int, metavar='SECONDS',
+                        help='试点接单和验收设计单次模型时限，1 至 120 秒')
     args = parser.parse_args()
+    afr_settings = (args.afr_root,args.afr_python,args.afr_vault)
+    afr_panel = None
+    if any(afr_settings):
+        if not all(afr_settings):
+            parser.error('AFR 查询需要同时指定程序、解释器和知识库')
+        from afr_panel import AfrPanel
+        try:
+            afr_panel = AfrPanel(*afr_settings)
+        except (OSError, ValueError):
+            parser.error('AFR 程序、解释器、知识库配置无效')
+    outer_model = None
+    if args.outer_model_timeout is not None:
+        if not args.outer_intelligence or not 1 <= args.outer_model_timeout <= 120:
+            parser.error('模型时限仅用于智能接单试点，范围为 1 至 120 秒')
+        from superagent.outer_model import CodexOuterModel
+        outer_model = CodexOuterModel(timeout=args.outer_model_timeout)
     if args.odyssey_assets and not all((args.odyssey_assets/name).is_file() and not (args.odyssey_assets/name).is_symlink() for name in ART_NAMES):
         parser.error('画册不完整或包含链接，请指定原版素材目录')
     if args.outer_intelligence and not (args.goal_pilot and args.runtime and args.hub_home):
@@ -248,9 +279,10 @@ if __name__ == '__main__':
         server.workbench = Workbench(Store(args.runtime) if args.runtime else None,
                                     Hub(args.hub_home) if args.hub_home else None,
                                     goal_enabled=args.goal_pilot, goal_contract=goal_contract,goal_team=args.goal_team,
-                                    outer_enabled=args.outer_intelligence)
+                                    outer_enabled=args.outer_intelligence, outer_model=outer_model)
         server.odyssey_assets = args.odyssey_assets.resolve() if args.odyssey_assets else None
         server.task_actions = threading.Lock()
+        server.afr_panel = afr_panel
         if args.feishu_socket:
             from private_intake import serve_private
             decision_key=None
