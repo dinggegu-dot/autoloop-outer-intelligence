@@ -46,6 +46,7 @@ export function nextAction(task){
   if(task.status==='queued')return '任务已排队，尚未确认模型开始工作';
   if(task.cards?.some(c=>c.state==='open'))return task.phase==='review'?'查看验收阻塞，处理后继续审核':'核对方案并处理待办';
   if(task.status==='budget_exhausted')return '追加执行时间后继续';
+  if(task.status==='blocked'&&task.blocker?.version===task.version&&task.blocker?.phase===task.phase)return '查看阻塞与已有证据，补齐条件后继续';
   if(task.paused||['blocked','stopping'].includes(task.status))return '查看阻塞原因，继续或调整要求';
   if(task.phase==='plan')return '方案设计中，完成后请你确认';
   if(task.phase==='review')return '独立验收中，检查结果将持续更新';

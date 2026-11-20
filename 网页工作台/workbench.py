@@ -717,6 +717,11 @@ class Workbench:
             if previous_policy != policy:
                 raise Problem('上一项恢复派发尚未确认，请先重试原政策', 409)
             return {'_dispatch_request': request_id}
+        if task.get('blocker'):
+            from task_runner import current_blocker, blocker_inputs
+            blocker = current_blocker(task)
+            if blocker and blocker['inputs'] == blocker_inputs(self.store, task):
+                raise Problem('执行条件仍未改变，请补齐阻塞所需证据后继续', 409)
         mode = body.get('execution_mode', task.get('execution_mode', 'bounded'))
         if mode not in ('auto', 'bounded'):
             raise Problem('执行模式无效')
@@ -724,8 +729,8 @@ class Workbench:
         if limit is not None and (type(limit) is not int or limit < (task.get('max_calls') or 0) or limit > 12):
             raise Problem('旧版调用预算不能降低，最多 12 次；也可选择自动完成')
         extra = body.get('additional_minutes', 0)
-        if type(extra) is not int or extra not in (0, 30, 60):
-            raise Problem('追加时间须为 30 或 60 分钟')
+        if type(extra) is not int or extra not in (0, 15, 30, 60):
+            raise Problem('追加时间须为 15、30 或 60 分钟')
         seconds = task.get('time_budget_seconds', AUTO_SECONDS) + extra * 60
         proposed = {**task, 'execution_mode':mode, 'max_calls':limit, 'time_budget_seconds':seconds}
         if exhaustion(proposed):

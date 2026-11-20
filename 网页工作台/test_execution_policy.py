@@ -65,14 +65,15 @@ class PolicyTest(unittest.TestCase):
         Runner(self.store,self.id,1,{},invoke).run()
         task=self.store.get(self.id);self.assertEqual(task['review_failures'],3);self.assertEqual(task['status'],'blocked');self.assertEqual(task['calls'],5)
 
-    def test_blocked_review_replaces_old_findings_before_asking(self):
+    def test_blocked_review_replaces_old_findings_and_keeps_request_as_evidence(self):
         self.store.change(self.id,lambda t:t.update(phase='review',plan={'steps':[]},review={**RESULT,'status':'needs_changes','summary':'旧问题'},decisions=[{'kind':'plan','version':1,'approved':True}]))
         latest={**RESULT,'status':'blocked','summary':'新环境阻塞','requested_action':'修复审核环境'}
         Runner(self.store,self.id,1,{},lambda *args:latest).run()
         task=self.store.get(self.id)
-        self.assertEqual(task['status'],'awaiting_approval')
+        self.assertEqual(task['status'],'blocked')
         self.assertEqual(task['review'],latest)
-        self.assertEqual(task['approval']['text'],'修复审核环境')
+        self.assertIsNone(task['approval'])
+        self.assertEqual(task['blocker']['requested_action'],'修复审核环境')
 
     def test_resume_migration_preserves_artifacts_and_approval(self):
         self.store.change(self.id,lambda t:t.update(execution_mode='bounded',max_calls=6,calls=6,artifacts=['kept.md'],decisions=[{'kind':'plan','version':1,'approved':True}]))
