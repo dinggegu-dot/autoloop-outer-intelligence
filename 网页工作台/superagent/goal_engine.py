@@ -95,7 +95,7 @@ def validate_outer_authorization(outer, *, ticket_id, workspace, budget_seconds)
             mandate['goal_revision'] != outer['goal_revision'] or
             mandate['acceptance_revision'] != outer['acceptance_revision'] or
             contract['status'] != 'APPROVED' or contract['verification_gaps'] or
-            contract.get('human_review_requirements') or not contract.get('criteria') or
+            not contract.get('criteria') or
             mandate['revision'] != outer['mandate_revision'] or
             mandate['approval_event_id'] != outer['approval_event_id'] or
             mandate['actor_id'] != outer['actor_id'] or
@@ -802,6 +802,22 @@ class GoalEngine:
                 or delivery.get('artifact_sha256')!=checkpoint['digest']
                 or delivery.get('level') != ('goal' if final else 'stage')):
             raise Problem('缺少与当前验收版本和派工匹配的归档')
+        from superagent.outer_verification import needs_human_signoff
+        if final and needs_human_signoff(contract):
+            reviews = state.setdefault('artifact_reviews', [])
+            if reviews and reviews[-1]['state'] == 'returned' and reviews[-1]['artifact_sha256'] == checkpoint['digest']:
+                pause_or_block(task,'退回后作品内容没有变化，请核对修复情况')
+                return
+            outer = state['outer']
+            reviews.append(dict(delivery, sequence=len(reviews)+1, state='pending', offered_at=now(),
+                                checks=rows, plan_revision=task['version'],human_criteria=[
+                                    {'id':r['criterion_id'],'description':r['description']} for r in contract['criteria']
+                                    if r['required'] and r.get('verification_type')=='HUMAN_REVIEW'],
+                                **{key:outer[key] for key in ('goal_revision','acceptance_revision','mandate_revision')}))
+            state.update(stage='awaiting_artifact_review',outcome='AWAITING_ARTIFACT_REVIEW')
+            task.update(status='awaiting_artifact_review',phase='review',checks=rows,error='')
+            decision(task,'artifact_offered',assignment=assignment['id'],digest=checkpoint['digest'],sequence=len(reviews))
+            return
         task['plan']['steps'][task['step']]['state'] = 'completed'
         task['step'] += 1
         state['repairs'] = 0
@@ -823,7 +839,7 @@ class GoalEngine:
         state = flow(task)
         validation = state['validation'] or {}
         required = {row['criterion_id'] for row in state['outer']['acceptance_contract']['criteria']
-                    if row['required']}
+                    if row['required'] and row.get('verification_type')!='HUMAN_REVIEW'}
         failed = [row for row in validation.get('checks',[]) if row['id'] in required and row['status']!='PASS']
         identity = digest({'step':task['step'],'artifact':(state['checkpoint'] or {}).get('digest'),
                            'results':[(row['id'],row['status'],row['detail']) for row in failed],
@@ -964,6 +980,11 @@ class GoalEngine:
             raise Problem('派工与中台轮次或授权不匹配',409)
         context = {'notes':self.store.notes(ticket),'verification':state['validation'],
                    'team_enabled':state.get('team_enabled',False)}
+        reviews = state.get('artifact_reviews') or []
+        if assignment['phase']=='repair' and reviews and reviews[-1]['state']=='returned':
+            from superagent.outer_intake import _model_text
+            context['human_review_feedback'] = {k:reviews[-1][k] for k in ('sequence','artifact_sha256','reason')}
+            context['human_review_feedback']['reason'] = _model_text(reviews[-1]['reason'],2000)
         if assignment.get('outer_binding'):
             # 保留已批准的原始需求和限制。授权仍由独立的 Mandate 约束。
             context['approved_goal_contract'] = state['outer']['goal_contract']

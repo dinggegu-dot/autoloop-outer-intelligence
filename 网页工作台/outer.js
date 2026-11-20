@@ -168,9 +168,15 @@ export function mountOuter(request,notice,openTask){
   }
   function showDraft(d){
     const e=d.execution, flow=e?.goal_execution, decisions=flow?.decisions || [];
-    const signature=JSON.stringify([d.id,d.revision,d.status,d.journey,e?.status,e?.step,e?.error,decisions.length]);
+    const reviews=flow?.artifact_reviews || [], candidate=reviews.at(-1);
+    const signature=JSON.stringify([d.id,d.revision,d.status,d.journey,e?.status,e?.step,e?.error,decisions.length,reviews,flow?.validation?.checks]);
     if(signature===key)return;
-    const oldInput=detail.querySelector('textarea'),keep=oldInput?.dataset.binding===d.id+'/'+d.revision;
+    const oldInput=detail.querySelector('textarea[data-binding]'),keep=oldInput?.dataset.binding===d.id+'/'+d.revision;
+    const oldReview=detail.querySelector('textarea[data-candidate]');
+    const reasonDraft=oldReview?.dataset.candidate===candidate?.assignment ? oldReview?.value : '';
+    const reasonOpen=Boolean(reasonDraft || oldReview?.closest('details')?.open && oldReview.dataset.candidate===candidate?.assignment);
+    const oldSignoff=detail.querySelector('input[data-signoff]');
+    const optionalSignoff=oldSignoff?.dataset.signoff===d.id+'/'+d.revision && oldSignoff.checked;
     const saved=keep?oldInput.value:'';
     const checked=new Set(keep?[...detail.querySelectorAll('input:checked')].map(i=>i.value):[]);
     key=signature;detail.replaceChildren();by('ticket-ref').textContent=d.id.slice(-8)+' / v'+d.revision;
@@ -202,27 +208,97 @@ export function mountOuter(request,notice,openTask){
     const criteria=element('div');criteria.id='criteria';spec.append(criteria);if(!contract.criteria?.length)criteria.append(element('p','本版验收条件尚待整理。'));
     for(const c of contract.criteria||[])show(criteria,c.description,{验证器:c.verifier_id,版本:c.verifier_version,输入:c.test_spec,预期:c.expected_result});
     const budget=element('div');budget.id='budget';spec.append(budget);show(budget,'权限与预算',d.approval_terms);if(!d.approval_terms)budget.append(element('p','当前尚无可批准的授权预算。'));
-    if(v.approve && d.approval_terms)action(spec,'批准本版目标与验收',async()=>{
-      if(confirm('批准上列目标、验收、权限与预算并开始执行？')){await command('approve');notice('本版授权已保存。');}
-    },true);
+    if(v.approve && d.approval_terms){
+      const required=Boolean(contract.human_review_requirements?.length);
+      const label=element('label'), signoff=element('input');
+      signoff.type='checkbox'; signoff.checked=required||optionalSignoff; signoff.disabled=required;
+      signoff.dataset.signoff=d.id+'/'+d.revision;
+      label.append(signoff,document.createTextNode(required?'包含人工验收条款，交付必须签收':'机器验收通过后由我签收交付'));
+      spec.append(label);
+      action(spec,'批准本版目标与验收',async()=>{
+        const mode=signoff.checked?'机器验收通过后，最终交付还需要你签收。':'机器验收通过后将归档交付。';
+        if(confirm('批准上列目标、验收、权限与预算并开始执行？'+mode)){
+          await command('approve',{require_signoff:signoff.checked});
+          notice('本版授权已保存。');
+        }
+      },true);
+    }
     {
       const plan=e?.plan?.steps || [], checks=flow?.validation?.checks || [];
       const box=fold(detail,'执行进度与交付'+(plan.length?' · '+Math.min(e.step,plan.length)+' / '+plan.length:''),
-        v.station==='delivery'||v.station==='flight');box.id='progress';
+        v.station==='delivery'||v.station==='flight'||v.artifact_review);box.id='progress';
       if(plan.length){const steps=element('ol');box.append(steps);for(const p of plan)steps.append(element('li',(p.state==='completed'?'✓ ':'')+(p.title||p.objective)));}
       if(!plan.length)box.append(element('p','尚无已登记的执行步骤。'));
       const evidence=element('div');evidence.id='checks';box.append(evidence);
       for(const c of checks)evidence.append(element('p',c.status+' · '+(c.description||c.id)+' · '+(c.detail||'')));
       if(!checks.length)evidence.append(element('p','尚无逐项验收结果。'));
       const artifacts=element('div');artifacts.id='artifacts';box.append(artifacts);
+      if(d.prior_deliveries?.length){
+        const past=fold(artifacts,'历次授权中的作品');
+        for(const item of d.prior_deliveries){
+          show(past,'授权 v'+item.mandate_revision+' · 交付 v'+item.sequence,item.artifact_sha256);
+          if(item.reason)show(past,'退回原因',item.reason);
+          for(const path of Object.keys(item.files || {})){
+            const link=element('a','下载 '+path);
+            link.href='/api/tasks/'+encodeURIComponent(d.id)+'/artifact?'+new URLSearchParams({path,candidate:item.assignment});
+            past.append(link,element('br'));
+          }
+        }
+      }
+      if(candidate){
+        const states={pending:'待签收',returned:'已退回',accepted:'已签收'};
+        artifacts.append(element('h4','交付 v'+candidate.sequence+' · '+states[candidate.state]),
+          element('p','目标 v'+candidate.goal_revision+' · 验收 v'+candidate.acceptance_revision+' · 授权 v'+candidate.mandate_revision));
+        show(artifacts,'归档摘要 SHA-256',candidate.artifact_sha256);
+        if(candidate.human_criteria?.length)show(artifacts,'本人验收 · '+states[candidate.state],
+          candidate.human_criteria.map(c=>c.description).join('\n'));
+        if(candidate.state==='pending'||candidate.state==='accepted'){
+          for(const [path,sha] of Object.entries(candidate.files||{})){
+            const link=element('a','下载 '+path);
+            link.href='/api/tasks/'+encodeURIComponent(d.id)+'/artifact?'+new URLSearchParams({path,candidate:candidate.assignment});
+            artifacts.append(link);
+            show(artifacts,'文件 SHA-256',sha);
+          }
+        }
+        const returned=reviews.filter(r=>r.state==='returned');
+        if(returned.length){
+          const history=fold(artifacts,'退回记录（'+returned.length+'）',candidate.state==='returned');
+          for(const row of [...returned].reverse()){
+            show(history,'交付 v'+row.sequence+' · '+row.artifact_sha256,row.reason||'无记录');
+            for(const path of Object.keys(row.files || {})){
+              const link=element('a','下载 v'+row.sequence+' · '+path);
+              link.href='/api/tasks/'+encodeURIComponent(d.id)+'/artifact?'+new URLSearchParams({path,candidate:row.assignment});
+              history.append(link,element('br'));
+            }
+          }
+        }
+        if(v.artifact_review && candidate.state==='pending'){
+          const reviewed={candidate:candidate.assignment,artifact_sha256:candidate.artifact_sha256};
+          const link=element('a','查看交付 v'+candidate.sequence+' 的文件与摘要');link.href='#artifacts';decision.append(link);
+          action(artifacts,'签收本版交付',async()=>{
+            if(confirm('确认签收交付 v'+candidate.sequence+'？')){
+              await command('accept_artifact',reviewed);
+              notice('已签收本版交付。');
+            }
+          },true);
+          const rejection=fold(artifacts,'退回本版交付',reasonOpen), reason=element('textarea'), label=element('label','这版需要改哪里？');
+          reason.value=reasonDraft||'';reason.maxLength=1000;reason.dataset.candidate=candidate.assignment;
+          label.append(reason);rejection.append(label);
+          action(rejection,'提交退回原因',async()=>{
+            if(!reason.value.trim()){reason.focus();return notice('请先填写退回原因。');}
+            await command('return_artifact',{...reviewed,reason:reason.value.trim()});
+            notice('退回原因已记录。');
+          });
+        }
+      }
       for(const path of e?.artifacts||[]){
         const a=element('a','下载 '+path);a.href='/api/tasks/'+encodeURIComponent(e.id)+'/artifact?path='+encodeURIComponent(path)+'&version='+e.version;
         artifacts.append(a,element('br'));
       }
-      if(!e?.artifacts?.length)artifacts.append(element('p','尚无可下载的交付文件。'));
+      if(!e?.artifacts?.length && !candidate)artifacts.append(element('p','尚无可下载的交付文件。'));
       if(e)action(box,'查看完整执行时间线',()=>openTask(e.id));
     }
-    if(!['PAUSED','STOPPED'].includes(d.status)){
+    if(!v.artifact_review && !['PAUSED','STOPPED'].includes(d.status)){
       const q=d.question?.answer_status==='answered'?null:d.question;
       const edits=fold(detail,q?'回复澄清':'补充或修改要求',Boolean(q)||d.status==='VERIFICATION_GAP'||v.station==='decision'&&!v.approve);
       edits.id='revisions';const choices=[];

@@ -48,15 +48,68 @@ class RegistryTests(unittest.TestCase):
             with self.subTest(proposal=proposal), self.assertRaises(ValueError):
                 compile_rows(proposal)
 
-    def test_required_human_and_coverage_gaps_cannot_compile_as_ready(self):
-        manual = criterion(verifier_id='human-review',verification_type='HUMAN_REVIEW',test_spec={})
+    def test_explicit_required_human_is_approvable_without_weakening_machine_gaps(self):
+        manual = criterion(verifier_id='human-review',verification_type='HUMAN_REVIEW',test_spec={},
+                           expected_result=None,human_review_required=True)
         goal, contract = compile_rows(manual)
-        self.assertEqual(contract['status'],'VERIFICATION_GAP')
-        self.assertTrue(contract['criteria'][0]['human_review_required'])
+        self.assertEqual(contract['status'],'READY_FOR_APPROVAL')
+        self.assertEqual(contract['human_review_requirements'],[manual['description']])
+        self.assertTrue(registry.needs_human_signoff(contract))
+        self.assertFalse(registry.needs_human_signoff(compile_rows(criterion())[1]))
+        self.assertTrue(registry.needs_human_signoff(dict(compile_rows(criterion())[1],require_signoff=True)))
         optional = dict(criterion(),required=False)
         self.assertEqual(compile_rows(optional)[1]['coverage_assessment']['uncovered'],['requirement-one'])
         without_criterion = registry.compile_proposal(goal,{'goal_revision':1,'criteria':[]})
         self.assertEqual(without_criterion['status'],'VERIFICATION_GAP')
+        for invalid in (dict(manual,expected_result=True),dict(manual,human_review_required=False),
+                        dict(manual,verifier_version=True),dict(manual,test_spec={'script':'manual.py'})):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                compile_rows(invalid)
+        _, model_only = compile_rows(dict(manual,verification_type='MODEL_REVIEW'))
+        self.assertEqual(model_only['status'],'VERIFICATION_GAP')
+
+    def test_bare_human_prose_must_map_to_a_required_review_criterion(self):
+        machine = criterion()
+        manual = criterion('manual',verifier_id='human-review',verification_type='HUMAN_REVIEW',
+                           test_spec={},expected_result=None,human_review_required=True)
+        goal, _ = compile_rows(machine,manual)
+        for text,status in (('manual','READY_FOR_APPROVAL'),(manual['description'],'READY_FOR_APPROVAL'),
+                            ('尚未登记的主观判断','VERIFICATION_GAP')):
+            with self.subTest(text=text):
+                contract = registry.compile_proposal(goal,{'goal_revision':1,'criteria':[machine,manual],
+                                                           'human_review_requirements':[text]})
+                self.assertEqual(contract['status'],status)
+
+    def test_worker_archives_machine_pass_and_never_passes_manual_criterion(self):
+        from superagent.goal_runtime import execute_outer_review
+        manual = criterion('manual',verifier_id='human-review',verification_type='HUMAN_REVIEW',
+                           test_spec={},expected_result=None,human_review_required=True)
+        _, contract = compile_rows(criterion(),manual)
+        with tempfile.TemporaryDirectory(dir='/private/tmp') as temp:
+            workspace = Path(temp,'candidate')
+            workspace.mkdir()
+            (workspace/'one.json').write_text('{"ok": true}')
+            plan = {'steps':[{'acceptance':['one','manual']}]}
+            checkpoint = registry.capture(workspace)[0]
+            assignment = {'id':'run-one','run':1,'version':1,'step':0,'plan':plan,
+                          'outer_binding':{'goal_revision':1,'acceptance_revision':1,'mandate_revision':1},
+                          'outer_acceptance':contract,'checkpoint':checkpoint}
+            root = Path(temp,'reports')
+            root.mkdir()
+            report = execute_outer_review(assignment,workspace,root,{})
+            self.assertEqual(report['result'],{'passed':True})
+            self.assertEqual(report['delivery']['artifact_sha256'],checkpoint['digest'])
+            checks = report['validation']['checks']
+            self.assertEqual([row['status'] for row in checks],['PASS','INCONCLUSIVE'])
+            forged = dict(checks[1],status='PASS',passed=True)
+            signed = {key:value for key,value in forged.items() if key not in ('evidence_ref','id','passed')}
+            forged['evidence_ref'] = 'sha256:'+registry.sha256(signed)
+            with self.assertRaisesRegex(ValueError,'不得代替人工'):
+                registry.validate_results(contract,plan,assignment,checkpoint,[checks[0],forged])
+            (workspace/'one.json').write_text('{"ok":false}')
+            changed,files,occupied = registry.capture(workspace)
+            rejected = registry.verify(contract,assignment,changed,files,occupied)
+            self.assertFalse(registry.validate_results(contract,plan,assignment,changed,rejected))
 
     def test_static_artifact_and_constant_cli_cannot_discharge_running_requirement(self):
         req = {'requirement_id':'requirement-one','description':'命令行工具可运行并转换文本'}

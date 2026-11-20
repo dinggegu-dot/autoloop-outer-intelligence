@@ -13,7 +13,7 @@ import time
 from .codex_worker import CodexWorkerError, _array, _matches, _object, _read_result
 
 
-PROMPT_VERSION = 3
+PROMPT_VERSION = 5
 TXT = {'type': 'string'}
 INT = {'type': 'integer'}
 BOOL = {'type': 'boolean'}
@@ -53,14 +53,16 @@ PROMPTS = {
         '对直接输入输出样例使用已登记验证器逐一检查。要求关联引用对应的必要需求 ID。按已登记验证器能力设计可核查验收。覆盖每一项必要交付物、功能及非功能要求。'
         'test_spec_json 和 expected_result_json 是 JSON 字符串。未知验证器或无法测试的必要需求列入'
         'verification_gaps。显式 CLI/运行行为的同一 requirement_id 须由同一脚本的至少两条不同输入、'
-        '不同预期的必需条件覆盖。html-document 仅证明离线静态 HTML；浏览器交互、API 服务或'
-        '主观条件列为缺口或人工验收。json-artifact 预期须为非空对象或数组。不得编造证据或写入通过结果。'
+        '不同预期的必需条件覆盖。html-document 仅证明离线静态 HTML；浏览器交互或 API 服务列为缺口。'
+        '本人必须判断的主观条目逐项列为 HUMAN_REVIEW，required 和 human_review_required 为 true，'
+        'verifier_id 为 human-review，verifier_version 为 1，test_spec_json 为 "{}"，expected_result_json 为 "null"，'
+        '每项关联必要需求并描述本人要判断的条件。human_review_requirements 如有内容则填上述条目 ID 或其描述。'
+        'verification_gaps 每项用短句表达实际未覆盖的需求。执行权限由引擎核对。json-artifact 预期须为非空对象或数组。不得编造证据或写入通过结果。'
         'python-json-cli 的 test_spec_json 恰为 {"script":"tool.py","args":["参数"],"files":{}}。'
         'files 是合成输入文件名到内容字符串的对象，未使用文件则为空对象。不能是数组，不能包含程序。'
         '每个明确输入输出示例独立列为一个验收项。每项的重复执行次数由系统完成。'
         'expected_result_json 填预期 JSON。每个运行验收适用的输入组都绑定同一对应 requirement_id。'
-        'human-review 使用空对象 test_spec_json 和 null 的 expected_result_json。'
-        'html-document 只接受 {"path":"index.html"}，预期为包含 title、headings、element_ids 的对象。'
+        'html-document 的 test_spec_json 只有 path 字段，填工单实际交付的相对 .html 或 .htm 路径。预期恰含 title、headings、element_ids，后两项为数组。'
     ),
     'goal_coordinator': (
         '只从 available_actions 选择 action。evidence_refs 从快照同名字段逐字复制至少一个完整失败证据键，'
@@ -174,13 +176,11 @@ class CodexOuterModel:
                     config={'effort': effort, 'timeout': self.timeout})
 
     def _execute(self, prompt, output_schema, effort, record_message):
-        env = {key: os.environ[key] for key in ('PATH', 'HOME', 'CODEX_HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE')
-               if key in os.environ}
-        port = os.environ.get('AUTOLOOP_OUTER_PROXY_PORT')
-        if port:
-            if not (port.isascii() and port.isdecimal() and len(port) <= 5 and 0 < int(port) <= 65535):
-                raise ModelFailure('invalid_config')
-            env.update(HTTPS_PROXY=f'http://127.0.0.1:{int(port)}', NO_PROXY='127.0.0.1,localhost,::1')
+        from .goal_codex import trusted_cli_environment
+        try:
+            env = trusted_cli_environment()
+        except ValueError:
+            raise ModelFailure('invalid_config') from None
         try:
             with tempfile.TemporaryDirectory(prefix='autoloop-outer-') as directory:
                 schema = Path(directory, 'schema.json')
@@ -194,6 +194,7 @@ class CodexOuterModel:
                     '--disable', 'browser_use', '--disable', 'browser_use_external', '--disable', 'in_app_browser',
                     '--disable', 'skill_mcp_dependency_install', '-c', 'mcp_servers={}', '-c', 'web_search="disabled"',
                     '-c', 'sandbox_workspace_write.network_access=false',
+                    '-c', 'shell_environment_policy.exclude=["*PROXY","AUTOLOOP_*"]',
                     '-c', f'model_reasoning_effort="{effort}"', '--output-schema', str(schema), '-',
                 ]
                 if self._execution:

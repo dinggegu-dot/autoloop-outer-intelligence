@@ -1,0 +1,137 @@
+{
+  "ticket": "wb-77086952ffb64d2abfa2b327fe919acc",
+  "status": "completed",
+  "outcome": "VERIFIED_COMPLETE",
+  "operator": "Codex acting as authorized pilot operator, Google Chrome",
+  "runs": [
+    {
+      "run": 1,
+      "phase": "plan",
+      "state": "settled"
+    },
+    {
+      "run": 2,
+      "phase": "execute",
+      "state": "settled"
+    },
+    {
+      "run": 3,
+      "phase": "review",
+      "state": "settled"
+    },
+    {
+      "run": 4,
+      "phase": "execute",
+      "state": "settled"
+    },
+    {
+      "run": 5,
+      "phase": "review",
+      "state": "settled"
+    },
+    {
+      "run": 6,
+      "phase": "repair",
+      "state": "settled"
+    },
+    {
+      "run": 7,
+      "phase": "review",
+      "state": "settled"
+    }
+  ],
+  "candidates": [
+    {
+      "sequence": 1,
+      "state": "returned",
+      "goal_revision": 2,
+      "acceptance_revision": 1,
+      "mandate_revision": 1,
+      "plan_revision": 1,
+      "assignment": "7c6081949fd147a9b2ea1c7645c90d32",
+      "artifact_sha256": "b623fa0077146712df5d58e593c26269c667b79dcf1e861971fb87e038b10cda",
+      "files": {
+        "guide.html": "46f56c38101ee600b37a4daa77b640030623a0d8df7201a5f8a06a0ccacaf075"
+      },
+      "offered_at": "2026-11-20T04:56:24.505+00:00",
+      "decided_at": "2026-11-20T04:57:13.736+00:00",
+      "source": "web",
+      "reason": "请在页面主标题下、两条提醒前增加单独一行「请提前十分钟到场」，字号小于主标题但清晰可读。保留现有两个列表项。",
+      "checks": [
+        {
+          "run": 5,
+          "criterion_id": "check-guide-html",
+          "verifier_id": "html-document",
+          "status": "PASS"
+        },
+        {
+          "run": 5,
+          "criterion_id": "owner-review-visual-hierarchy",
+          "verifier_id": "human-review",
+          "status": "INCONCLUSIVE"
+        },
+        {
+          "run": 5,
+          "criterion_id": "owner-review-reminder-wording",
+          "verifier_id": "human-review",
+          "status": "INCONCLUSIVE"
+        }
+      ],
+      "feishu": {
+        "outbox": "sent",
+        "official_readback": "interactive",
+        "message_ref_sha256": "9aedbb5656466ec7eabed7d4c42f74dc5d11daa0faec58bd2aad667bb1bb9740",
+        "actions": [
+          "签收本版",
+          "退回本版"
+        ]
+      }
+    },
+    {
+      "sequence": 2,
+      "state": "accepted",
+      "goal_revision": 2,
+      "acceptance_revision": 1,
+      "mandate_revision": 1,
+      "plan_revision": 1,
+      "assignment": "d4343008a91149eba624781b2e88593f",
+      "artifact_sha256": "42a91ab9c6dd248877d0f46af24c307ae63b6efc64302f4ccc9339d8383e8261",
+      "files": {
+        "guide.html": "dbdf252af5234977084b6119c205f8d79496314b973f7faf709e9a7f9e63e6a5"
+      },
+      "offered_at": "2026-11-20T04:57:51.951+00:00",
+      "decided_at": "2026-11-20T04:58:42.445+00:00",
+      "source": "web",
+      "reason": "",
+      "checks": [
+        {
+          "run": 7,
+          "criterion_id": "check-guide-html",
+          "verifier_id": "html-document",
+          "status": "PASS"
+        },
+        {
+          "run": 7,
+          "criterion_id": "owner-review-visual-hierarchy",
+          "verifier_id": "human-review",
+          "status": "INCONCLUSIVE"
+        },
+        {
+          "run": 7,
+          "criterion_id": "owner-review-reminder-wording",
+          "verifier_id": "human-review",
+          "status": "INCONCLUSIVE"
+        }
+      ],
+      "feishu": {
+        "outbox": "sent",
+        "official_readback": "interactive",
+        "message_ref_sha256": "629ef599c2b02bb9f3638ff42a3b159e43ca6a9df78c27513b1257170ecd7711",
+        "actions": [
+          "签收本版",
+          "退回本版"
+        ]
+      }
+    }
+  ]
+}

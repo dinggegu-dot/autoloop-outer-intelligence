@@ -101,6 +101,20 @@ class GoalCodexTest(unittest.TestCase):
             "print(" + repr(lines) + ")"
         )
 
+    def test_optional_loopback_proxy_is_cli_only(self):
+        self.assignment["phase"] = "execute"
+        result = {"summary": "Sample checked", "artifacts": ["sample.txt"]}
+        with patch.dict(os.environ, {"AUTOLOOP_OUTER_PROXY_PORT": "56789", "HTTPS_PROXY": "untrusted-source"}):
+            self._emit(_events(result))
+        self.assertEqual(self.env["HTTPS_PROXY"], "http://127.0.0.1:56789")
+        self.assertNotIn("AUTOLOOP_OUTER_PROXY_PORT", self.env)
+        self.assertNotIn("56789", " ".join(self.argv))
+        self.assertIn('shell_environment_policy.exclude=["*PROXY","AUTOLOOP_*"]', self.argv)
+        self.assertIn("sandbox_workspace_write.network_access=false", self.argv)
+        with patch.dict(os.environ, {"AUTOLOOP_OUTER_PROXY_PORT": "remote:8080"}), self.assertRaisesRegex(
+                goal_codex.GoalCodexError, "Invalid loopback"):
+            goal_codex.invoke(self.assignment, self.workspace, self.output)
+
     def test_all_phases(self):
         plan = {"steps": [{"objective": "Check sample", "checks": ["Read sample"]}],
                 "summary": "One step"}

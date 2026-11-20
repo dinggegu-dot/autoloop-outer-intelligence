@@ -4,6 +4,8 @@ import hashlib
 
 from workbench import STATES, TASK_RE
 
+ARTIFACT_REVIEW = 'awaiting_artifact_review'
+
 
 @dataclass(frozen=True)
 class TaskBrief:
@@ -25,17 +27,19 @@ def task_brief(task):
         raise ValueError('缺少有效的任务编号或版本')
     status = task.get('status')
     runs = task.get('runs', [])
-    if (task.get('observation_stale') is not False or status not in STATES
+    if (task.get('observation_stale') is not False or status not in STATES and status != ARTIFACT_REVIEW
             or (runs and runs[0].get('state') == 'unknown')):
         return TaskBrief(task_id, version, '状态待核对', '当前进度未知', '请在连接恢复后重查')
 
     progress = task['progress']
     steps = f"已完成步骤 {progress['done']}/{progress['total']}" if progress['total'] else '暂无已登记步骤'
     action = '无需操作，可稍后查询'
-    label = STATES[status]
+    label = '待人工签收' if status == ARTIFACT_REVIEW else STATES[status]
     if task.get('revision_pending'):
         label = task['status_label']
         action = '请查看任务改版记录'
+    elif status == ARTIFACT_REVIEW:
+        action = '请核对当前交付候选后签收，或说明退回原因'
     elif status == 'completed':
         action = '可在看板核对成果和验收记录'
     elif task.get('workflow') == 'goal' and status == 'created':
@@ -59,13 +63,19 @@ def milestone(task):
     brief=task_brief(task)
     if brief.status=='状态待核对':return {'known':False}
     state=task['status']
-    if state not in ('awaiting_approval','blocked','budget_exhausted','completed') or task.get('revision_pending'):
+    if state not in ('awaiting_approval','blocked','budget_exhausted','completed',ARTIFACT_REVIEW) or task.get('revision_pending'):
         return {'known':True,'key':None}
     extra=''
     if state=='awaiting_approval':
         cards=sorted((card['id'],card['version']) for card in task.get('cards',[]) if card['state']=='open')
         if not cards:return {'known':False}
         extra=str(cards)
+    elif state == ARTIFACT_REVIEW:
+        reviews = (task.get('goal_execution') or {}).get('artifact_reviews') or []
+        if not reviews or reviews[-1]['state'] != 'pending':
+            return {'known':False}
+        review = reviews[-1]
+        extra = f"{review['mandate_revision']}:{review['sequence']}:{review['assignment']}:{review['artifact_sha256']}"
     elif state=='blocked':
         extra=hashlib.sha256((task.get('error') or '').encode()).hexdigest()
     return {'known':True,'key':f"{brief.version}:{state}:{extra}",'body':brief.as_private_reply()}

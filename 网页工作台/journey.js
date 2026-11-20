@@ -1,6 +1,6 @@
 // 只从任务事实派生展示；失败、等待和修复不能被动画解释为完成。
 const ids=['C1','T0','T1','T2','T3','T4','T5','T6','T7','T8'];
-const halted=new Set(['paused','blocked','budget_exhausted','awaiting_approval','stopping','rejected']);
+const halted=new Set(['paused','blocked','budget_exhausted','awaiting_approval','awaiting_artifact_review','stopping','rejected']);
 export function taskJourney(task, preferred=null){
   const blocked=task.paused||halted.has(task.status);
   const effectivePhase=task.phase==='execute'&&task.plan?.steps.length&&task.step>=task.plan.steps.length&&task.plan.steps.every(s=>s.state==='completed')?'review':task.phase;

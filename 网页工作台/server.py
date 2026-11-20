@@ -60,7 +60,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/outer/'):
                 from outer_channels import dispatch
                 cmd = path.removeprefix('/api/outer/')
-                if cmd not in ('submit','select','get','calls','call','event','approve','pause','resume','stop'):
+                if cmd not in ('submit','select','get','calls','call','event','approve','pause','resume','stop','accept_artifact','return_artifact'):
                     raise Problem('接口不存在',404)
                 if not workbench.outer_enabled:
                     raise Problem('当前实例未启用智能接单',404)
@@ -119,12 +119,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json_response(self.server.workbench.snapshot(focus))
                 match = re.fullmatch(r'/api/tasks/(wb-[a-f0-9]{32})/(artifact|preview)', route)
                 if match:
-                    relative = parse_qs(urlsplit(self.path).query).get('path', [''])[0]
-                    raw_version=parse_qs(urlsplit(self.path).query).get('version',[None])[0]
-                    version=int(raw_version) if raw_version is not None else None
+                    params = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                    relative = params.get('path', [''])[0]
+                    version = int(params['version'][0]) if 'version' in params else None
+                    candidate = params.get('candidate', [None])[0]
+                    if candidate is not None and (not candidate or 'version' in params or match[2] != 'artifact'):
+                        raise Problem('候选归档只支持按交付编号下载')
                     if match[2]=='preview':
                         return self.json_response(self.server.workbench.preview(match[1],relative,version))
-                    path,content = self.server.workbench.artifact_bytes(match[1], relative,version)
+                    options = {'candidate': candidate} if candidate is not None else {}
+                    path,content = self.server.workbench.artifact_bytes(match[1], relative, version, **options)
                     return self.respond(content, 'application/octet-stream', headers=[
                         ('Content-Disposition', "attachment; filename*=UTF-8''"+quote(path.name, safe=''))
                     ])

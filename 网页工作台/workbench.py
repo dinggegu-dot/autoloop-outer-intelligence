@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT / '.runtime'
 RULE = 'odyssey-workbench'
 TASK_RE = re.compile(r'^wb-[a-f0-9]{32}$')
-STATES = {'created':'待派发','queued':'排队中','planning':'正在规划','awaiting_approval':'等待你的决定','executing':'正在执行','reviewing':'独立验收中','completed':'已验收完成','blocked':'遇到阻塞','paused':'已暂停','stopping':'正在停止','rejected':'已拒绝','budget_exhausted':'达到执行预算'}
+STATES = {'created':'待派发','queued':'排队中','planning':'正在规划','awaiting_approval':'等待你的决定','executing':'正在执行','reviewing':'独立验收中','awaiting_artifact_review':'待人工签收','completed':'已验收完成','blocked':'遇到阻塞','paused':'已暂停','stopping':'正在停止','rejected':'已拒绝','budget_exhausted':'达到执行预算'}
 
 
 def now():
@@ -754,11 +754,35 @@ class Workbench:
         from revisions import reconcile
         return reconcile(self)
 
-    def artifact(self, task_id, relative, version=None):
+    def _artifact_delivery(self,task,candidate):
+        if candidate is None:
+            return task.get('goal_delivery') or {}
+        if not isinstance(candidate,str) or not re.fullmatch(r'[a-f0-9]{32}',candidate):
+            raise Problem('作品版本无效',404)
+        for record in task['goal_execution'].get('artifact_reviews',[]):
+            if record['assignment']==candidate:
+                return record
+        delivery = task.get('goal_delivery') or {}
+        if delivery.get('assignment')==candidate:
+            return delivery
+        with self.store.connect() as db:
+            row=db.execute("""SELECT r.value FROM outer_revisions v,json_each(v.body,'$.goal_execution.artifact_reviews') r
+                              WHERE v.ticket=? AND v.kind='execution_archive' AND json_extract(r.value,'$.assignment')=?""",
+                           (task['id'],candidate)).fetchone()
+            if row is None:
+                row=db.execute("""SELECT json_extract(body,'$.goal_delivery') FROM outer_revisions
+                                  WHERE ticket=? AND kind='execution_archive' AND json_extract(body,'$.goal_delivery.assignment')=?""",
+                               (task['id'],candidate)).fetchone()
+        if row: return json.loads(row[0])
+        raise Problem('工单没有该作品版本',404)
+
+    def artifact(self, task_id, relative, version=None, candidate=None):
         task = self.store.get(task_id)
         root = self.store.workspace(task_id)
+        if candidate is not None and not (task.get('goal_execution') or {}).get('outer'):
+            raise Problem('工单没有该作品版本',404)
         if task.get('workflow') == 'goal':
-            delivery = task.get('goal_delivery') or {}
+            delivery = self._artifact_delivery(task,candidate)
             key = delivery.get('assignment','')
             if not re.fullmatch(r'[a-f0-9]{32}',key) or version not in (None,task['version']):
                 raise Problem('已核验产物不存在',404)
@@ -784,12 +808,12 @@ class Workbench:
             raise Problem('产物不可下载或超过 20 MB',404)
         return path
 
-    def artifact_bytes(self, task_id, relative, version=None):
+    def artifact_bytes(self, task_id, relative, version=None, candidate=None):
         task = self.store.get(task_id)
-        path=self.artifact(task_id,relative,version)
+        path=self.artifact(task_id,relative,version,candidate)
         root=self.store.workspace(task_id)
         if task.get('workflow') == 'goal':
-            delivery = task['goal_delivery']
+            delivery = self._artifact_delivery(task,candidate)
             root=self.store.root/'goal-attempts'/task_id/delivery['assignment']/'verified'
         elif version is not None and version!=task['version']:
             root=root.parent/'versions'/str(version)/'artifacts'

@@ -1,5 +1,7 @@
 """隔离 SQLite 与结构化模型协议替身。"""
 import json
+import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import tempfile
 from pathlib import Path
 import unittest
@@ -414,6 +416,56 @@ class OuterIntakeTest(unittest.TestCase):
                                      actor_id='owner', source='feishu', source_thread_id='fresh-card')
         self.assertEqual(resumed['status'], 'AWAITING_APPROVAL')
 
+
+    def test_signed_artifact_is_versioned_idempotent_and_race_safe(self):
+        draft=self.latest(self.send('交付账单'))
+        ticket=self.approve(draft,require_signoff=True)
+        tid=ticket['id']
+        self.assertTrue(ticket['acceptance_contract']['require_signoff'])
+        def offer(n,data):
+            sha=hashlib.sha256(data).hexdigest()
+            key=f'{n:032x}'
+            directory=self.store.root/'goal-attempts'/tid/key/'verified'
+            directory.mkdir(parents=True)
+            file=directory/'bill.txt'
+            file.write_bytes(data)
+            def stage(task):
+                state=task['goal_execution']
+                task.update(status='awaiting_artifact_review',plan={'steps':[{}]},step=0)
+                state.update(stage='awaiting_artifact_review',checkpoint={'digest':sha})
+                state.setdefault('artifact_reviews',[]).append(dict(sequence=n,state='pending',level='goal',
+                    assignment=key,artifact_sha256=sha,files={'bill.txt':sha},goal_revision=1,
+                    acceptance_revision=1,mandate_revision=1,plan_revision=task['version']))
+            self.store.change(tid,stage)
+            return key,sha,file
+        one,first,_=offer(1,b'first draft')
+        rev=ticket['revision']
+        self.intake.bind_thread(tid,'feishu','v1-card',actor_id='owner',expected_ticket_revision=rev)
+        def decide(op,revision,key,sha,reason,event,**kwargs):
+            return self.intake.decide_artifact(tid,op,revision,key,sha,reason,event,actor_id='owner',**kwargs)
+        args=('return',rev,one,first,'需要列明金额','return-one')
+        decide(*args,source='feishu',source_thread_id='v1-card')
+        self.assertTrue(decide(*args,source='feishu',source_thread_id='v1-card')['duplicate'])
+        two,second,file=offer(2,b'revised draft')
+        rev=self.intake.get(tid,'owner')['revision']
+        with self.assertRaises(Problem):
+            decide('accept',rev,two,second,'','old-card',source='feishu',source_thread_id='v1-card')
+        with self.assertRaises(Problem):
+            decide('accept',rev,one,first,'','stale')
+        file.write_bytes(b'altered')
+        with self.assertRaises(Problem):
+            decide('accept',rev,two,second,'','tamper')
+        file.write_bytes(b'revised draft')
+        def sign(key):
+            try: return decide('accept',rev,two,second,'',key)['action']
+            except Problem as exc: return exc.status
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            self.assertCountEqual(list(pool.map(sign,['web-a','web-b'])),['ARTIFACT_ACCEPTED',409])
+        closed=self.store.get(tid)
+        self.assertEqual(closed['goal_delivery']['assignment'],two)
+        self.assertEqual([r['state'] for r in closed['goal_execution']['artifact_reviews']],['returned','accepted'])
+        self.assertEqual(self.workbench.artifact_bytes(tid,'bill.txt',candidate=one)[1],b'first draft')
+        self.assertEqual(self.workbench.artifact_bytes(tid,'bill.txt')[1],b'revised draft')
 
     def test_pending_bound_feedback_prevents_approval_of_old_scope(self):
         ready = self.latest(self.send('release', source_thread_id='root'))

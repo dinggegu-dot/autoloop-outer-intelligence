@@ -68,7 +68,7 @@ _REGISTRY = {
         "artifact_types": ["any"], "capabilities": ["主观质量或业务判断"],
         "required_inputs": ["description"], "supported_environments": [],
         "permission_requirements": ["authenticated_human_review"],
-        "runner": None, "resource_limits": {}, "trust_status": "REVIEW_GAP",
+        "runner": None, "resource_limits": {}, "trust_status": "OWNER_SIGNOFF",
     },
 }
 
@@ -215,6 +215,21 @@ def validate_constraint_controls(goal, contract, mandate):
         raise ValueError("批准的运行授权无法保证目标限制")
 
 
+def _is_human_criterion(criterion):
+    return (criterion.get("verification_type") == "HUMAN_REVIEW"
+            and criterion.get("verifier_id") == "human-review"
+            and type(criterion.get("verifier_version")) is int and criterion["verifier_version"] == 1
+            and criterion.get("human_review_required") is True
+            and criterion.get("test_spec") == {} and criterion.get("expected_result") is None
+            and criterion.get("environment") is None)
+
+
+def needs_human_signoff(contract):
+    return contract.get("require_signoff") is True or any(
+        row.get("required") is True and _is_human_criterion(row) for row in contract["criteria"]
+    )
+
+
 def compile_proposal(goal, proposal):
     """接受受限模型建议，重新计算覆盖，保留任何无法通过程序验证的必要项。"""
     if not isinstance(goal, dict) or not isinstance(proposal, dict):
@@ -272,6 +287,11 @@ def compile_proposal(goal, proposal):
             availability = LOCAL_DATA
         elif kind == "DETERMINISTIC":
             raise ValueError("确定性验收必须使用已登记的方法及版本")
+        elif kind == "HUMAN_REVIEW":
+            if (verifier != "human-review" or type(version) is not int or version != 1
+                    or spec != {} or expected is not None or not human_required):
+                raise ValueError("人工验收需要明确的检查条目，不接受脚本或自动预期结果")
+            availability = None
         else:
             # 模型不能通过提交脚本或自己的通过判断来消除审查缺口。
             if verifier not in (None, "human-review") or version not in (None, 1) or spec not in (None, {}):
@@ -280,7 +300,7 @@ def compile_proposal(goal, proposal):
             verifier, version, spec, expected = "human-review", 1, {}, None
         if required:
             mapped.update(set(linked) - constraint_ids)
-            if not availability or human_required:
+            if kind != "HUMAN_REVIEW" and (not availability or human_required):
                 gaps.append(f"{key} 需要独立人工验收或当前环境没有可运行的验证器")
             if not evidence:
                 raise ValueError("必需验收项必须要求证据")
@@ -292,6 +312,11 @@ def compile_proposal(goal, proposal):
             "human_review_required": human_required or kind != "DETERMINISTIC",
             "source_refs": _list_of_strings(criterion.get("source_refs", [])), "environment": availability,
         })
+    signoff_rows = [row for row in criteria if row["required"] and _is_human_criterion(row)]
+    mapped_human = {key for row in signoff_rows for key in (row["criterion_id"], row["description"])}
+    if not set(human) <= mapped_human:
+        gaps.append("人工验收要求必须逐项映射到已登记的必需人工验收条目")
+    human_descriptions = list(dict.fromkeys(row["description"] for row in signoff_rows))
     gaps.extend(_behavior_gaps(goal, items, criteria))
     unverified_constraints = sorted(constraint_ids - controls.keys())
     if unverified_constraints:
@@ -302,11 +327,11 @@ def compile_proposal(goal, proposal):
     contract = {
         "schema_version": 1, "goal_revision": goal_revision,
         "artifact_types": _list_of_strings(proposal.get("artifact_types", [])),
-        "criteria": criteria, "verification_gaps": gaps, "human_review_requirements": human,
+        "criteria": criteria, "verification_gaps": gaps, "human_review_requirements": human_descriptions,
         "coverage_assessment": {"covered": sorted(mapped), "uncovered": uncovered,
                                 "authorization_controls": controls},
         "source_refs": _list_of_strings(proposal.get("source_refs", [])),
-        "status": "VERIFICATION_GAP" if gaps or human else "READY_FOR_APPROVAL",
+        "status": "VERIFICATION_GAP" if gaps else "READY_FOR_APPROVAL",
     }
     if len(goal_checks._encode(contract).encode("utf-8")) > goal_checks.MAX_CONTRACT_BYTES:
         raise ValueError("验收契约超过 256 KiB")
@@ -353,6 +378,8 @@ def _html_result(data, expected):
 def _criterion_result(criterion, files, occupied):
     verifier = criterion["verifier_id"]
     spec = criterion["test_spec"]
+    if _is_human_criterion(criterion):
+        return "INCONCLUSIVE", "等待本人对当前归档产物作出人工验收决定"
     if criterion["human_review_required"] or not criterion["environment"]:
         return "INCONCLUSIVE", "需要独立验收或可信运行环境不可用"
     if criterion["environment"] not in environment_capabilities():
@@ -453,10 +480,14 @@ def validate_results(contract, plan, assignment, checkpoint, rows):
                 or row.get("id") != criterion["criterion_id"]
                 or row.get("evidence_ref") != f"sha256:{sha256(signed_body)}"):
             raise ValueError("验收结果缺少有效证据")
+        human = _is_human_criterion(criterion)
+        if human and status != "INCONCLUSIVE":
+            raise ValueError("自动核验不得代替人工验收决定")
         if status == "PASS" and (criterion["human_review_required"] or not criterion["environment"]):
             raise ValueError("独立验收未确认")
-    required = [row for criterion, row in zip(criteria, rows) if criterion["required"]]
-    return bool(required) and all(row["status"] == "PASS" for row in required)
+    required = [(criterion,row) for criterion, row in zip(criteria, rows) if criterion["required"]]
+    return bool(required) and all(row["status"] == "PASS" or _is_human_criterion(criterion)
+                                  for criterion, row in required)
 
 
 def coordination_schema(context):

@@ -58,6 +58,10 @@ if ! $resume; then mkdir "$runtime"/{hub,home,tmp,cwd,worker,workbench}; fi
 
 cli_env=(env -i "HOME=$HOME" "TMPDIR=$runtime/tmp" "PATH=$PATH" "SHELL=/bin/sh")
 if [[ -n ${CODEX_HOME:-} ]]; then cli_env+=("CODEX_HOME=$CODEX_HOME"); fi
+if [[ -n ${AUTOLOOP_OUTER_PROXY_PORT:-} ]]; then
+  [[ $AUTOLOOP_OUTER_PROXY_PORT =~ ^[0-9]{1,5}$ ]] && (( 10#$AUTOLOOP_OUTER_PROXY_PORT > 0 && 10#$AUTOLOOP_OUTER_PROXY_PORT <= 65535 )) || fail "模型连接端口无效"
+  cli_env+=("AUTOLOOP_OUTER_PROXY_PORT=$AUTOLOOP_OUTER_PROXY_PORT")
+fi
 cli() {
   local instance=$1
   shift

@@ -112,14 +112,43 @@ def respond(bridge,event,card):
         bridge.queue_prompt('reply-'+event['message_id'],'outer',json.dumps(updated,ensure_ascii=False),updated['body'])
         return '当前工单卡已更新。'
     call(bridge,'bind',ticket_id=ticket,thread=thread,revision=binding['revision'])
-    if action in ('outer_approve','outer_pause','outer_resume','outer_stop'):
-        if action not in [name for name,_ in card['actions']]:return '当前卡不支持此操作。'
-        call(bridge,action.removeprefix('outer_'),ticket_id=ticket,revision=binding['revision'],
+    if action in ('outer_approve','outer_approve_signoff','outer_pause','outer_resume','outer_stop'):
+        if action not in dict(card['actions']):return '当前卡不支持此操作。'
+        command = 'approve' if action == 'outer_approve_signoff' else action.removeprefix('outer_')
+        options = {'require_signoff': True} if action == 'outer_approve_signoff' else {}
+        call(bridge,command,ticket_id=ticket,revision=binding['revision'],
              goal_revision=binding['goal_revision'],acceptance_revision=binding['acceptance_revision'],
-             request_id=event['message_id'],thread=thread)
+             request_id=event['message_id'],thread=thread,**options)
         updated=call(bridge,'card',ticket_id=ticket)
         queue_card(bridge,event,updated)
         return '已记录'+dict(card['actions'])[action]+'。'
+    if 'candidate' in binding:
+        if action == 'outer_return_artifact' and action in dict(card['actions']):
+            return queue_card(bridge,event,{
+                'title':'退回交付候选',
+                'body':f"工单 {ticket} · 交付 v{binding['artifact_sequence']}\n请直接回复这张卡，说明这版需要改哪里。",
+                'binding':dict(binding,return_artifact=True),
+                'actions':[['outer_status','看进度']],
+            })
+        if action == 'outer_accept_artifact' and action in dict(card['actions']):
+            command, reason = 'accept_artifact', ''
+        elif action is None:
+            text = event['content'].strip()
+            explicit = re.fullmatch(r'退回修改[：:]\s*(.*)', text, re.S)
+            if binding.get('return_artifact'):
+                reason = text
+            elif explicit and 'outer_return_artifact' in dict(card['actions']):
+                reason = explicit[1].strip()
+            else:
+                return '请在本版交付卡选择签收或退回。也可直接回复「退回修改：原因」。'
+            if not 1 <= len(reason) <= 1000:
+                return '请填写退回原因，限 1 至 1000 字。'
+            command = 'return_artifact'
+        else:
+            return '请在本版交付卡选择签收或退回。'
+        call(bridge,command,ticket_id=ticket,revision=binding['revision'],candidate=binding['candidate'],
+             artifact_sha256=binding['artifact_sha256'],reason=reason,request_id=event['message_id'],thread=thread)
+        return queue_card(bridge,event,call(bridge,'card',ticket_id=ticket))
     if action == 'outer_edit' and action in dict(card['actions']):
         choices=binding.get('requirements') or []
         return queue_card(bridge,event,{'title':'修改当前工单','body':'回复这张卡可补充要求。要替换某项已有要求，请先选择它，再回复新的内容。','binding':binding,

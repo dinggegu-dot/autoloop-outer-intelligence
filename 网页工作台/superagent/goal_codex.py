@@ -252,6 +252,17 @@ def _run(argv, prompt, workspace, output_dir, staging, env, timeout, launch_gate
                 raise SystemExit(128 + interrupted)
 
 
+def trusted_cli_environment():
+    """仅给受信任的 CLI 进程注入经过校验的本机模型传输配置。"""
+    env = {key: os.environ[key] for key in _ENV if key in os.environ}
+    port = os.environ.get("AUTOLOOP_OUTER_PROXY_PORT")
+    if port:
+        if not (port.isascii() and port.isdecimal() and len(port) <= 5 and 0 < int(port) <= 65535):
+            raise ValueError("invalid loopback model transport port")
+        env.update(HTTPS_PROXY=f"http://127.0.0.1:{int(port)}", NO_PROXY="127.0.0.1,localhost,::1")
+    return env
+
+
 def invoke(assignment: dict, workspace: Path, output_dir: Path, *, launch_gate=contextlib.nullcontext) -> dict:
     """Run a single turn. Both directories must already exist.
 
@@ -260,7 +271,10 @@ def invoke(assignment: dict, workspace: Path, output_dir: Path, *, launch_gate=c
     Raw CLI streams are never returned or persisted.
     """
     sandbox, schema, timeout, prompt = _prepare(assignment)
-    env = {key: os.environ[key] for key in _ENV if key in os.environ}
+    try:
+        env = trusted_cli_environment()
+    except ValueError:
+        raise GoalCodexError("invalid_config", "Invalid loopback model transport configuration") from None
     try:
         with tempfile.TemporaryDirectory(prefix="goal-codex-", dir=output_dir) as staging:
             schema_path = Path(staging, "schema.json").resolve()
@@ -272,6 +286,7 @@ def invoke(assignment: dict, workspace: Path, output_dir: Path, *, launch_gate=c
                 "--skip-git-repo-check", "--disable", "hooks", "--disable", "apps",
                 "--disable", "plugins", "-c", 'web_search="disabled"',
                 "-c", "sandbox_workspace_write.network_access=false",
+                "-c", 'shell_environment_policy.exclude=["*PROXY","AUTOLOOP_*"]',
                 "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
                 "-c", "sandbox_workspace_write.exclude_slash_tmp=true",
                 "--output-schema", str(schema_path),

@@ -479,6 +479,12 @@ def prepare_outer_execution(assignment):
     )
     if phase == 'replan':
         context['contract_instruction'] += '仅调整后续阶段的实施方案，保持现有阶段顺序和验收项不变。'
+    if phase == 'repair' and context.get('human_review_feedback'):
+        context['contract_instruction'] += (
+            'human_review_feedback 是本人对已归档候选产物的退回意见。'
+            '在现有授权内修复意见指出的问题并保留已满足的条件。'
+            '不得修改验收契约、跳过自动复验或代替本人通过验收。'
+        )
 
 
 def execute_outer_review(assignment, workspace, directory, report):
@@ -489,12 +495,12 @@ def execute_outer_review(assignment, workspace, directory, report):
         raise Problem('待验产物与执行检查点不匹配')
     contract = assignment['outer_acceptance']
     rows = verify(contract,assignment,checkpoint,files,occupied)
-    passed = validate_results(contract,assignment['plan'],assignment,checkpoint,rows)
+    machine_passed = validate_results(contract,assignment['plan'],assignment,checkpoint,rows)
     if capture(workspace)[0] != checkpoint:
         raise Problem('验收期间工作区发生变化')
-    report.update(result={'passed':passed},checkpoint=checkpoint,validation={'checks':rows},
+    report.update(result={'passed':machine_passed},checkpoint=checkpoint,validation={'checks':rows},
                   evidence={'started_ns':start,'ended_ns':time.time_ns()})
-    if passed:
+    if machine_passed:
         # 从已实际验证的同一批字节归档，避免二次从候选路径读入不同文件。
         verified = directory/'verified'
         verified.mkdir(mode=0o700)

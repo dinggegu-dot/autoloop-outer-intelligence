@@ -201,6 +201,12 @@ class OuterIntake:
             binding = {'ticket_id': ticket_id, 'ticket_revision': ticket['revision'],
                        'goal_revision': ticket['goal_revision'], 'acceptance_revision': ticket['acceptance_revision'],
                        'question_id': (ticket['question'] or {}).get('question_id'), 'status': ticket['status']}
+            if ticket.get('task_id'):
+                current = db.execute("""SELECT json_extract(body,'$.goal_execution.artifact_reviews[#-1]')
+                                        FROM tasks WHERE id=?""",(ticket_id,)).fetchone()
+                review = json.loads(current[0]) if current and current[0] else {}
+                if review.get('state') == 'pending':
+                    binding.update(candidate=review['assignment'],artifact_sha256=review['artifact_sha256'])
             existing = self._card(db, source, identity[3], identity[4])
             if existing is None:
                 db.execute('INSERT INTO outer_card_bindings VALUES(?,?,?,?)',
@@ -319,6 +325,16 @@ class OuterIntake:
                     f'SELECT ({_LAST_REQUEST_ERROR}) FROM outer_tickets d WHERE d.id=?',(ticket_id,)).fetchone()[0]
             if ticket['task_id']:
                 ticket['execution'] = omit_call_payloads(self.store.get(ticket['task_id']))
+                previous = []
+                for gen,reviews,delivery in db.execute("""SELECT revision,json_extract(body,'$.goal_execution.artifact_reviews'),
+                        json_extract(body,'$.goal_delivery') FROM outer_revisions WHERE ticket=? AND kind='execution_archive'
+                        ORDER BY revision""",(ticket_id,)):
+                    records=json.loads(reviews or '[]')
+                    if delivery and not records:
+                        records=[dict(json.loads(delivery),state='automatic',sequence=1)]
+                    previous.extend(dict(mandate_revision=gen,**{k:r.get(k) for k in (
+                        'sequence','state','assignment','artifact_sha256','files','reason')}) for r in records)
+                if previous: ticket['prior_deliveries']=previous
             return ticket
 
     def list(self, actor_id, *, tenant='default'):
@@ -773,7 +789,9 @@ class OuterIntake:
 
     @staticmethod
     def _validate_ready_contract(contract):
-        if (contract.get('verification_gaps') != [] or contract.get('human_review_requirements') != []
+        human = {c.get('description') for c in contract.get('criteria',[]) if isinstance(c,dict)
+                 and c.get('verification_type')=='HUMAN_REVIEW' and c.get('required') is True}
+        if (contract.get('verification_gaps') != [] or not set(contract.get('human_review_requirements') or []).issubset(human)
                 or not isinstance(contract.get('criteria'), list) or not contract['criteria']
                 or any(not isinstance(row, dict) or not isinstance(row.get('description'), str)
                        or not row['description'].strip() for row in contract['criteria'])):
@@ -784,10 +802,13 @@ class OuterIntake:
         return summary
 
     def approve_goal_contract(self, ticket_id, goal_revision, acceptance_revision, expected_ticket_revision,
-                              approval_event_id, *, actor_id, source='web', tenant='default', source_thread_id=None):
+                              approval_event_id, *, actor_id, source='web', tenant='default', source_thread_id=None,
+                              require_signoff=False):
         from .goal_engine import validate_outer_authorization
 
         identity = self._source(source, approval_event_id, actor_id, tenant, source_thread_id)
+        if type(require_signoff) is not bool:
+            raise Problem('人工签收选项无效')
         if source == 'feishu' and not identity[4]:
             raise Problem('飞书批准需要关联原卡片', 409)
         self.workbench.goal_engine()  # 外层标志不得绕过执行入口配置。
@@ -796,6 +817,7 @@ class OuterIntake:
             event, duplicate = self._insert(db, identity, ticket_id, {
                 'type': 'approval', 'ticket_id': ticket_id, 'goal_revision': goal_revision,
                 'acceptance_revision': acceptance_revision, 'expected_ticket_revision': expected_ticket_revision,
+                **({'require_signoff': True} if require_signoff else {}),
             })
             if duplicate:
                 stored = json.loads(event['result'])
@@ -823,6 +845,8 @@ class OuterIntake:
                            actor_id=actor_id, approval_event_id=event['id'], source=source, approved_at=now())
             goal = {**ticket['goal_contract'], 'status': 'APPROVED'}
             acceptance = {**ticket['acceptance_contract'], 'status': 'APPROVED'}
+            if require_signoff:
+                acceptance['require_signoff'] = True
             outer = dict(ticket_id=ticket_id, goal_revision=goal_revision, acceptance_revision=acceptance_revision,
                          mandate_revision=mandate['revision'], approval_event_id=event['id'], actor_id=actor_id,
                          correlation_id=ticket['correlation_id'], goal_contract=goal, acceptance_contract=acceptance,
@@ -854,6 +878,64 @@ class OuterIntake:
             self._record_revision(db, ticket_id, 'approval_snapshot', mandate['revision'], ticket)
             self._finish(db, event, 'DONE', {'action': 'AUTHORIZED', 'mandate_revision': mandate['revision']}, ticket)
             return ticket
+
+    def decide_artifact(self,ticket_id,operation,expected_revision,candidate,artifact_sha256,reason,request_id,
+                        *,actor_id,source='web',tenant='default',source_thread_id=None):
+        from .goal_engine import decision
+        if operation not in ('accept','return'):
+            raise Problem('未知作品验收决定')
+        reason = _string(reason,'退回原因',2000) if operation=='return' else ''
+        identity = self._source(source,request_id,actor_id,tenant,source_thread_id)
+        with self._transaction() as db:
+            ticket = self._ticket(db,ticket_id,actor_id,tenant)
+            event,duplicate = self._insert(db,identity,ticket_id,dict(type='artifact_review',ticket_id=ticket_id,operation=operation,
+                revision=expected_revision,candidate=candidate,artifact_sha256=artifact_sha256,reason=reason))
+            if duplicate:
+                return dict(json.loads(event['result']),duplicate=True)
+            self._compare(ticket,expected_revision)
+            if source=='feishu':
+                card = self._card(db,source,tenant,identity[4]) or {}
+                if (card.get('ticket_id'),card.get('ticket_revision'),card.get('candidate'),card.get('artifact_sha256')) != (
+                        ticket_id,expected_revision,candidate,artifact_sha256):
+                    raise Problem('验收卡与作品版本不一致，请打开最新卡片',409)
+            if ticket['status']!='AUTHORIZED' or db.execute("SELECT 1 FROM outer_events WHERE ticket=? AND role IS NOT NULL AND state IN ('PENDING','RUNNING')",(ticket_id,)).fetchone():
+                raise Problem('工单存在状态或范围变化，请刷新',409)
+            task = json.loads(db.execute('SELECT body FROM tasks WHERE id=?',(ticket_id,)).fetchone()[0])
+            state = task['goal_execution']
+            reviews = state.get('artifact_reviews') or []
+            review = reviews[-1] if reviews else {}
+            if (task['paused'] or task['status']!='awaiting_artifact_review' or review.get('state')!='pending'
+                    or review['assignment']!=candidate or review['artifact_sha256']!=artifact_sha256
+                    or state['checkpoint']['digest']!=artifact_sha256 or review['plan_revision']!=task['version']
+                    or any(review[k]!=ticket[k] for k in ('goal_revision','acceptance_revision','mandate_revision'))):
+                raise Problem('此作品已处理或版本已变化，请刷新',409)
+            approved = operation=='accept'
+            if approved:
+                for relative in review['files']:
+                    self.workbench.artifact_bytes(ticket_id,relative,candidate=candidate)
+            review.update(state='accepted' if approved else 'returned',reason=reason,actor=actor_id,source=source,
+                          event=event['id'],decided_at=now())
+            decision(task,'artifact_'+review['state'],assignment=candidate,digest=artifact_sha256,
+                     sequence=review['sequence'],reason=reason,actor=actor_id,source=source,event=event['id'])
+            if approved:
+                task['plan']['steps'][task['step']]['state']='completed'
+                task['step']+=1
+                state.update(stage='verified_complete',outcome='VERIFIED_COMPLETE')
+                delivery={k:review[k] for k in ('assignment','artifact_sha256','files','level')}
+                task.update(status='completed',phase='review',artifacts=list(review['files']),goal_delivery=delivery,
+                            review={'passed':True,'findings':['本人已签收作品第 '+str(review['sequence'])+' 版']})
+                decision(task,'delivered',assignment=candidate,digest=artifact_sha256,outcome=state['outcome'],
+                         correlation_id=ticket['correlation_id'])
+            else:
+                state.update(stage='repair',outcome='REVISION_REQUESTED')
+                task.update(status='queued',phase='execute',error='')
+            task['updated_at']=now()
+            db.execute('UPDATE tasks SET body=?,updated_at=? WHERE id=?',(_json(task),task['updated_at'],ticket_id))
+            ticket['revision']+=1
+            self._save(db,ticket)
+            result=dict(action='ARTIFACT_'+review['state'].upper(),sequence=review['sequence'],candidate=candidate)
+            self._finish(db,event,'DONE',result,ticket)
+            return result
 
     def _replace_authorized(self, db, ticket, options, outer):
         from .goal_engine import active_assignments
@@ -943,7 +1025,8 @@ class OuterIntake:
                     or ticket['goal_revision'] != state['outer']['goal_revision']):
                 raise Problem('旧任务仍在停止或范围已有改动', 409)
             state['stop_requested'] = False
-            task.update(paused=False, status='queued', error='')
+            waiting = state['stage']=='awaiting_artifact_review'
+            task.update(paused=False, status='awaiting_artifact_review' if waiting else 'queued', error='')
         else:
             state['stop_generation'] += 1
             state['stop_requested'] = True

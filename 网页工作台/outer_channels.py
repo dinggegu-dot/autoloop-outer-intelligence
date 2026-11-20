@@ -13,7 +13,8 @@ STATUS = {
 
 EXECUTION_STATUS = {'created':'已创建','planning':'正在规划','queued':'等待派工','executing':'正在执行',
                     'reviewing':'正在验收','stopping':'正在停办','blocked':'受阻','budget_exhausted':'预算已用完',
-                    'paused':'已暂停','completed':'已完成','rejected':'已拒绝'}
+                    'paused':'已暂停','completed':'已完成','rejected':'已拒绝',
+                    'awaiting_artifact_review':'待人工签收'}
 
 def dispatch(service, source, command, body):
     """身份来自本机 session 或已经验证的桥签名，调用方不能指定 actor。"""
@@ -43,9 +44,18 @@ def dispatch(service, source, command, body):
             raise Problem('调用编号无效')
         return service.calls(ticket, OWNER, call_id=body['call_id'])
     if command == 'approve':
+        signoff = body.get('require_signoff', False)
+        if type(signoff) is not bool:
+            raise Problem('请选择是否启用人工签收')
+        options = {'require_signoff': True} if signoff else {}
         return service.approve_goal_contract(ticket, body['goal_revision'], body['acceptance_revision'],
                                              body['revision'], body['request_id'], actor_id=OWNER,
-                                             source=source, source_thread_id=body.get('thread'))
+                                             source=source, source_thread_id=body.get('thread'), **options)
+    if command in ('accept_artifact', 'return_artifact'):
+        operation = command.removesuffix('_artifact')
+        return service.decide_artifact(ticket, operation, body['revision'], body['candidate'],
+                                       body['artifact_sha256'], body.get('reason', ''), body['request_id'],
+                                       actor_id=OWNER, source=source, source_thread_id=body.get('thread'))
     if command in ('pause','resume','stop'):
         return service.control(ticket, command, body['revision'], body['request_id'], actor_id=OWNER, source=source,source_thread_id=body.get('thread'))
     raise Problem('未知操作',404)
@@ -77,7 +87,9 @@ def journey(draft):
         station,instruction = 'dock','核对当前目标后可继续此单。'
     elif state == 'AUTHORIZED':
         label = EXECUTION_STATUS.get(phase, label)
-        if phase == 'completed':
+        if phase == 'awaiting_artifact_review':
+            station,instruction = 'decision','请核对交付候选、机器验收结果和人工验收条款，再签收或退回。'
+        elif phase == 'completed':
             station,instruction = 'delivery','已完成独立验收，可查看归档交付。'
         elif phase in ('blocked','budget_exhausted') or outcome == 'AWAITING_REVIEW':
             station = 'decision'
@@ -123,9 +135,56 @@ def journey(draft):
     can_resume = state == 'PAUSED' and (not draft.get('task_id') or
                  (phase == 'paused' and draft.get('status_before_pause') == 'AUTHORIZED'))
     terminal = state == 'STOPPED' or state == 'AUTHORIZED' and phase in ('completed','rejected')
+    can_review = state == 'AUTHORIZED' and phase == 'awaiting_artifact_review'
     return dict(station=station,label=label,instruction=instruction,decision_items=decision_items,approve=can_approve,
-                pause=not terminal and state != 'PAUSED' and phase != 'stopping',
-                resume=can_resume,stop=not terminal and phase != 'stopping')
+                artifact_review=can_review, pause=not terminal and state != 'PAUSED' and phase != 'stopping' and not can_review,
+                resume=can_resume,stop=not terminal and phase != 'stopping' and not can_review)
+
+
+def artifact_review_card(draft, lines, binding, actions, view):
+    execution = draft.get('execution') or {}
+    flow = execution.get('goal_execution') or {}
+    reviews = flow.get('artifact_reviews') or []
+    if not reviews:
+        return
+    review = reviews[-1]
+    states = {'pending':'待签收', 'accepted':'已签收', 'returned':'已退回'}
+    candidates = [r for r in reviews if r['state'] == 'returned']
+    lines.extend((
+        f"交付 v{review['sequence']} · {states.get(review['state'], review['state'])}",
+        f"目标 v{review['goal_revision']} · 验收 v{review['acceptance_revision']} · 授权 v{review['mandate_revision']}",
+        '摘要 SHA-256 '+review['artifact_sha256'],
+    ))
+    files = list(review['files'])
+    for item in files[:8]:
+        path = item['path'] if isinstance(item, dict) else item
+        lines.append('候选文件 '+str(path)[:180])
+    if len(files) > 8:
+        lines.append(f'共 {len(files)} 份候选文件，完整清单请到电脑工作台查看。')
+    checks = review.get('checks') or (flow.get('validation') or {}).get('checks') or []
+    human_ids = {item['id'] for item in review.get('human_criteria', [])}
+    checks = [row for row in checks if row.get('verifier_id') != 'human-review'
+              and row.get('id', row.get('criterion_id')) not in human_ids]
+    if checks:
+        lines.append(f"机器验收 {sum(c.get('status') == 'PASS' or c.get('passed') is True for c in checks)}/{len(checks)} 项通过")
+        for check in checks[:6]:
+            lines.append(f"{check.get('status') or ('PASS' if check.get('passed') else 'FAIL')} · {check.get('description') or check.get('id') or check.get('criterion_id', '')}"[:144])
+    else:
+        lines.append('此候选未列出机器验收项。')
+    requirements = (draft.get('acceptance_contract') or {}).get('human_review_requirements') or []
+    for item in requirements[:3]:
+        lines.append('人工验收 '+display(item)[:180])
+    if len(requirements) > 3:
+        lines.append('其余人工验收条款请到电脑工作台核对。')
+    for row in candidates[-3:]:
+        lines.append(f"退回记录 · 交付 v{row['sequence']} · "+str(row.get('reason') or '无记录')[:160])
+    if len(candidates) > 3:
+        lines.append(f'共 {len(candidates)} 条退回记录，完整历史请到电脑工作台查看。')
+    if view['artifact_review'] and review['state'] == 'pending':
+        binding.update(candidate=review['assignment'], artifact_sha256=review['artifact_sha256'],
+                       artifact_sequence=review['sequence'])
+        lines.append('也可直接回复本卡「退回修改：原因」。')
+        actions.extend((('outer_accept_artifact','签收本版'), ('outer_return_artifact','退回本版')))
 
 
 def card(draft):
@@ -158,7 +217,12 @@ def card(draft):
         for gap in acceptance.get('verification_gaps',[]):
             lines.append('缺口：'+gap)
         if view['approve'] and draft.get('approval_terms') and len('\n'.join(lines)) <= 3950:
-            actions.append(('outer_approve','批准这版目标与验收'))
+            if acceptance.get('human_review_requirements'):
+                lines.append('本版包含人工验收条款，机器验收通过后须人工签收。')
+                actions.append(('outer_approve_signoff','批准并启用签收'))
+            else:
+                lines.append('可选择在机器验收通过后人工签收。')
+                actions.extend((('outer_approve','批准 · 机器验收'), ('outer_approve_signoff','批准 · 人工签收')))
     elif status == 'AWAITING_CLARIFICATION':
         question = draft.get('question') or {}
         lines.extend([question.get('question_text',''),display(question.get('options') or []),'直接回复这张卡。'])
@@ -181,7 +245,7 @@ def card(draft):
             path = item if isinstance(item,str) else item.get('path') if isinstance(item,dict) else None
             if path:
                 lines.append('交付文件 '+str(path)[:180])
-    if status not in ('PAUSED','STOPPED','AWAITING_CLARIFICATION'):
+    if not view['artifact_review'] and status not in ('PAUSED','STOPPED','AWAITING_CLARIFICATION'):
         goal=draft.get('goal_contract') or {}
         binding['requirements']=[{'id':r['requirement_id'],'label':r['description']} for key in
             ('deliverables','required_capabilities','nonfunctional_requirements','constraints','assumptions','out_of_scope')
@@ -190,8 +254,11 @@ def card(draft):
     actions.append(('outer_status','看进度'))
     if status == 'VERIFICATION_GAP':
         lines.extend((draft.get('acceptance_contract') or {}).get('verification_gaps',[]))
-    if status not in ('PAUSED','STOPPED','AWAITING_CLARIFICATION'):
+    if not view['artifact_review'] and status not in ('PAUSED','STOPPED','AWAITING_CLARIFICATION'):
         lines.append('回复本卡可补充资料或提出修改要求。')
+    artifact_lines = []
+    artifact_review_card(draft, artifact_lines, binding, actions, view)
+    lines.extend(artifact_lines)
     if len('\n'.join(lines)) > 3950:
         lines = [view['instruction'],lines[1],'完整内容请在电脑看板核对。']
         for item in view['decision_items']:
@@ -199,5 +266,9 @@ def card(draft):
             if len(summary) > 320:
                 summary = summary[:320]+'…'
             lines.append(item['label']+' · '+summary)
-        actions = [a for a in actions if a[0] != 'outer_approve']
+        if artifact_lines:
+            lines = lines[:3] + artifact_lines[:3] + ['请在电脑工作台核对候选文件、验收条款和历史后决定。']
+        if view['approve'] or view['artifact_review']:
+            actions = [a for a in actions if a[0] not in (
+                'outer_approve', 'outer_approve_signoff', 'outer_accept_artifact', 'outer_return_artifact')]
     return {'title':view['label']+' · '+title[:36], 'body':'\n'.join(filter(None,lines)), 'binding':binding,'actions':actions}

@@ -1,6 +1,6 @@
 # 目标漫游局 · Autoloop V2
 
-从本人飞书私聊发来一个目标，在王国地图上找到同一张工单，核对范围、验收条件和预算后批准执行。完成卡、逐项验收和下载文件都保留在这张工单里。
+从本人飞书私聊发来一个目标，在王国地图上找到同一张工单，核对范围、验收条件和预算后批准执行。含人工验收条件的作品会停在「待人工签收」。在工单里看清交付版次后，可签收，也可写明原因退回。历次候选文件、逐项验收和决定都留在原单。
 
 [下载候选分支 ZIP](https://github.com/dinggegu-dot/autoloop-outer-intelligence/archive/refs/heads/codex/v2-outer-intelligence.zip) · [运行与回滚](docs/operations/pilot.md) · [实现与实验边界](docs/architecture/architecture-alignment.md)
 

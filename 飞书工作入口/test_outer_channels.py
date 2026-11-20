@@ -204,6 +204,97 @@ class CrossChannelTest(unittest.TestCase):
         self.bridge.monitor_watches()
         self.assertEqual(self.bridge.store.db.execute('SELECT state FROM outbox WHERE id=?',(row['id'],)).fetchone()[0],'cancelled')
 
+
+    def test_signoff_modes_and_download_route(self):
+        from outer_channels import card, dispatch
+        draft=dict(id='wb-'+'a'*32,revision=7,goal_revision=3,acceptance_revision=2,
+                   status='AWAITING_APPROVAL',approval_terms={'budget_seconds':600})
+        actions=dict(card(draft)['actions'])
+        self.assertIn('outer_approve',actions)
+        self.assertIn('outer_approve_signoff',actions)
+        draft['acceptance_contract']={'human_review_requirements':['核对术语']}
+        required=card(draft)
+        self.assertNotIn('outer_approve',dict(required['actions']))
+        self.assertIn('须人工签收',required['body'])
+        service=Mock()
+        payload={**draft,'ticket_id':draft['id'],'request_id':'web-review'}
+        dispatch(service,'web','approve',payload)
+        self.assertNotIn('require_signoff',service.approve_goal_contract.call_args.kwargs)
+        dispatch(service,'web','approve',dict(payload,require_signoff=True))
+        self.assertIs(service.approve_goal_contract.call_args.kwargs['require_signoff'],True)
+        self.wb.artifact_bytes=Mock(return_value=(Path('报告.txt'),b'candidate file'))
+        url=self.base+'/api/tasks/'+draft['id']+'/artifact?path=%E6%8A%A5%E5%91%8A.txt&candidate=assignment-2'
+        with self.client.open(url) as response:
+            self.assertEqual(response.read(),b'candidate file')
+        self.wb.artifact_bytes.assert_called_once_with(draft['id'],'报告.txt',None,candidate='assignment-2')
+        with self.assertRaises(HTTPError) as conflict:
+            self.client.open(url+'&version=1')
+        self.assertEqual(conflict.exception.code,400)
+
+    def test_artifact_candidate_card_uses_original_binding_and_reason(self):
+        from outer_bridge import respond
+        from outer_channels import card, dispatch, journey
+        from task_brief import milestone
+        draft=dict(id='wb-'+'a'*32,revision=7,goal_revision=3,acceptance_revision=2,status='AUTHORIZED')
+        candidate=dict(sequence=2,assignment='candidate-2',artifact_sha256='a'*64,files={'report.txt':'b'*64},
+                       goal_revision=3,acceptance_revision=2,mandate_revision=1,state='pending')
+        returned=dict(candidate,sequence=1,assignment='candidate-1',state='returned',reason='请补术语定义')
+        draft['execution']={'id':draft['id'],'status':'awaiting_artifact_review','version':1,
+                            'observation_stale':False,'progress':{'done':1,'total':1},
+                            'goal_execution':{'artifact_reviews':[returned,candidate],
+                                              'validation':{'checks':[{'id':'summary','status':'PASS'},
+                                                  {'id':'wording','verifier_id':'human-review','status':'INCONCLUSIVE'}]}}}
+        self.assertEqual(journey(dict(draft,execution=None,execution_status='awaiting_artifact_review'))['station'],'decision')
+        self.assertEqual(journey(draft)['station'],'decision')
+        review=card(draft)
+        for entry in ('交付 v2','report.txt','机器验收 1/1','请补术语定义',candidate['artifact_sha256']):
+            self.assertIn(entry,review['body'])
+        self.assertIn('outer_accept_artifact',dict(review['actions']))
+        old_key=milestone(draft['execution'])['key']
+        another=dict(candidate,sequence=3,assignment='candidate-3')
+        changed=dict(draft['execution'],goal_execution={'artifact_reviews':[returned,another]})
+        self.assertNotEqual(old_key,milestone(changed)['key'])
+        self.assertIsNone(milestone(dict(changed,status='queued'))['key'])
+
+        bridge=Mock()
+        service=Mock()
+        def call(api, command, payload):
+            if command=='bind' and payload['revision']!=draft['revision']:
+                raise MobileProblem('工单版本已变化，请重新查看')
+            if command=='card':
+                return review
+            if command!='bind':
+                return dispatch(service,'feishu',command,payload)
+        bridge.board.call.side_effect=call
+        event={'message_id':'om_accept','reply_to':'om_original','message_type':'wb_click','action':'outer_accept_artifact'}
+        respond(bridge,event,review)
+        service.decide_artifact.assert_called_once_with(draft['id'],'accept',7,'candidate-2','a'*64,'','om_accept',
+                                                       actor_id='owner',source='feishu',source_thread_id='om_original')
+        service.decide_artifact.reset_mock()
+        respond(bridge,{**event,'action':'outer_return_artifact','message_id':'om_start_return'},review)
+        reason_card=json.loads(bridge.queue_prompt.call_args.args[2])
+        service.decide_artifact.assert_not_called()
+        reply={'message_id':'om_reason','reply_to':'om_reason_card','message_type':'text','content':'  '}
+        self.assertIn('填写退回原因',respond(bridge,reply,reason_card))
+        service.decide_artifact.assert_not_called()
+        reply['content']='请说明为何使用旧定义'
+        draft['revision']=8
+        with self.assertRaisesRegex(MobileProblem,'版本已变化'):
+            respond(bridge,reply,reason_card)
+        service.decide_artifact.assert_not_called()
+        draft['revision']=7
+        respond(bridge,reply,reason_card)
+        service.decide_artifact.assert_called_once_with(draft['id'],'return',7,'candidate-2','a'*64,reply['content'],'om_reason',
+                                                       actor_id='owner',source='feishu',source_thread_id='om_reason_card')
+        service.decide_artifact.reset_mock()
+        direct={'message_id':'om_direct','message_type':'text','reply_to':'om_original','content':'普通文字'}
+        self.assertIn('退回修改：原因',respond(bridge,direct,review))
+        service.decide_artifact.assert_not_called()
+        direct['content']='退回修改：请补充说明'
+        respond(bridge,direct,review)
+        service.decide_artifact.assert_called_once_with(draft['id'],'return',7,'candidate-2','a'*64,'请补充说明','om_direct',
+                                                       actor_id='owner',source='feishu',source_thread_id='om_original')
+
     def test_unsigned_mobile_and_legacy_route_declined(self):
         client=LocalBoard(self.mobile.path,b'x'*32)
         with self.assertRaises(RuntimeError):
