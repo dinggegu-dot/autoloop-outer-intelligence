@@ -21,6 +21,10 @@ function render(task,tasks){
   const base='/api/tasks/'+encodeURIComponent(task.id);
   detail.append(node('h3',task.name),node('p',task.id+' · v'+task.version+' · '+task.status_label),
     node('p',task.goal),node('p','完成标准：'+(task.acceptance||'待方案定义')));
+  const researchURL='http://127.0.0.1:8767/research/'+encodeURIComponent(task.id);
+  if((task.inbox_notes||[]).some(note=>note.body==='AFR 研究入口 '+researchURL)){
+    const research=node('a','打开本单知识库研究');research.href=researchURL;detail.append(research);
+  }
   if(task.goal_execution?.outer){
     const link=node('a','查看本工单的外层模型调用');
     link.href='?task='+encodeURIComponent(task.id)+'&goal='+encodeURIComponent(task.id)+'#outer-history';

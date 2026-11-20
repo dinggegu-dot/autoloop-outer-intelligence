@@ -1,0 +1,67 @@
+{
+  "ticket": "wb-cf905c00546843fe84c40d693735346d",
+  "fixture": "seven synthetic materials",
+  "native_runs": [
+    {
+      "run": 1,
+      "event": 1,
+      "state": "done",
+      "status": "invalid_local_input",
+      "request": "917a0887c8644cb6867da7bcf119b215"
+    },
+    {
+      "run": 2,
+      "event": 2,
+      "state": "done",
+      "status": "invalid_local_input",
+      "request": "69f59e00395d498eb1647088057cb7fb"
+    },
+    {
+      "run": 3,
+      "event": 3,
+      "state": "done",
+      "parent": null,
+      "materials": 7,
+      "claims": 4,
+      "open_questions": 4,
+      "model_calls": 4,
+      "status": "ok",
+      "request": "f037b487366943a79dbc36399efd10a3"
+    },
+    {
+      "run": 4,
+      "event": 4,
+      "state": "done",
+      "parent": "f037b487366943a79dbc36399efd10a3",
+      "materials": 7,
+      "claims": 4,
+      "open_questions": 4,
+      "model_calls": 6,
+      "status": "ok",
+      "request": "ae72603f720d4b46b68a8d2f7d60e19a"
+    }
+  ],
+  "first_actions": [
+    "list",
+    "read",
+    "read",
+    "finish"
+  ],
+  "followup_actions": [
+    "list",
+    "list",
+    "search",
+    "list",
+    "list",
+    "finish"
+  ],
+  "all_quotes_matched": true,
+  "all_source_versions_matched": true,
+  "canvas_edges_and_source_files_verified": true,
+  "receipt_sha256": "9ebf6810cff32abb6f94730d02fe066ac738d2fc73c8476ee50d7b2aef47f10b",
+  "registered_obsidian_trial_vault_exports": [
+    3,
+    4
+  ],
+  "production_materials_sent_by_trial": 0
+}

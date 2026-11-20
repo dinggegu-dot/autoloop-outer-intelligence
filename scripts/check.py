@@ -13,6 +13,7 @@ def run(command, cwd, **variables):
 
 def main():
     run([sys.executable,'-B','scripts/check_repository.py'],ROOT)
+    run([sys.executable,'-B','-m','unittest','discover','-s','scripts','-q'], ROOT)
     run(['git','diff','--check','origin/main...HEAD'], ROOT)
     for file in sorted(BOARD.glob('*.js')):
         run(['node','--check',str(file)],BOARD)
