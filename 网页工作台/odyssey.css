@@ -1,0 +1,46 @@
+/* 游戏原画为导航主题；任务状态、审批和进度来自中台。 */
+.game-brand>img{width:65px;height:48px;object-fit:contain;transform:rotate(-10deg);filter:drop-shadow(0 4px 7px #0004)}
+.moon-counter>img{width:36px;height:44px;object-fit:contain;filter:drop-shadow(0 0 12px #ffdb6970)}
+.destination-passport{width:380px;bottom:256px;top:auto;display:block}
+.postcard{width:255px;height:150px;margin:0 0 18px 4px;transform:rotate(-5deg)}
+.postcard #kingdom-scene{object-position:center}
+.postcard .postcard-character{position:absolute;right:-37px;bottom:-5px;width:100px;height:154px;object-fit:contain;filter:drop-shadow(0 5px 4px #00152277);transform:rotate(5deg);pointer-events:none}
+.postcard-stamp{right:14px;bottom:-20px;font-size:10px;width:47px;height:47px}
+#kingdom-lore{color:#e4ce91;font-size:10px;margin:0 0 10px}
+.destination-copy h2{font-size:34px;margin:7px 0}
+.destination-copy>p:not(#kingdom-lore){max-width:335px;line-height:1.7}
+.kingdom-intro{top:15%}.kingdom-intro h1{font-size:46px}.kingdom-intro p{font-size:11px}
+.kingdom-stop .stop-dot{width:54px;height:54px;background:#173c53;border-color:#e3c974;overflow:visible}
+.stop-dot>img{width:48px;height:62px;object-fit:contain;filter:drop-shadow(0 3px 3px #001a2b88);margin-top:-12px}
+.kingdom-stop.pending .stop-dot{opacity:.65}.kingdom-stop.selected .stop-dot{background:#ef5949}
+#kingdom-route:before{top:27px}.kingdom-stop.selected:after{top:-24px}
+.journey-bar{bottom:75px}.journey-heading{margin-bottom:24px}.globe-caption{bottom:239px;top:auto}
+.journey-live{position:absolute;right:4%;top:115px;width:320px;display:flex;gap:12px;align-items:center;padding:15px 16px;border:1px solid #c5e2f52b;border-radius:16px;background:#071d32d9;backdrop-filter:blur(12px);z-index:2;box-shadow:0 10px 35px #00111f22}
+.live-cappy{width:45px;height:51px;object-fit:contain;flex-shrink:0;transform:rotate(-9deg)}
+.live-copy{min-width:0;flex:1}.live-eyebrow{font-size:9px;color:#f3ce74;letter-spacing:1.5px}.live-copy h3{font-size:13px;line-height:1.6;margin:4px 0;overflow-wrap:anywhere}.live-copy p{font-size:10px;color:#bfd3e1;margin:0;line-height:1.7}.live-copy small{font-size:9px;color:#d4e5ef}.live-copy progress{width:100%;height:5px;display:block;margin-top:9px;accent-color:#ffd367}.live-actions{display:flex;flex-direction:column;gap:8px;align-self:flex-end}.live-actions button{border:1px solid #ffffff35;border-radius:15px;padding:7px 9px;font-size:9px;color:#fff;white-space:nowrap}.live-actions .live-approval{background:#f5cb67;color:#273648;border-color:transparent;font-weight:700}
+.mario-guide{position:absolute;right:5%;bottom:265px;width:110px;height:145px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 12px 9px #00182d66);animation:guide-float 5s ease-in-out infinite}
+.task-guide{width:55px;height:75px;object-fit:contain;align-self:center}.approval-guide{float:right;width:65px;height:48px;object-fit:contain;transform:rotate(-10deg);margin-left:12px}.wb-detail-heading>div:first-of-type{flex:1}.wb-decision{border-left:4px solid #e6ac3d}
+@keyframes guide-float{50%{transform:translateY(-7px) rotate(2deg)}}
+@media(max-height:900px) and (min-width:851px){.kingdom-intro{top:115px}.kingdom-intro h1{font-size:36px;margin:10px 0}.destination-passport{bottom:248px;width:480px;display:flex;gap:24px}.postcard{width:180px;height:126px;margin:0}.postcard .postcard-character{width:72px;height:130px;right:-22px}.destination-copy h2{font-size:28px}.destination-copy>p:not(#kingdom-lore){max-width:240px;font-size:10px}.journey-live{top:100px}.mario-guide{width:85px;height:120px;bottom:270px}}
+@media(min-width:1600px) and (min-height:901px){.destination-passport{bottom:260px}.postcard{width:290px;height:175px}.postcard .postcard-character{height:180px;width:115px}.kingdom-intro h1{font-size:56px}.journey-live{width:380px}.live-copy h3{font-size:15px}.mario-guide{width:145px;height:190px}}
+@media(max-width:1100px){.journey-live{width:290px;right:3%;top:95px;padding:11px}.live-cappy{display:none}.kingdom-intro h1{font-size:32px}.game-topbar nav{gap:13px}.destination-passport{width:410px}.postcard{width:155px}.mario-guide{right:4%;width:70px}.kingdom-stop .stop-dot{width:45px;height:45px}.stop-dot>img{width:40px;height:53px}#kingdom-route:before{top:22px}}
+@media(max-width:850px){.kingdom-intro{top:85px}.kingdom-intro h1{font-size:28px}.kingdom-intro p{display:none}.journey-live{top:175px;width:245px;right:20px}.destination-passport{left:25px;bottom:255px;width:390px;display:flex;gap:22px}.postcard{width:145px;height:104px;margin:0}.postcard .postcard-character{width:65px;height:115px}.destination-copy h2{font-size:25px}.destination-copy p{font-size:9px}.journey-heading{margin-bottom:0}.journey-bar{bottom:58px}#kingdom-route{padding-top:26px}#kingdom-route:before{top:48px}.mario-guide{bottom:265px}.globe-caption{bottom:223px}}
+@media(max-width:600px){.game-brand>img{width:40px;height:32px}.moon-counter>img{width:24px;height:32px}.kingdom-intro{top:73px;left:21px}.kingdom-intro h1{font-size:25px;margin-top:8px}.journey-live{top:139px;left:20px;right:20px;width:auto;padding:9px 12px;border-radius:12px}.live-copy h3{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.live-copy p{font-size:9px}.live-eyebrow{font-size:8px}.live-actions button{font-size:8px;padding:6px}.live-copy progress{margin-top:5px}.destination-passport{left:22px;right:22px;bottom:235px;width:auto;gap:20px}.postcard{width:110px;height:85px}.postcard .postcard-character{width:49px;height:100px;right:-17px}.postcard-stamp{height:30px;width:30px;font-size:7px;right:4px;bottom:-15px}.destination-copy h2{font-size:23px}.destination-copy>p:not(#kingdom-lore){font-size:8px;max-width:190px}#kingdom-lore{font-size:8px;max-width:190px;line-height:1.6;margin-bottom:5px}.mario-guide{display:none}.globe-caption{bottom:194px}.journey-bar{bottom:53px}.kingdom-stop{flex-basis:87px}.kingdom-stop .stop-dot{width:36px;height:36px}.stop-dot>img{width:31px;height:43px}#kingdom-route:before{top:44px}.game-footer{padding:10px 15px}.game-primary{min-width:150px;font-size:9px}.task-guide{width:35px;height:50px}}
+@media(max-height:740px) and (max-width:600px){.kingdom-intro h1{font-size:21px}.journey-live{top:125px}.destination-passport{bottom:211px}.globe-caption{bottom:170px}.journey-bar{bottom:47px}.journey-heading{display:none}#kingdom-lore{display:none}.postcard{height:70px}.destination-copy p{margin-bottom:4px}.game-state-line{margin-bottom:6px}}
+@media(prefers-reduced-motion:reduce){.mario-guide{animation:none}}
+
+.map-mode-label{display:flex;align-items:center;gap:9px;margin-top:15px;font-size:10px;color:#a6c6d9;pointer-events:auto}.map-mode-label select{color:#eaf3f9;background:#12334d;border:1px solid #8caec04d;border-radius:16px;padding:7px 11px;font:inherit}.kingdom-stop small{max-width:95%;line-height:1.4;min-height:23px}.kingdom-stop.active .stop-dot{background:#eebd4f;box-shadow:0 0 15px #ffce5655}.destination-copy>p:not(#kingdom-lore){display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.kingdom-intro .map-mode-label{margin-top:12px}
+@media(max-width:600px){.map-mode-label{position:absolute;left:195px;top:0;margin-top:0!important;font-size:8px;white-space:nowrap}.map-mode-label select{max-width:100px;padding:5px}.map-mode-label{gap:5px}.kingdom-stop small{font-size:7px}.destination-copy>p:not(#kingdom-lore){-webkit-line-clamp:2}}
+
+#kingdom-route{grid-template-columns:repeat(var(--kingdom-count,10),minmax(0,1fr))}
+
+@media(max-width:600px){.game-footer{min-height:64px;padding-bottom:14px}.game-footer>div{row-gap:8px}.game-footer>div>span{display:none}.journey-bar{bottom:65px}}
+
+.motion-paused .mario-guide{animation-play-state:paused}
+/* 主导航使用系统步骤全名；场景只提供视觉背景。 */
+.destination-copy h2 { font-size:clamp(20px,2vw,32px);line-height:1.45;overflow-wrap:anywhere; }
+.kingdom-stop strong { font-size:12px;line-height:1.5;white-space:normal;max-width:150px;min-height:36px; }
+.kingdom-stop small { min-height:17px; }
+.destination-copy { min-width:0; }.destination-passport { max-width:560px; }
+@media(max-width:850px){.kingdom-stop strong{font-size:10px;max-width:115px;min-height:30px}.destination-copy h2{font-size:20px}.destination-passport{bottom:265px}.globe-caption{bottom:233px}}
+@media(max-width:600px){.kingdom-stop{flex-basis:120px}.kingdom-stop strong{font-size:10px;min-height:45px}.destination-passport{bottom:260px}.destination-copy h2{font-size:18px}.postcard{flex-shrink:0;width:85px}.journey-bar{bottom:65px}.globe-caption{bottom:230px}}

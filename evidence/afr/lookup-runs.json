@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "afr_cli_version": 1,
+  "hub_worker": "real_local",
+  "fixture_sha256": "6d2c4be99ce096721c9bca959de4b3210bd5fd59fd6294e58e9d162a6dfab3a4",
+  "cases": {
+    "lookup": {
+      "event": 1,
+      "run": 1,
+      "receipt": {
+        "version": 1,
+        "status": "ok",
+        "verified_count": 1,
+        "references": [
+          {
+            "ref": "4baf2ecbea13b63f9b686f049541df57b5c9aedc080717ace1ab4f27d75acc9e",
+            "revision": "55c34d045a00872e0dfb76626a0c80f3078c8072e932ed62972dede0e7870325"
+          }
+        ],
+        "request_id": "wb-53f61b8b835a469a9312acb25aca48e5-lookup"
+      },
+      "route_confirmed": true,
+      "duplicate_reused_run": true,
+      "private_fields_absent_from_trace": true
+    },
+    "no_match": {
+      "event": 2,
+      "run": 2,
+      "receipt": {
+        "version": 1,
+        "status": "no_match",
+        "verified_count": 0,
+        "references": [],
+        "request_id": "wb-53f61b8b835a469a9312acb25aca48e5-no-match"
+      },
+      "route_confirmed": true,
+      "duplicate_reused_run": true,
+      "private_fields_absent_from_trace": true
+    },
+    "revision_changed": {
+      "event": 3,
+      "run": 3,
+      "receipt": {
+        "version": 1,
+        "status": "revision_changed",
+        "verified_count": 0,
+        "references": [],
+        "request_id": "wb-53f61b8b835a469a9312acb25aca48e5-old-revision"
+      },
+      "route_confirmed": true,
+      "duplicate_reused_run": true,
+      "private_fields_absent_from_trace": true
+    },
+    "lookup_after_edit": {
+      "event": 4,
+      "run": 4,
+      "receipt": {
+        "version": 1,
+        "status": "ok",
+        "verified_count": 1,
+        "references": [
+          {
+            "ref": "4baf2ecbea13b63f9b686f049541df57b5c9aedc080717ace1ab4f27d75acc9e",
+            "revision": "63d4d649edb5217bce7405296024f7b592eb2417d85901c061fe3525ecdd7657"
+          }
+        ],
+        "request_id": "wb-53f61b8b835a469a9312acb25aca48e5-lookup-after-edit"
+      },
+      "route_confirmed": true,
+      "duplicate_reused_run": true,
+      "private_fields_absent_from_trace": true
+    }
+  },
+  "ticket_id": "wb-53f61b8b835a469a9312acb25aca48e5",
+  "original_fixture_unchanged": true,
+  "external_model_calls": 0
+}

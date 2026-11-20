@@ -1,0 +1,99 @@
+{
+  "synthetic_sha256": "e86eaa8b10678d755e057d3bb367d87a9f91a49c1bcde9327a7eb95d815c10aa",
+  "ui_clock": "performance.now，标记点同时记录 UTC。",
+  "timing": {
+    "drop_start": {
+      "ms": 0,
+      "utc": "2026-11-20T05:14:08.601Z"
+    },
+    "drop_closed": {
+      "ms": 0,
+      "utc": "2026-11-20T05:14:08.601Z"
+    },
+    "initial_card_rendered": {
+      "ms": 4171,
+      "utc": "2026-11-20T05:14:12.771Z"
+    },
+    "initial_source_open": {
+      "ms": 4573,
+      "utc": "2026-11-20T05:14:13.173Z"
+    },
+    "semantic_card_rendered": {
+      "ms": 15524,
+      "utc": "2026-11-20T05:14:24.125Z"
+    },
+    "semantic_full_argument_open": {
+      "ms": 15880,
+      "utc": "2026-11-20T05:14:24.481Z"
+    },
+    "semantic_source_open": {
+      "ms": 15997,
+      "utc": "2026-11-20T05:14:24.598Z"
+    }
+  },
+  "clicks": {
+    "firstClick": {
+      "expected_document": true,
+      "anchor": "e2",
+      "text_in_viewport": true
+    },
+    "fullClick": {
+      "expected_document": true,
+      "anchor": "topic-1",
+      "text_in_viewport": true
+    },
+    "sourceClick": {
+      "expected_document": true,
+      "anchor": "e2",
+      "text_in_viewport": true
+    }
+  },
+  "native_run": 1,
+  "native_state": "done",
+  "redispatches": 0,
+  "finished_at_after_restarting_original_worker": "2026-11-20T05:15:54.058Z",
+  "business_result": [
+    {
+      "state": "published",
+      "sha256": "e86eaa8b10678d755e057d3bb367d87a9f91a49c1bcde9327a7eb95d815c10aa",
+      "attempt": 1,
+      "code": "published"
+    }
+  ],
+  "independent_fresh_replay": [
+    {
+      "state": "scanned",
+      "new_count": 0,
+      "pending_count": 0,
+      "scan_errors": 0,
+      "settling_count": 1,
+      "allowed_count": 0,
+      "submitted_count": 0,
+      "submission_errors": 0,
+      "authorization_errors": 0
+    },
+    {
+      "state": "scanned",
+      "new_count": 0,
+      "pending_count": 0,
+      "scan_errors": 0,
+      "settling_count": 2,
+      "allowed_count": 0,
+      "submitted_count": 0,
+      "submission_errors": 0,
+      "authorization_errors": 0
+    },
+    {
+      "state": "scanned",
+      "new_count": 2,
+      "pending_count": 2,
+      "scan_errors": 0,
+      "settling_count": 0,
+      "allowed_count": 1,
+      "submitted_count": 1,
+      "submission_errors": 0,
+      "authorization_errors": 0
+    }
+  ],
+  "real_private_documents_sent": 0
+}

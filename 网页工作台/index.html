@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fcf7e9"><title>目标漫游局 · 任务工作台</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body>
+<header class="mast"><a href="/" class="brand"><i aria-hidden="true">✦</i> 目标漫游局</a><nav><a id="map-link" href="/">王国地图</a><a href="#tickets">工单簿</a></nav><button id="launch" hidden>＋ 发布目标</button></header>
+<main>
+<section id="outer" hidden>
+<section id="filters" aria-label="筛选工单"><button type="button" id="all-stations" aria-pressed="true">全部工单</button><div id="stations"></div></section>
+<section id="tickets" class="desk"><aside><div class="section-head"><h2>工单簿</h2><span id="count"></span></div><div id="ticket-list"></div></aside>
+<div class="dossier"><div class="section-head"><h2>工单详情</h2><span id="ticket-ref"></span></div><article id="mission"></article></div></section>
+<dialog id="composer"><form><div class="section-head"><h2>发布目标</h2><button type="button" id="dismiss" aria-label="关闭">×</button></div><label>想交付什么？<textarea name="goal" required maxlength="6000" placeholder="说明目标、限制，以及怎样判断完成"></textarea></label><button class="primary">登记并整理目标</button></form></dialog></section>
+<form id="new"><h2>交代新任务</h2><label>名称<input name="name" maxlength="80" required></label><label>目标<textarea name="goal" maxlength="6000" required></textarea></label><label>完成标准<textarea name="acceptance" maxlength="4000"></textarea></label><button>登记并请求 Codex 规划</button></form>
+<details id="execution" open><summary>执行记录与历史任务</summary><p id="connection" role="status">连接中</p><label>选择执行记录<select id="tasks"></select></label><button id="refresh">刷新</button><article id="detail"></article></details>
+</main><p id="notice" role="status"></p></body></html>

@@ -1,0 +1,113 @@
+{
+  "ticket_id": "wb-53f61b8b835a469a9312acb25aca48e5",
+  "status": "completed",
+  "outcome": "VERIFIED_COMPLETE",
+  "human_gate_operator": "authorized test operator using official Chrome",
+  "review": {
+    "sequence": 1,
+    "assignment": "d6469b7de8a343aa8fa9f9bb8ce6381f",
+    "state": "accepted",
+    "source": "web",
+    "decided_at": "2026-11-20T05:17:57.246+00:00",
+    "artifact_sha256": "761be301be7ad583879eb26b7d49ed4f3291dd48493034e6ccc0b853f0a838e5",
+    "files": {
+      "afr-receipt-trace.json": "ec89388217871da42cc120d81d3ef9c2caa1e321aa8764fa31d5881adb054ea7",
+      "afr-receipt.json": "def64908a2502b36e274fa4a63efd5eadad6de9411f5550a510844512d6626e5",
+      "afr-review.html": "520119a5750e73928ae948154a4b1e962c982ab544fde99aec66c8b3a4be3e77"
+    },
+    "goal_revision": 4,
+    "acceptance_revision": 3,
+    "mandate_revision": 1
+  },
+  "checks": [
+    {
+      "run": 16,
+      "criterion_id": "static-html",
+      "verifier_id": "html-document",
+      "status": "PASS"
+    },
+    {
+      "run": 16,
+      "criterion_id": "receipt-origin",
+      "verifier_id": "human-review",
+      "status": "INCONCLUSIVE"
+    },
+    {
+      "run": 16,
+      "criterion_id": "fixed-version-run",
+      "verifier_id": "human-review",
+      "status": "INCONCLUSIVE"
+    },
+    {
+      "run": 16,
+      "criterion_id": "no-match-run",
+      "verifier_id": "human-review",
+      "status": "INCONCLUSIVE"
+    },
+    {
+      "run": 16,
+      "criterion_id": "old-version-rejection-run",
+      "verifier_id": "human-review",
+      "status": "INCONCLUSIVE"
+    },
+    {
+      "run": 16,
+      "criterion_id": "page-content",
+      "verifier_id": "human-review",
+      "status": "INCONCLUSIVE"
+    },
+    {
+      "run": 16,
+      "criterion_id": "owner-signoff",
+      "verifier_id": "human-review",
+      "status": "INCONCLUSIVE"
+    }
+  ],
+  "runs": [
+    {
+      "run": 8,
+      "phase": "plan",
+      "state": "settled"
+    },
+    {
+      "run": 9,
+      "phase": "execute",
+      "state": "settled"
+    },
+    {
+      "run": 10,
+      "phase": "review",
+      "state": "settled"
+    },
+    {
+      "run": 11,
+      "phase": "coordinate",
+      "state": "settled"
+    },
+    {
+      "run": 12,
+      "phase": "coordinate",
+      "state": "settled"
+    },
+    {
+      "run": 13,
+      "phase": "repair",
+      "state": "settled"
+    },
+    {
+      "run": 14,
+      "phase": "review",
+      "state": "settled"
+    },
+    {
+      "run": 15,
+      "phase": "execute",
+      "state": "settled"
+    },
+    {
+      "run": 16,
+      "phase": "review",
+      "state": "settled"
+    }
+  ]
+}

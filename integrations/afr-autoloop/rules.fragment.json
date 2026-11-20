@@ -1,0 +1,21 @@
+{
+  "sources": {"afr-drop": {"name": "AFR local drop", "adapter": "afr-drop"}},
+  "agents": {
+    "afr-process": {
+      "name": "AFR fixed version process",
+      "worker": "local",
+      "use": "command",
+      "timeout": 12,
+      "command": ["ABS_PYTHON", "-B", "ABS_ROUTE_PY", "process", "--config", "ABS_PRIVATE_CONFIG"]
+    }
+  },
+  "rules": [{
+    "name": "afr-process-approved-version",
+    "when": {"source": "afr-drop", "types": ["afr.intake.pending"]},
+    "to": "afr-process",
+    "parallel": 1,
+    "cwd": "ABS_ISOLATED_CWD",
+    "prompt": "Process exactly the locally authorized AFR file version.",
+    "tell": "never"
+  }]
+}

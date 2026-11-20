@@ -1,0 +1,14 @@
+{
+  "search": true,
+  "read": true,
+  "no_match": true,
+  "ref_revision_stale_409": true,
+  "unauthenticated_and_cross_origin_403": true,
+  "scope_and_ticket_rejected": true,
+  "no_query_or_body_in_logs_no_ticket_or_progress_mutations": true,
+  "opt_in_only": true,
+  "official_chrome_navigation_and_search_read": true,
+  "official_chrome_stale_result_409_clears_previous_text": true,
+  "integrated_board_chrome_current_vault_read": true,
+  "isolated_browser_pilot_port_released": true
+}

@@ -1,0 +1,188 @@
+{
+  "client_test": {
+    "directory_button": "actual Feishu client click opened the existing synthetic ticket",
+    "edit_button": "actual Feishu client click opened requirement replacement view",
+    "replace_button": "actual Feishu client click opened requirement confirmation card",
+    "card_reply": "owner identity used by the agent in the Feishu desktop client, anchored to replacement card",
+    "model_result": {
+      "state": "NEEDS_ATTENTION",
+      "attempts": [
+        [
+          "intake_assessor",
+          "failed",
+          "timeout"
+        ],
+        [
+          "intake_assessor",
+          "failed",
+          "timeout"
+        ]
+      ],
+      "requirement_ids_count": 1
+    },
+    "failure_notification": "old completed card without the current change failure was actually sent",
+    "final_ticket_revisions": {
+      "revision": 6,
+      "goal_revision": 2,
+      "acceptance_revision": 2,
+      "mandate_revision": 1
+    },
+    "approved_again": false
+  },
+  "local_simulation": {
+    "scenario": "simulate waiting for approval on a synthetic draft copy using previous verified test contract",
+    "sent_to_feishu": false,
+    "stored_in_engine": false,
+    "rendered_wire_fields": {
+      "ticket_goal_and_acceptance_versions": true,
+      "read_workspace": true,
+      "write_workspace": true,
+      "local_tests": true,
+      "no_network": true,
+      "no_payment": true,
+      "no_outside_write": true,
+      "time_budget": true,
+      "model": true,
+      "verifier": true,
+      "input_0": true,
+      "input_100": true,
+      "approval_bound_to_card": true
+    }
+  },
+  "isolation": "Existing production listener projected only test entries. Namespaced outgoing idempotency keys to avoid another candidate/production card collision.",
+  "correction_delivery": {
+    "server_acknowledgement": true,
+    "client_read_verified": false,
+    "format": "plain_text_no_buttons",
+    "confirmed_failure": "two actual model timeouts",
+    "goal_revision": 2,
+    "acceptance_revision": 2,
+    "engine_mutations": 0,
+    "new_model_calls": 0,
+    "outbound_message_count": 1
+  },
+  "isolated_replay_2026_11_20": {
+    "source": "previously received Feishu reply; no new client message",
+    "cases": {
+      "default": {
+        "timeout_seconds": 45,
+        "event_state": "NEEDS_ATTENTION",
+        "old_formal_task_bitwise_unchanged": true,
+        "new_scope_approved": false,
+        "card_eligible": false,
+        "model_calls": [
+          {
+            "role": "intake_assessor",
+            "state": "failed",
+            "error": "timeout",
+            "elapsed_ms": 45047,
+            "validation_error": null
+          },
+          {
+            "role": "intake_assessor",
+            "state": "failed",
+            "error": "timeout",
+            "elapsed_ms": 45072,
+            "validation_error": null
+          }
+        ]
+      },
+      "explicit-time-bound": {
+        "timeout_seconds": 100,
+        "event_state": "NEEDS_ATTENTION",
+        "old_formal_task_bitwise_unchanged": true,
+        "new_scope_approved": false,
+        "card_eligible": false,
+        "model_calls": [
+          {
+            "role": "intake_assessor",
+            "state": "failed",
+            "error": "timeout",
+            "elapsed_ms": 100048,
+            "validation_error": null
+          },
+          {
+            "role": "intake_assessor",
+            "state": "failed",
+            "error": "timeout",
+            "elapsed_ms": 100073,
+            "validation_error": null
+          }
+        ]
+      }
+    },
+    "minimal_cli_probe": {
+      "success": false,
+      "error": "timeout",
+      "cli_events": [
+        {
+          "kind": "cli_spawned",
+          "elapsed_ms": 2
+        },
+        {
+          "kind": "thread.started",
+          "elapsed_ms": 145
+        },
+        {
+          "kind": "turn.started",
+          "elapsed_ms": 1121
+        },
+        {
+          "kind": "stderr_classified",
+          "elapsed_ms": 5065,
+          "categories": [
+            "timeout"
+          ]
+        }
+      ]
+    }
+  },
+  "explicit_revision_verified": {
+    "timeout_seconds": 45,
+    "model_calls": [
+      {
+        "role": "intake_assessor",
+        "state": "accepted",
+        "error": null,
+        "elapsed_ms": 24450,
+        "validation_error": null
+      },
+      {
+        "role": "acceptance_designer",
+        "state": "accepted",
+        "error": null,
+        "elapsed_ms": 33121,
+        "validation_error": null
+      }
+    ],
+    "event_state": "DONE",
+    "old_revisions": {
+      "revision": 6,
+      "goal_revision": 2,
+      "acceptance_revision": 2,
+      "mandate_revision": 1
+    },
+    "new_revisions": {
+      "revision": 8,
+      "goal_revision": 3,
+      "acceptance_revision": 3,
+      "mandate_revision": 1
+    },
+    "card_eligible": true,
+    "prior_feishu_reply_replayed": true,
+    "old_formal_task_bitwise_unchanged": true,
+    "new_scope_approved": false,
+    "verification_gaps": [],
+    "transport": "existing machine loopback HTTP proxy for outbound model HTTPS",
+    "feishu_cards_sent": 1,
+    "remote_message_readback": [
+      "goal v3",
+      "acceptance v3",
+      "delta from goal v2",
+      "approve action",
+      "temperature.py"
+    ],
+    "human_read_verified": false,
+    "web_call_count": 10
+  }
+}

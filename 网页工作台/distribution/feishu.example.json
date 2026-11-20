@@ -1,0 +1,8 @@
+{
+  "workbench_only": true,
+  "owner": "REPLACE_WITH_YOUR_OWN_OPEN_ID",
+  "lark": "lark-cli",
+  "data_dir": "/ABSOLUTE/PRIVATE/feishu-data",
+  "workbench_socket": "/ABSOLUTE/PRIVATE/board.sock",
+  "workbench_port": 8765
+}

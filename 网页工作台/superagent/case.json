@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "goal": "为运营周报核对七条合成业务记录。按发生日期汇总有效件数，独立核对总量和剔除原因，最后审核整份结果。",
+  "rules": "仅保留每个 id 第一次出现的记录，随后剔除非 paid 行。按 occurrence 汇总 units；结果按日期排序。复核亮出重复或非 paid 的行号，按输入顺序列示。",
+  "rows": [
+    {"row":"r1","id":"A","occurrence":"2026-11-16","registered":"2026-11-17","units":2,"status":"paid"},
+    {"row":"r2","id":"B","occurrence":"2026-11-16","registered":"2026-11-18","units":3,"status":"paid"},
+    {"row":"r3","id":"C","occurrence":"2026-11-17","registered":"2026-11-18","units":4,"status":"paid"},
+    {"row":"r4","id":"B","occurrence":"2026-11-16","registered":"2026-11-19","units":3,"status":"paid"},
+    {"row":"r5","id":"D","occurrence":"2026-11-17","registered":"2026-11-18","units":100,"status":"cancelled"},
+    {"row":"r6","id":"E","occurrence":"2026-11-18","registered":"2026-11-18","units":6,"status":"paid"},
+    {"row":"r7","id":"F","occurrence":"2026-11-18","registered":"2026-11-19","units":1,"status":"paid"}
+  ]
+}
