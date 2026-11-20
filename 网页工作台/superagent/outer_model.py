@@ -176,6 +176,11 @@ class CodexOuterModel:
     def _execute(self, prompt, output_schema, effort, record_message):
         env = {key: os.environ[key] for key in ('PATH', 'HOME', 'CODEX_HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE')
                if key in os.environ}
+        port = os.environ.get('AUTOLOOP_OUTER_PROXY_PORT')
+        if port:
+            if not (port.isascii() and port.isdecimal() and len(port) <= 5 and 0 < int(port) <= 65535):
+                raise ModelFailure('invalid_config')
+            env.update(HTTPS_PROXY=f'http://127.0.0.1:{int(port)}', NO_PROXY='127.0.0.1,localhost,::1')
         try:
             with tempfile.TemporaryDirectory(prefix='autoloop-outer-') as directory:
                 schema = Path(directory, 'schema.json')

@@ -136,5 +136,53 @@
         }
       ]
     }
+  },
+  "explicit_revision_verified": {
+    "timeout_seconds": 45,
+    "model_calls": [
+      {
+        "role": "intake_assessor",
+        "state": "accepted",
+        "error": null,
+        "elapsed_ms": 24450,
+        "validation_error": null
+      },
+      {
+        "role": "acceptance_designer",
+        "state": "accepted",
+        "error": null,
+        "elapsed_ms": 33121,
+        "validation_error": null
+      }
+    ],
+    "event_state": "DONE",
+    "old_revisions": {
+      "revision": 6,
+      "goal_revision": 2,
+      "acceptance_revision": 2,
+      "mandate_revision": 1
+    },
+    "new_revisions": {
+      "revision": 8,
+      "goal_revision": 3,
+      "acceptance_revision": 3,
+      "mandate_revision": 1
+    },
+    "card_eligible": true,
+    "prior_feishu_reply_replayed": true,
+    "old_formal_task_bitwise_unchanged": true,
+    "new_scope_approved": false,
+    "verification_gaps": [],
+    "transport": "existing machine loopback HTTP proxy for outbound model HTTPS",
+    "feishu_cards_sent": 1,
+    "remote_message_readback": [
+      "goal v3",
+      "acceptance v3",
+      "delta from goal v2",
+      "approve action",
+      "temperature.py"
+    ],
+    "human_read_verified": false,
+    "web_call_count": 10
   }
 }

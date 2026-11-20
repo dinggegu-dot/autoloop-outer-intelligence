@@ -1,6 +1,7 @@
 """通过本地 CLI 协议替身测试外层模型的受控启动。"""
 import contextlib
 import json
+import os
 from copy import deepcopy
 from pathlib import Path
 import sys
@@ -20,6 +21,19 @@ def local_executable(directory, program):
 
 
 class OuterModelTest(unittest.TestCase):
+    def test_cli_proxy_requires_an_explicit_loopback_port(self):
+        adapter = CodexOuterModel()
+        with patch.object(adapter,'_run_threaded',side_effect=ModelFailure('probe')) as launch:
+            for port, expected in [('',None),('8071','http://127.0.0.1:8071')]:
+                with patch.dict(os.environ,{'AUTOLOOP_OUTER_PROXY_PORT':port,'HTTPS_PROXY':'http://unrelated.invalid'}):
+                    with self.assertRaisesRegex(ModelFailure,'probe'):
+                        adapter._execute('',{},'low',lambda message: None)
+                self.assertEqual(launch.call_args.args[-1].get('HTTPS_PROXY'),expected)
+            with patch.dict(os.environ,{'AUTOLOOP_OUTER_PROXY_PORT':'remote:3128'}):
+                with self.assertRaisesRegex(ModelFailure,'invalid_config'):
+                    adapter._execute('',{},'low',lambda message: None)
+            self.assertEqual(launch.call_count,2)
+
     def test_structured_cli_sends_minimal_context_and_disables_tools(self):
         with tempfile.TemporaryDirectory() as directory:
             mocked = local_executable(directory, """
