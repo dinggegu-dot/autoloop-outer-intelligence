@@ -4,6 +4,7 @@
 
 | 问题 | 依据与决定 | 影响及验证 |
 | --- | --- | --- |
+| 两款产品中 Agent 的运行方式 | 使用现有 Codex harness 承担推理、调用工具、会话与执行；产品提供领域工具和业务状态、授权与验收。开发范围排除自研 harness 与本地模型部署 | 先验 AFR 研读与独立校读、Autoloop 内层跨中断持续执行，再验联用与发行。[执行计划](../product/next-delivery-plan.md) |
 | AFR 和 Autoloop 的产品边界 | 用户明确 AFR 是可独立复用的 Codex 与 Obsidian 知识产品，Autoloop 以 Superagent 思路治理目标、用 Codex 连续执行，按需查询 AFR | 提议两个仓库分别发本机下载包，分别通过陌生用户独立安装和联用验证。发行平台与许可取舍见[双产品 PRD](../product/afr-autoloop-product-prd.md#release) |
 | 三个智能角色 | 使用同一调用适配器及三个版本化输入输出契约；事件唤醒 | 避免维护多个常驻模型进程。检查空队列零调用 |
 | 是否新增调度器 | V1 的 GoalEngine、GoalRuntime 和 Hub 已有轮次、容量及暂停语义 | 草案需要持久化，批准后接回原 Ticket 调度链 |
