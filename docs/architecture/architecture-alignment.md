@@ -1,5 +1,7 @@
 # Codex Autoloop 长期架构依据与逐项核对
 
+2026-11-22 产品边界补记。AFR 负责材料、完整话题和知识接口，Autoloop 负责目标工单、连续执行和交付。两个产品分别可安装、联合使用的首版要求，以及现有代码与发行缺口，见[双产品方案与 PRD](../product/afr-autoloop-product-prd.md)。文中的发行形态和验收条件为本轮提案。
+
 **结论（2026-11-19）**　保留事件驱动的外层判断、程序控制的授权与状态转换、按派工运行的 Codex 执行器，以及绑定产物版本的独立验收。候选版已经用这套机制交付过两种本地 CLI 工具。把同样的结论推广到陌生的多阶段软件、交互式产品或主观质量，目前缺少真实端到端证据。
 
 本页是后续 Codex 的架构入口。交接稿保留提出决定时的理由，本页记录证据支持到哪里。核对基准是 PR #4 的代码提交 `4bc67be7b93733103bdaa1e445bc0d3281d8c8af`。原稿引用的 `af48958` 比它早一个提交；原稿正文保留，仅规范了 Markdown 换行。核对时 GitHub 显示 PR 为 Open，目标分支为 `main`，源分支为 `codex/v2-outer-intelligence`。Git 远端的 PR head 与本地基准一致。[交接稿 V1.0](design-handoff-v1.0.md) · [PR #4](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/4) · [两版之间的变更](https://github.com/dinggegu-dot/autoloop-outer-intelligence/compare/af48958...4bc67be)
