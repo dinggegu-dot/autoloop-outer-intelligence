@@ -32,7 +32,8 @@ def merge(formal, name, scratch):
 def resolve_server(match):
     formal, pilot = match.groups()
     if "path in ('/api/library/search'" in formal and "path.startswith('/api/outer/')" in pilot:
-        return formal + pilot
+        marker = '            workbench = self.server.workbench\n'
+        return pilot[:pilot.index(marker)] + formal + pilot[pilot.index(marker) + len(marker):]
     if "action=='research-followup'" in formal and "get('outer')" in pilot:
         return pilot + formal
     if "'/api/library/archives'" in formal and "if route == '/api/outer'" in pilot:
@@ -58,10 +59,45 @@ def resolve_workbench(match):
     raise ValueError('正式工作台数据库代码有待人工合并的冲突')
 
 
+def source_only(formal):
+    root_dirs = {'assets', 'superagent', 'vendor'}
+    root_extensions = {'.py', '.js', '.css', '.html'}
+    asset_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif'}
+    # 历史快照入口会读取现役中台。隔离副本不携带它或其离线数据。
+    excluded = {'legacy_snapshot.py'}
+
+    def ignore(directory, names):
+        path = Path(directory)
+        relative = path.relative_to(formal)
+        ignored = set()
+        for name in names:
+            entry = path / name
+            if name.startswith('.') or name in excluded or entry.is_symlink():
+                ignored.add(name)
+                continue
+            if not relative.parts:
+                allowed = name in root_dirs if entry.is_dir() else entry.suffix in root_extensions
+            elif relative.parts[0] == 'assets':
+                allowed = entry.is_dir() or entry.suffix in asset_extensions
+            elif relative.parts == ('vendor',):
+                allowed = entry.is_file() and (entry.suffix == '.js' or name == 'THREE-LICENSE.txt')
+            else:
+                allowed = entry.is_file() and entry.suffix == '.py' and not name.startswith('test_')
+            if not allowed:
+                ignored.add(name)
+        return ignored
+
+    return ignore
+
+
 def prepare(formal, target):
     formal, target = formal.resolve(strict=True), target.resolve()
     if target.exists() or formal in target.parents or target in formal.parents:
         raise ValueError('请选择与正式工作台独立且尚未创建的目标目录')
+    for name in ('server.py', 'workbench.py', 'index.html', 'tasks.js'):
+        entry = formal / name
+        if entry.is_symlink() or not entry.is_file():
+            raise ValueError(f'正式工作台源码缺失或包含链接：{name}')
     with tempfile.TemporaryDirectory() as temp:
         scratch = Path(temp)
         server = CONFLICT.sub(resolve_server, merge(formal, 'server.py', scratch))
@@ -72,7 +108,9 @@ def prepare(formal, target):
                               '        file = ROOT / files[route]\n        if not file.is_file():')
         server = replace_once(server, "default=(ROOT/'assets/odyssey' if (ROOT/'assets/odyssey').is_dir() else None)", 'default=None')
         server = replace_once(server, '    if args.snapshot:\n        if not LEGACY_BOARD:',
-                              '''    if args.outer_intelligence:
+                              '''    if not args.outer_intelligence:
+        parser.error('正式工作台源码副本是隔离智能工单试点，请启用智能接单')
+    if args.outer_intelligence:
         runtime, hub = args.runtime.resolve(), args.hub_home.resolve()
         marker = runtime.parent / '.goal-pilot'
         if (args.port == 8765 or runtime.name != 'workbench' or hub != runtime.parent / 'hub'
@@ -130,8 +168,7 @@ def prepare(formal, target):
         tasks = replace_once(tasks, "  function render() {", "  function render() {\n    syncPilot();")
         for name, content in [('server.py', server), ('workbench.py', workbench)]:
             compile(content, name, 'exec')
-        shutil.copytree(formal, target, ignore=shutil.ignore_patterns('.runtime', '.git', '__pycache__',
-                                                                    '验收证据', '*.sqlite*', '*.sock'))
+        shutil.copytree(formal, target, ignore=source_only(formal))
         for name, content in [('server.py', server), ('workbench.py', workbench), ('index.html', html), ('tasks.js', tasks)]:
             (target / name).write_text(content)
         for name in ('outer_channels.py', 'outer_workbench.py', 'afr_panel.py', 'afr.html', 'afr.js'):
