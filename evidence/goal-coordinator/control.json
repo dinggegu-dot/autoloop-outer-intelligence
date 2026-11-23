@@ -1,0 +1,81 @@
+{
+  "synthetic": true,
+  "entry": "POST /api/tasks",
+  "mode": "control",
+  "passed": true,
+  "formal_source": {
+    "original_sha256": {
+      "server.py": "a11018f1012d98b3c467a4788eaa02105f1b106858a3ff3252163b528324758d",
+      "tasks.js": "5f1954081d731cc25cbbd4bec690a39a152d5ffe0f652e0c8690c4672a539766",
+      "index.html": "6b2d87bd3c3438291dc366ae9c9d058c5d1af0290318b5e6a854e63baf21b3df",
+      "workbench.py": "ca3a4f72b38abbe081d59074737e4bf6b2668f0721dc9bf0c1a4100e15d95d46"
+    },
+    "copied_paths_examined": 109,
+    "runtime_credentials_local_config_absent": true
+  },
+  "source_sha256": {
+    "server.py": "af1a167a1b4fb6d228b117367ee67b1910710a51bf617fbdac85feaebdb7dcd3",
+    "outer_workbench.py": "02f37f7f6801862f9bc25940774681934a11c9be53d6c7c20b53979b0520881d",
+    "superagent/goal_engine.py": "06822e8e3c2a3e1d7ec32e19a71d3f81cef9d881e1280b8199e5594c14fc2d21",
+    "superagent/goal_runtime.py": "089b3307400a8f06311431cfcedfd192350fa477872b434899023001eac79c06",
+    "superagent/outer_model.py": "d82322407310e9cda08ae8b31b02e1d0f900ee9db4e669e818ea8a56b4e33d01",
+    "superagent/coordination_tools.py": "7ce70115c682bfc5aaf39753b346c2dbe2fba7af7feacf782dea37e6b656a63a"
+  },
+  "ticket": "wb-3c554511ccc9409496710310426d890b",
+  "criteria": {
+    "search.py": [
+      "search-alpha-example",
+      "search-alpha-variant",
+      "search-no-match-example",
+      "search-z-single-match"
+    ],
+    "update.py": [
+      "update-add-delete-example",
+      "update-add-delete-variant",
+      "update-existing-name-example",
+      "update-existing-name-variant"
+    ]
+  },
+  "wrong_approval_version_rejected": true,
+  "approved": {
+    "goal_revision": 1,
+    "acceptance_revision": 1,
+    "revision": 3
+  },
+  "stage_one": {
+    "checks": {
+      "search-alpha-example": "PASS",
+      "search-alpha-variant": "PASS",
+      "search-no-match-example": "PASS",
+      "search-z-single-match": "PASS"
+    },
+    "artifact_sha256": "d8f50db40aad5613ef615e8f9e10cf20dc77211e35575d457857272ec0138f61"
+  },
+  "unseen_inputs": [
+    {
+      "id": "unseen-search",
+      "passed": true,
+      "detail": "expected JSON matched in both isolated executions"
+    },
+    {
+      "id": "unseen-update",
+      "passed": true,
+      "detail": "expected JSON matched in both isolated executions"
+    }
+  ],
+  "delivery": {
+    "checks": {
+      "search-alpha-example": "PASS",
+      "search-alpha-variant": "PASS",
+      "search-no-match-example": "PASS",
+      "search-z-single-match": "PASS",
+      "update-add-delete-example": "PASS",
+      "update-add-delete-variant": "PASS",
+      "update-existing-name-example": "PASS",
+      "update-existing-name-variant": "PASS"
+    },
+    "artifact_sha256": "d8f50db40aad5613ef615e8f9e10cf20dc77211e35575d457857272ec0138f61",
+    "mandate_revision": 1
+  },
+  "formal_listener_pid_unchanged": true
+}
