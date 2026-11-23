@@ -256,7 +256,7 @@ def install():
                 "installed_overlay_sha256": {
                     str(p.relative_to(bundle / "front")): sha(p) for p in sorted((bundle / "front").rglob("*")) if p.is_file()
                 },
-                "gate": "fixed-synthetic-filename-index-v1",
+                "gate": "fixed-synthetic-filename-index-v2",
             }
             require(all(sha(APP / name) == fingerprint for name, fingerprint in manifest["installed_overlay_sha256"].items()),
                     "安装文件与构建产物不一致")

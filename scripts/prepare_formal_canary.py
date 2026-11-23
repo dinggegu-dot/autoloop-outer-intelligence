@@ -65,7 +65,7 @@ def frontend(formal, front):
       working = true;
       event.submitter.disabled = true;
       try {
-        const result = await post('/api/tasks', {workflow:'outer',fixture:'filename-index-v1'});
+        const result = await post('/api/tasks', {workflow:'outer',fixture:'filename-index-v2'});
         const target = new URL('/workbench', location.origin);
         if (result.ticket_id) target.searchParams.set('goal', result.ticket_id);
         else target.searchParams.set('outer_event', result.event_id);

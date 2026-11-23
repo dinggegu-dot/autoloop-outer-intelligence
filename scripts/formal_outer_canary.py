@@ -25,11 +25,10 @@ SYNTHETIC_ORDER = {
         'search.py z beta.txt alpha.txt 输出 {"matches":[]}。'
         'update.py beta.txt,alpha.txt alpine.md beta.txt 输出 {"filenames":["alpha.txt","alpine.md"]}。'
         'update.py zebra.md,old.md apple.md,zebra.md old.md 输出 {"filenames":["apple.md","zebra.md"]}。'
-        '先把 search.py 作为一个有验收条件的独立实施步骤，再实现 update.py。'
     ),
-    "request_id": "11111111-2222-4333-8444-101010101020",
+    "request_id": "11111111-2222-4333-8444-101010101021",
 }
-FIXTURE = {"workflow": "outer", "fixture": "filename-index-v1"}
+FIXTURE = {"workflow": "outer", "fixture": "filename-index-v2"}
 PREFIX = "/api/outer-canary/"
 TICKET = r"wb-[a-f0-9]{32}"
 ASSETS = {
