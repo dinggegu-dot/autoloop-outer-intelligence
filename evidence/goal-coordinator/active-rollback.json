@@ -1,0 +1,244 @@
+{
+  "passed": true,
+  "synthetic": true,
+  "candidate": "a4245cff4d2c2cc97a928ab9284ea43fced77d09",
+  "candidate_tree": "d7e7765ca640b87976f1b8f91696990520929c1d",
+  "formal_source": {
+    "original_sha256": {
+      "server.py": "a11018f1012d98b3c467a4788eaa02105f1b106858a3ff3252163b528324758d",
+      "tasks.js": "5f1954081d731cc25cbbd4bec690a39a152d5ffe0f652e0c8690c4672a539766",
+      "index.html": "6b2d87bd3c3438291dc366ae9c9d058c5d1af0290318b5e6a854e63baf21b3df",
+      "workbench.py": "ca3a4f72b38abbe081d59074737e4bf6b2668f0721dc9bf0c1a4100e15d95d46"
+    },
+    "copied_sha256": {
+      "server.py": "3764066f9468d4ecc1d0666c98d6fed027088e558e790a6127d072a2172f6924",
+      "tasks.js": "04e2664a254ca653150cf00e4e3d3691daafa50a20feb17307d94fd2638f473a",
+      "index.html": "be7996d45804443569965e0ed15a224b9bcdbdd90465862bda7b07269f4f9729",
+      "workbench.py": "ac5c6af815cbbf6acbb2e2c93916ccdda5fb7ec77728b0d7c54ec3d56ef84cd8"
+    },
+    "copied_paths_examined": 110,
+    "runtime_credentials_local_config_absent": true
+  },
+  "ticket": "wb-3922d504142547929d25b3e5fbc6f008",
+  "approval": {
+    "goal_revision": 1,
+    "acceptance_revision": 1,
+    "revision": 3,
+    "mandate_revision": 1
+  },
+  "paused_run": {
+    "id": "5ec935d7d15c41e2a5dec7681a5fd3ef",
+    "event": 4,
+    "run": 4,
+    "step": 1,
+    "phase": "execute",
+    "before": "claimed",
+    "business_receipt_before": false,
+    "outer_pause_revision": 5,
+    "after": "cancelled",
+    "codex_group_exited": true,
+    "active_assignments": 0,
+    "outer_inflight": 0,
+    "checkpoint": "4bfcea27581ff6cc9758827f6e9f9c0145c1442825cff831fd693f90d0f934f1",
+    "stop_generation": 1,
+    "raw_state": "paused",
+    "outer_state": "PAUSED"
+  },
+  "retained_stage": {
+    "assignment": "90ac2d0968344eabb4851254fb92ca42",
+    "artifact_sha256": "4bfcea27581ff6cc9758827f6e9f9c0145c1442825cff831fd693f90d0f934f1",
+    "search_sha256": "e0c96516851ccbf322687388c68fcb4157b66cb49f9b0b050676adef38af7bdd"
+  },
+  "paused_ledger": [
+    {
+      "id": "f73456265ac94578b5570d53ec277d98",
+      "event": 1,
+      "run": 1,
+      "phase": "plan",
+      "transport": "done"
+    },
+    {
+      "id": "f0fd0a6a90f54ff2b3a522b6d03946ef",
+      "event": 2,
+      "run": 2,
+      "phase": "execute",
+      "transport": "done"
+    },
+    {
+      "id": "90ac2d0968344eabb4851254fb92ca42",
+      "event": 3,
+      "run": 3,
+      "phase": "review",
+      "transport": "done"
+    },
+    {
+      "id": "5ec935d7d15c41e2a5dec7681a5fd3ef",
+      "event": 4,
+      "run": 4,
+      "phase": "execute",
+      "transport": "cancelled"
+    }
+  ],
+  "cold_restore": {
+    "same_absolute_path": true,
+    "same_ports": true,
+    "both_ports_closed_at_backup": true,
+    "new_database_inodes": true,
+    "critical_files_match": true,
+    "sqlite_checks": {
+      "hub": "ok",
+      "workbench": "ok"
+    },
+    "no_prior_processes": true,
+    "paused_ledger_unchanged": true,
+    "mandate_sha256": "3f270ec4cc7fa1719228133c158cb00f3d974adc5a131cda13c48c14132007b4",
+    "budget_sha256": "c871b2e3c31776e4d4f6e676e8ccb6a7d7e5d4d2770cef35b8be4f3b10ff55e4"
+  },
+  "result": {
+    "status": "completed",
+    "mandate_revision": 1,
+    "approval_event_count": 1,
+    "same_mandate": true,
+    "original_stage_retained": true,
+    "original_assignments_unchanged": true,
+    "resumed_first_phase": "review",
+    "resumed_first_run": 5,
+    "resumed_checkpoint_verified": true,
+    "run": 8,
+    "criteria": {
+      "search-prefix-matches": "PASS",
+      "search-prefix-no-matches": "PASS",
+      "update-add-and-delete": "PASS",
+      "update-deduplicate-and-sort": "PASS"
+    },
+    "unseen_inputs": [
+      {
+        "id": "unseen-search",
+        "passed": true,
+        "detail": "expected JSON matched in both isolated executions"
+      },
+      {
+        "id": "unseen-update",
+        "passed": true,
+        "detail": "expected JSON matched in both isolated executions"
+      }
+    ],
+    "artifact_sha256": "2122f3d73dac2d9780d95de55acc9a6246b119aff5367365bc96df642f013277",
+    "downloads_sha256": {
+      "search.py": "e0c96516851ccbf322687388c68fcb4157b66cb49f9b0b050676adef38af7bdd",
+      "update.py": "3ea4ae20b1153adc200761b589c8c2c7ca76bebd2b67fbae09e7cf11131eb0de"
+    },
+    "replayed_receipt_no_effect": true,
+    "coordination": [
+      {
+        "run": 6,
+        "dispatch": "151b80ee568b42d986b3ba4dae7a6500",
+        "action": "REPAIR",
+        "affected_steps": [
+          1
+        ],
+        "reason": "第 1 步仍待实施。两项更新验收均报告 update.py 缺失或未满足工作区普通文件要求。第 0 步的 search.py 已通过两项独立验收。剩余预算为 3315 秒，最低复审耗时为 46 秒，本次修复在现有授权范围内。",
+        "retained": {
+          "search.py": "e0c96516851ccbf322687388c68fcb4157b66cb49f9b0b050676adef38af7bdd"
+        },
+        "tools": [
+          {
+            "evidence_sha256": "29cb6fcdef8c1b035a263d3f64c3b4054b0a7ff377fbe0a25e537a90a2113e75",
+            "name": "read_plan_versions",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "d145f387bb54b6f0e78372276963983b66b7035b32e4badc25f97eae941846e4",
+            "name": "read_remaining_budget",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "0040908e481c0ad0feb11480568b7ce7bbe9a30433282d86ec794b606531e8f7",
+            "name": "read_verified_artifacts",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "9b40c0530525608005fd2e5b755754493be0ead553a5f2ac5d309ad10e602a86",
+            "name": "read_failure_evidence",
+            "status": "completed"
+          }
+        ],
+        "subsequent_runs": [
+          7,
+          8
+        ]
+      }
+    ],
+    "ledger": [
+      {
+        "id": "f73456265ac94578b5570d53ec277d98",
+        "event": 1,
+        "run": 1,
+        "phase": "plan",
+        "transport": "done"
+      },
+      {
+        "id": "f0fd0a6a90f54ff2b3a522b6d03946ef",
+        "event": 2,
+        "run": 2,
+        "phase": "execute",
+        "transport": "done"
+      },
+      {
+        "id": "90ac2d0968344eabb4851254fb92ca42",
+        "event": 3,
+        "run": 3,
+        "phase": "review",
+        "transport": "done"
+      },
+      {
+        "id": "5ec935d7d15c41e2a5dec7681a5fd3ef",
+        "event": 4,
+        "run": 4,
+        "phase": "execute",
+        "transport": "cancelled"
+      },
+      {
+        "id": "ee01e42493af49548507c767b5d28edd",
+        "event": 5,
+        "run": 5,
+        "phase": "review",
+        "transport": "done"
+      },
+      {
+        "id": "99a2b4c35ae747b69a1cb7eb1d150138",
+        "event": 6,
+        "run": 6,
+        "phase": "coordinate",
+        "transport": "done"
+      },
+      {
+        "id": "151b80ee568b42d986b3ba4dae7a6500",
+        "event": 7,
+        "run": 7,
+        "phase": "repair",
+        "transport": "done"
+      },
+      {
+        "id": "5fe2756abcf84fd184727d07533c3a2c",
+        "event": 8,
+        "run": 8,
+        "phase": "review",
+        "transport": "done"
+      }
+    ]
+  },
+  "date": "2026-11-23",
+  "entry": "POST /api/tasks",
+  "formal_listener_unchanged": true,
+  "synthetic_only": true,
+  "final_verification_note": "The initial evidence driver compared the goal verification level to an incorrect label. A separate readback checked the same completed order, real receipt, and downloads with the correct level.",
+  "independent_review": {
+    "reference": "cold snapshot, original stopped instance, restored workbench and Hub ledgers, persisted Codex evidence, and HTTP downloads",
+    "snapshot_matches_original_tree": true,
+    "historical_run_and_event_bindings_match": true,
+    "coordination_tool_evidence_recomputed": 4,
+    "final_verification_evidence_refs_recomputed": 4,
+    "download_bytes_match_archive": true
+  }
+}
