@@ -4,6 +4,10 @@
 
 本页是后续 Codex 的架构入口。交接稿保留提出决定时的理由，本页记录证据支持到哪里。核对基准是 PR #4 的代码提交 `4bc67be7b93733103bdaa1e445bc0d3281d8c8af`。原稿引用的 `af48958` 比它早一个提交；原稿正文保留，仅规范了 Markdown 换行。核对时 GitHub 显示 PR 为 Open，目标分支为 `main`，源分支为 `codex/v2-outer-intelligence`。Git 远端的 PR head 与本地基准一致。[交接稿 V1.0](design-handoff-v1.0.md) · [PR #4](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/4) · [两版之间的变更](https://github.com/dinggegu-dot/autoloop-outer-intelligence/compare/af48958...4bc67be)
 
+## 2026-11-23 外层协调补记
+
+普通新单显式选择智能试点后，目标协调的 Codex 临时会话可以调用四项工单范围内的只读 MCP 工具。回执绑定 Codex 会话、工具返回摘要和工单执行版本。引擎核对授权、预算和工作区版本后记录决定，并在同一事务登记待派工。正式安装源码的隔离副本已有多阶段合成 CLI、Worker 重启、暂停后迟到提案和正式 Chrome 的验收记录。带主观评价的交付仍待专项运行。[首批试点与实测](../testing/goal-coordinator-live.md)
+
 ## 一、已经实现并有证据的能力
 
 表中章节对应原稿。FR 编号对应产品要求，C 编号对应技术规格中的职责；同一个 Python 模块可以承担数项职责。下列“运行”区分了真实设备、真实模型、离线协议替身和本次复跑。[正式 PRD](../product/PRD-v2-outer-loop.md) · [技术规格](outer-intelligence.md) · [FR-01 至 FR-12 验收矩阵](../testing/acceptance-matrix.md)
@@ -11,7 +15,7 @@
 | 原稿 / 要求 | 源码实际行为 | 证据与适用范围 |
 | --- | --- | --- |
 | §2–4、5.1 / FR-01–04、11，C01–03、05、14 | 网页会话与签名私聊桥共用接单服务。先持久化事件并按来源、租户、事件键去重，再读卡片/线程绑定、快照和可选动作。未绑定事件可先进入选单，建单时间可以晚于第一轮研判。原话、问题与工单版本可追踪。 | 真实原卡补充和批准；签名、错租户、重投、旧卡另有夹具。五条真实研判里，三条未绑定输入均未自动附错，仍有一次该先澄清交付格式却先选单。[接单与选单](../../网页工作台/superagent/outer_intake.py) · [双端测试](../../飞书工作入口/test_outer_channels.py) · [逐条路由结果](../../evidence/route-samples.jsonl) |
-| §5.1–5.4、11.3 / FR-08，C04、05、07、10 | 接单与验收由 `OuterIntake.drain` 调用适配器；协调由 `execute_coordination` 发起。三种提示词和输出 Schema 共用 `role_invoke` 与 `CodexOuterModel`。默认模型为 gpt-6.2-sol，推理强度依次为 low、medium、high。每次经只读、临时的 Codex CLI 执行，禁用 shell、浏览器、多 Agent、Apps 和 MCP 等能力。适配器读取最终消息并丢弃解析得到的 Thread ID。 | 飞书单可对应两次 Intake、三次 Acceptance、一次 Coordinator。角色没有可在 Desktop 恢复的专属聊天；业务复查入口在工单。默认配置与旧超时回执分开，后者没有实际模型名记录。[适配器](../../网页工作台/superagent/outer_model.py) · [协调入口](../../网页工作台/superagent/goal_runtime.py) · [六次调用的原始脱敏证据](../../evidence/feishu/verification.json) |
+| §5.1–5.4、11.3 / FR-08，C04、05、07、10 | 接单与验收由 `OuterIntake.drain` 调用适配器；协调由 `execute_coordination` 发起。三种提示词和输出 Schema 共用 `role_invoke` 与 `CodexOuterModel`。默认模型为 gpt-6.2-sol，推理强度依次为 low、medium、high。上述 11 月 19 日基准每次经只读、临时的 Codex CLI 执行，禁用 shell、浏览器、多 Agent、Apps 和 MCP 等能力。该基准的适配器读取最终消息，不保存解析得到的 Thread ID。 | 飞书单可对应两次 Intake、三次 Acceptance、一次 Coordinator。角色没有可在 Desktop 恢复的专属聊天；业务复查入口在工单。默认配置与旧超时回执分开，后者没有实际模型名记录。[适配器](../../网页工作台/superagent/outer_model.py) · [协调入口](../../网页工作台/superagent/goal_runtime.py) · [六次调用的原始脱敏证据](../../evidence/feishu/verification.json) |
 | §5.2、6.1–6.4 / FR-05–07，C06–09 | `_normal_goal` 识别四类来源，检查引用和原文锚点；无依据的明确要求降为模型建议。目标保存需求及限制，验收契约保存需求到条件、验证器和预期的映射。有效权限、工作区、预算和禁止操作在批准时绑定到 Mandate；运行结果保存在带版本的证据中。批准核对工单、目标及验收版本；同单换授权保留旧记录与工作区。 | 温度工具在原卡补充后批准目标及验收 v2；旧版本、重复批准、来源保护和换版另有回归。过长的契约卡会引导到看板核对，不能承诺每个目标都能在一张短卡内完成确认。[批准入口](../../网页工作台/superagent/outer_intake.py) · [卡片](../../网页工作台/outer_channels.py) · [来源与换版测试](../../网页工作台/superagent/test_outer_intake.py) |
 | §2、7–8 / FR-07、10，C11、13 | `assignment_input` 绑定 Ticket、Run、计划版本、授权及契约摘要，传入当前步骤、检查点、先前证据、权限和本轮时间。Worker 按 Assignment 执行并落回执；Runtime 重启先核对 Hub 事件、原 Run、是否进入执行及现有检查点，再决定接续。状态由工作台、Hub 和飞书收件库按职责持有，三库之间靠绑定和对账保持一致。 | 会议工单出现解释器差异，修复后在同一授权下暂停、续办、复验；丢回执、重复投递、迟到和停办的其他分支有故障注入测试。三份备份实际展开、核对过；隔离试点实际重启过。生产系统全量恢复演练仍无对应结果。[派工绑定](../../网页工作台/superagent/goal_engine.py) · [运行与对账](../../网页工作台/superagent/goal_runtime.py) · [恢复边界](system-overview.md) |
 | §5.3、9 / FR-09–10，C08、10、12 | 非末阶段核对本步条件，末阶段重验整份契约。Engine 检查必需项、检查点和归档摘要后写入交付。V2 的 `_advance_outer_review` 在必需项失败时请求协调；协调器只能从快照列出的动作中提议，Engine 校验引用、版本、预算后决定。负责实际修代码的是后续执行 Run。 | 温度工单第一次两项 FAIL，真实协调提议 REPAIR，终验 2/2。两阶段试验另有一次引用无效被拒和一次修复成功；初始阶段由夹具准备。[验收与证据](../../网页工作台/superagent/outer_verification.py) · [失败试验](../../evidence/coordination-rejected.json) · [修复试验](../../evidence/coordination-repaired.json) |

@@ -16,15 +16,19 @@ def _view(call_id, role, started, state, snapshot, receipt, detail):
     if detail:
         row.update(input=snapshot, request=receipt.get('request'), output=receipt.get('result'),
                    final_message=receipt.get('final_message'), output_truncated=receipt.get('output_truncated', False),
-                   usage=receipt.get('usage') or None, prompt_version=receipt.get('prompt_version'))
+                   usage=receipt.get('usage') or None, prompt_version=receipt.get('prompt_version'),
+                   tools=receipt.get('tools') or [], session_id=receipt.get('session_id'))
     return row
 
 
-def _coordination_trace(assignment, decisions, assignments):
+def _coordination_trace(assignment, decisions, assignments, proposal_entry=None):
     """只展示本次已采纳决定之后、同一授权内直到下次验收的账本记录。"""
     adopted = next((i for i,d in enumerate(decisions) if d.get('kind') == 'coordinated'
                     and d.get('assignment') == assignment['id']), None)
     trace = dict(run=assignment.get('run'), decision=None, subsequent_runs=[])
+    if proposal_entry:
+        trace.update({key:proposal_entry.get(key) for key in
+                      ('disposition','reason','dispatch','dispatch_disposition')})
     if adopted is None:
         return trace
     trace['decision'] = decisions[adopted].get('proposal')
@@ -33,9 +37,14 @@ def _coordination_trace(assignment, decisions, assignments):
         return trace
     lookup = {a['id']: a for a in assignments}
     subsequent = {}
+    first = lookup.get(decisions[adopted].get('dispatch'))
+    if first and first.get('outer_binding') == binding:
+        subsequent[first['id']] = dict(phase=first['phase'], assignment=first['id'],
+                                       run=first.get('run'), state=first['state'])
     for d in decisions[adopted+1:]:
         kind, key = d.get('kind'), d.get('assignment')
-        if kind in ('authorized','blocked','stop_requested','stopped','resumed','rejected','review_requested','coordinated'):
+        if kind in ('authorized','blocked','stop_requested','stopped','resumed','rejected','review_requested',
+                    'coordinated','coordination_stale','coordination_dispatch_stale'):
             break
         if kind == 'dispatch_prepared':
             a = lookup.get(key)
@@ -85,14 +94,16 @@ def ticket_calls(db, root, ticket, actor, tenant, call_id=None):
     assignments = """WITH executions(body) AS (
         SELECT body FROM tasks WHERE id=? UNION ALL
         SELECT body FROM outer_revisions WHERE ticket=? AND kind='execution_archive')
-        SELECT a.value""" + ledger_fields + """ FROM executions,json_each(executions.body,'$.goal_execution.assignments') a
+        SELECT a.value,json_extract(body,'$.goal_execution.coordination_proposals.' || json_extract(a.value,'$.id'))
+        """ + ledger_fields + """ FROM executions,json_each(executions.body,'$.goal_execution.assignments') a
         WHERE json_extract(a.value,'$.phase')='coordinate'"""
     params = (ticket, ticket)
     if detail:
         assignments += " AND json_extract(a.value,'$.id')=?"
         params += (call_id,)
-    for body,*ledger in db.execute(assignments, params):
+    for body, proposal_entry, *ledger in db.execute(assignments, params):
         a = json.loads(body)
+        proposal_entry = json.loads(proposal_entry) if proposal_entry else None
         report = a.get('report') or {}
         evidence = report.get('evidence') or {}
         if not evidence.get('started_ns'):
@@ -111,13 +122,17 @@ def ticket_calls(db, root, ticket, actor, tenant, call_id=None):
             state = 'missing_receipt' if a['state'] == 'settled' else 'running'
             if state == 'missing_receipt':
                 error = '执行已结束，未收到模型回执'
+        if proposal_entry and proposal_entry['disposition'] in ('stale','rejected'):
+            state = proposal_entry['disposition']
+            error = error or proposal_entry.get('reason')
         audit = report.get('model_audit') or {}
         receipt = {**evidence, **audit, 'error':' · '.join(filter(None, (code, error))) or None,
                    'result':report.get('result', audit.get('returned_proposal'))}
         started = datetime.fromtimestamp(evidence['started_ns'] / 1e9, timezone.utc).isoformat(timespec='milliseconds')
         row = _view(a['id'], 'goal_coordinator', started, state, a['coordination_context'], receipt, detail)
         if detail:
-            row['trace'] = _coordination_trace(a, json.loads(ledger[0] or '[]'), json.loads(ledger[1] or '[]'))
+            row['trace'] = _coordination_trace(a, json.loads(ledger[0] or '[]'), json.loads(ledger[1] or '[]'),
+                                               proposal_entry)
         else:
             row['ledger_revision'] = ledger[0]
         rows.append(row)

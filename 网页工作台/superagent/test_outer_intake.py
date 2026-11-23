@@ -142,6 +142,40 @@ class OuterIntakeTest(unittest.TestCase):
             self.intake.mark_delivered(item['id'])
         self.assertFalse(self.intake.pending_outbox(source='feishu'))
 
+    def test_normal_workbench_opt_in_is_new_idempotent_and_bound_on_approval(self):
+        from outer_workbench import create_task
+        from uuid import uuid4
+
+        legacy = self.latest(self.send('已有工单'))
+        body = dict(workflow='outer', request_id=str(uuid4()), name='普通入口工单',
+                    goal='生成 JSON 报告', acceptance='通过逐项检查')
+        with self.assertRaisesRegex(Problem, '请在智能接单入口'):
+            create_task(self.workbench, body)
+        self.workbench.outer_workbench_entry = True
+        first = create_task(self.workbench, body)
+        retry = create_task(self.workbench, body)
+        self.assertEqual(first['event_id'], retry['event_id'])
+        self.assertTrue(retry['duplicate'])
+        with self.assertRaisesRegex(Problem, '不能切换执行路线'):
+            create_task(self.workbench, {key: value for key, value in body.items() if key != 'workflow'})
+        with self.assertRaisesRegex(Problem, '不能提交不同内容'):
+            create_task(self.workbench, dict(body, acceptance='另一检查'))
+        with self.assertRaisesRegex(Problem, '仅用于新建'):
+            create_task(self.workbench, dict(body, ticket_id=legacy['id']))
+        draft = self.latest(first)
+        self.assertNotEqual(draft['id'], legacy['id'])
+        self.assertEqual(draft['workbench_name'], body['name'])
+        roles = [context for role, context in self.model.calls if context.get('event_id') == first['event_id']
+                 or context.get('ticket_id') == draft['id']]
+        self.assertEqual(len(roles), 2)
+        for context in roles:
+            self.assertEqual(context['untrusted_text']['workbench_request']['acceptance'], body['acceptance'])
+        self.approve(draft)
+        task = self.store.get(draft['id'])
+        self.assertEqual(task['name'], body['name'])
+        self.assertEqual(task['goal_execution']['coordinator_profile'], 'scoped-v1')
+        self.assertNotIn('coordinator_profile', self.intake.get(legacy['id'], 'owner'))
+
     def test_legacy_engine_cannot_change_v2_control_state(self):
         ready = self.latest(self.send('生成 JSON 报告'))
         authorized = self.approve(ready)
@@ -363,6 +397,10 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertIsNone(trace(ledger[1:])['decision'])
         self.assertEqual([x['run'] for x in trace(ledger)['subsequent_runs']],[5,6])
         self.assertEqual(trace(ledger)['subsequent_runs'][-1]['delivery_digest'],'hash')
+        # 新路线在同一事务先登记派工再登记采纳决定。
+        atomic = [ledger[1],dict(ledger[0],dispatch='fix'),*ledger[2:]]
+        self.assertEqual([x['run'] for x in trace(atomic)['subsequent_runs']],[5,6])
+        self.assertEqual(trace(atomic)['subsequent_runs'][-1]['delivery_digest'],'hash')
         for stop in [dict(kind='stop_requested'),dict(kind='authorized'),dict(kind='dispatch_prepared',assignment='other')]:
             self.assertFalse(trace([ledger[0],stop,*ledger[1:]])['subsequent_runs'])
 

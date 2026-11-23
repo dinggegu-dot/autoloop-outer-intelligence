@@ -178,15 +178,17 @@ class Store:
         return workspace
 
     @staticmethod
-    def _initialize_outer(outer):
+    def _initialize_outer(outer, profile=None):
         from superagent.goal_engine import initial_state
         source = 'feishu' if outer['mandate']['source'] == 'feishu' else 'board'
         state = initial_state(source, outer['approval_event_id'])
         state['outer'] = outer
+        if profile is not None:
+            state['coordinator_profile'] = profile
         return state
 
     def create(self, body, *, source='board', workflow=None, verification_contract=None, team_enabled=False,
-               _db=None, _outer=None):
+               _db=None, _outer=None, _coordinator_profile=None):
         name = str(body.get('name', '')).strip()
         goal = str(body.get('goal', '')).strip()
         acceptance = str(body.get('acceptance', '')).strip()
@@ -237,7 +239,7 @@ class Store:
             if workflow == 'goal':
                 from superagent.goal_engine import initial_state
                 task['workflow'] = workflow
-                task['goal_execution'] = self._initialize_outer(_outer) if _outer else initial_state(source, request_id, verification_contract, team_enabled)
+                task['goal_execution'] = self._initialize_outer(_outer, _coordinator_profile) if _outer else initial_state(source, request_id, verification_contract, team_enabled)
             workspace = self._create_workspace(task_id, recoverable=_outer is not None)
             db.execute('INSERT INTO tasks VALUES(?,?,?,?)', (task_id, request_id, json.dumps(task, ensure_ascii=False), task['updated_at']))
             db.execute('INSERT INTO progress(task,at,kind,title,detail) VALUES(?,?,?,?,?)',
@@ -439,13 +441,14 @@ class Hub:
 
 class Workbench:
     def __init__(self, store=None, hub=None, goal_enabled=False, goal_contract=None, goal_team=False, *,
-                 outer_enabled=False, outer_model=None, outer_registry=None):
+                 outer_enabled=False, outer_model=None, outer_registry=None, outer_workbench_entry=False):
         self.store = store or Store()
         self.hub = hub or Hub()
         self.goal_enabled = goal_enabled
         self.goal_contract = goal_contract
         self.goal_team = goal_team
         self.outer_enabled = outer_enabled
+        self.outer_workbench_entry = outer_enabled and outer_workbench_entry
         self._outer_service = None
         if outer_enabled:
             from superagent.outer_intake import OuterIntake
@@ -519,6 +522,7 @@ class Workbench:
         capability = self.capability()
         capability['goal_enabled'] = self.goal_enabled
         capability['outer_enabled'] = self.outer_enabled
+        capability['outer_workbench_entry'] = self.outer_workbench_entry
         capability['ledger_available'] = True
         try:
             runs, cards = self.hub.records()

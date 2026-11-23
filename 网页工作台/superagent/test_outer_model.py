@@ -1,5 +1,6 @@
 """通过本地 CLI 协议替身测试外层模型的受控启动。"""
 import contextlib
+import hashlib
 import json
 import os
 from copy import deepcopy
@@ -10,7 +11,11 @@ import unittest
 from unittest.mock import patch
 
 from superagent.codex_worker import _object
-from superagent.outer_model import CodexOuterModel, ModelFailure, ACCEPTANCE_SCHEMA, TXT, role_invoke
+from superagent.coordination_tools import DESCRIPTIONS, SERVER, _handle, _read, serve
+from superagent.goal_engine import plan_result
+from superagent.outer_model import (
+    CodexOuterModel, ModelFailure, ACCEPTANCE_SCHEMA, SCOPED_PROMPT_VERSION, TXT, role_invoke,
+)
 
 
 def local_executable(directory, program):
@@ -21,6 +26,86 @@ def local_executable(directory, program):
 
 
 class OuterModelTest(unittest.TestCase):
+    def test_mcp_tool_rejects_cross_ticket_selectors(self):
+        name = next(iter(DESCRIPTIONS))
+        for arguments in ({'ticket_id': 'other-ticket'}, {'path': 'other-file'}, {'revision': 6}):
+            request = {'method': 'tools/call', 'params': {'name': name, 'arguments': arguments}}
+            with patch('superagent.coordination_tools._read') as read:
+                self.assertTrue(_handle(request, '/unused')['isError'])
+                read.assert_not_called()
+
+    @unittest.skipUnless(os.environ.get('GOAL_CHECKS_REAL_SEATBELT') == '1', 'requires a local Unix socket')
+    def test_evidence_read_rechecks_live_gate(self):
+        context = {name: {'version': 1} for name in DESCRIPTIONS}
+        name = next(iter(context))
+        allowed = True
+
+        @contextlib.contextmanager
+        def gate():
+            if not allowed:
+                raise PermissionError('scope changed')
+            yield
+
+        with serve(context, gate) as (endpoint, reads):
+            self.assertEqual(json.loads(_read(endpoint, name)), context[name])
+            allowed = False
+            with self.assertRaisesRegex(ValueError, 'evidence unavailable'):
+                _read(endpoint, name)
+            self.assertEqual(set(reads), {name})
+
+    def test_scoped_prompt_projects_evidence_and_checks_for_actual_calls(self):
+        plan = plan_result({'summary':'阶段摘要' + '中' * 2900,
+                            'steps':[{'objective':'中' * 1490,'checks':[f'item-{n}']} for n in range(6)]},1)
+        context = {
+            'coordinator_profile': 'scoped-v1', 'ticket_id': 'ticket-a', 'plan':plan,
+            'verification_checks': ['FAILURE-INLINE-MARKER'],
+            'tool_evidence': {name: 'TOOL-ONLY-MARKER' for name in DESCRIPTIONS}
+                             | {'read_plan_versions':{'current':plan}},
+        }
+        self.assertGreater(len(json.dumps(context,ensure_ascii=False).encode()),64_000)
+        adapter = CodexOuterModel().with_execution(Path('/tmp'), contextlib.nullcontext)
+        with patch.object(adapter, '_execute', side_effect=ModelFailure('probe')) as mock:
+            with self.assertRaisesRegex(ModelFailure, 'probe') as error:
+                role_invoke(adapter, 'goal_coordinator', context, _object(action=TXT))
+        prompt, _, _, _, evidence, _ = mock.call_args.args
+        self.assertIn('ticket-a', prompt)
+        self.assertNotIn('FAILURE-INLINE-MARKER', prompt)
+        self.assertNotIn('TOOL-ONLY-MARKER', prompt)
+        self.assertEqual(evidence, context['tool_evidence'])
+        self.assertEqual(error.exception.receipt()['prompt_version'], SCOPED_PROMPT_VERSION)
+
+    def test_scoped_prompt_and_tool_evidence_each_have_a_byte_limit(self):
+        evidence = {name: {} for name in DESCRIPTIONS}
+        scoped = {'coordinator_profile':'scoped-v1','ticket_id':'test','tool_evidence':evidence}
+        adapter = CodexOuterModel().with_execution(Path('/tmp'),contextlib.nullcontext)
+        with patch.object(adapter,'_execute') as execute:
+            for context in (dict(scoped,goal='中' * 22_000),
+                            dict(scoped,tool_evidence=dict(evidence,read_plan_versions='中' * 22_000)),
+                            {'plan_summary':'中' * 22_000}):
+                with self.subTest(scoped='coordinator_profile' in context):
+                    with self.assertRaisesRegex(ModelFailure,'context_budget'):
+                        role_invoke(adapter,'goal_coordinator',context,_object(action=TXT))
+            execute.assert_not_called()
+
+    def test_native_event_alone_cannot_claim_a_tool_read(self):
+        from superagent.outer_model import _completed_tools
+
+        name = next(iter(DESCRIPTIONS))
+        recorded = hashlib.sha256(b'{}').hexdigest()
+        item = {'type': 'mcp_tool_call', 'tool': name, 'server': SERVER, 'status': 'completed',
+                'result': {'content': [{'type': 'text', 'text': '{}'}]}, 'error': None}
+        event = {'type': 'item.completed', 'item': item}
+        def wire():
+            return json.dumps(event).encode()
+        self.assertEqual(_completed_tools(wire(), {}), [])
+        self.assertEqual(_completed_tools(wire(), {name: recorded}),
+                         [{'name': name, 'status': 'completed', 'evidence_sha256': recorded}])
+        self.assertEqual(_completed_tools(wire(), {name: 'wrong-response-digest'}), [])
+        item['server'] = 'other'
+        self.assertEqual(_completed_tools(wire(), {name: recorded}), [])
+        item.update(server=SERVER, status='failed')
+        self.assertEqual(_completed_tools(wire(), {name: recorded}), [])
+
     def test_cli_proxy_requires_an_explicit_loopback_port(self):
         adapter = CodexOuterModel()
         with patch.object(adapter,'_run_threaded',side_effect=ModelFailure('probe')) as launch:

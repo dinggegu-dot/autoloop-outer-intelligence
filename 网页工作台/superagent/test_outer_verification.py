@@ -5,14 +5,14 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from superagent import outer_verification as registry
-from superagent.goal_engine import MODEL, GoalEngine, current, flow
-from superagent.goal_runtime import execute_assignment
+from superagent.goal_engine import MODEL, GoalEngine, current, digest, flow
+from superagent.goal_runtime import GoalRuntime, execute_assignment
 from superagent.outer_intake import OuterIntake
-from workbench import Store
+from workbench import Problem, Store, Workbench
 
 
 def criterion(key='one', **updates):
@@ -170,14 +170,15 @@ class OuterExecutionTests(unittest.TestCase):
         self.workspace = self.store.workspace(self.ticket)
         self.sequence = 0
 
-    def authorize(self, *criteria, goal_fields=None, forbidden=None):
+    def authorize(self, *criteria, goal_fields=None, forbidden=None, require_signoff=False):
         goal, contract = compile_rows(*criteria,goal_fields=goal_fields)
         forbidden = ['network','publish'] if forbidden is None else forbidden
         def apply(task):
             flow(task)['outer'] = {
                 'ticket_id':self.ticket,'goal_revision':1,'acceptance_revision':1,'mandate_revision':1,
                 'goal_contract':dict(goal,status='APPROVED',ticket_id=self.ticket),
-                'acceptance_contract':dict(contract,status='APPROVED',ticket_id=self.ticket,revision=1),
+                'acceptance_contract':dict(contract,status='APPROVED',ticket_id=self.ticket,revision=1,
+                                           require_signoff=require_signoff),
                 'approval_event_id':'approval','actor_id':'owner','correlation_id':'event',
                 'mandate':{'revision':1,'approval_event_id':'approval','actor_id':'owner',
                            'ticket_id':self.ticket,'goal_revision':1,'acceptance_revision':1,
@@ -389,6 +390,401 @@ class OuterExecutionTests(unittest.TestCase):
         task = self.settle_report(review,self.trusted_review(review))
         self.assertEqual(task['status'],'completed')
         self.assertEqual(flow(task)['revisions'][0]['plan']['steps'][0]['state'],'pending')
+
+    def scoped_regression(self, *, require_signoff=False, extra_artifacts=0):
+        self.authorize(criterion(),criterion('two'),require_signoff=require_signoff)
+        self.store.change(self.ticket,lambda task: flow(task).update(coordinator_profile=registry.SCOPED_COORDINATOR))
+        self.plan(['one'],['two'])
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        self.checkpoint()
+        first = self.launch('review')
+        self.settle_report(first,self.trusted_review(first))
+        (self.workspace/'one.json').write_text('{"ok":false}')
+        (self.workspace/'two.json').write_text('{"ok":true}')
+        for index in range(extra_artifacts):
+            (self.workspace/f'aux-{index:02d}.txt').write_text('附加文件')
+        self.checkpoint()
+        final = self.launch('review')
+        self.settle_report(final,self.trusted_review(final))
+        assignment = self.launch('coordinate')
+        context = assignment['context']['coordinator']
+        self.assertEqual(context['affected_steps'],[0,1])
+        self.assertEqual(context['verification_items'],['one','two'])
+        self.assertEqual(context['tool_evidence']['read_verified_artifacts']['verified_stages'][0]['assignment'],
+                         first['id'])
+        proposal, invocation = self.scoped_proposal(assignment,'REPAIR','修复导入结果')
+        self.assertEqual(proposal['retained_outputs'],['two.json'])
+        return assignment, proposal, invocation
+
+    @staticmethod
+    def scoped_proposal(assignment, action, plan_change):
+        context = assignment['context']['coordinator']
+        prefix = 'replan_' if action == 'REPLAN' else ''
+        proposal = {'schema_version':2,'input_snapshot_revision':context['input_snapshot_revision'],
+                    'evidence_refs':context['evidence_refs'],'action':action,'reason':'处理已登记的验收失败',
+                    'plan_change':plan_change,'affected_steps':context[prefix + 'affected_steps'],
+                    'verification_items':context[prefix + 'verification_items'],
+                    'retained_outputs':context['retained_outputs'],
+                    'retained_artifacts':[{'path':path,'sha256':sha256}
+                                          for path,sha256 in context['artifact_versions'].items()],
+                    'scope_change':False,'approval_required':False,'remaining_risk':'需要重新跑全部验收'}
+        invocation = {'snapshot_revision':context['input_snapshot_revision'],'invocation_id':assignment['id'],
+                      'started_ns':0,'ended_ns':1_000_000_000,'session_id':str(uuid4()),
+                      'tools':[{'name':name,'status':'completed','evidence_sha256':digest(value)}
+                               for name,value in context['tool_evidence'].items()]}
+        return proposal, invocation
+
+    def test_scoped_proposal_and_dispatch_are_committed_once(self):
+        from concurrent.futures import ThreadPoolExecutor
+        assignment, proposal, invocation = self.scoped_regression()
+        with ThreadPoolExecutor(max_workers=2) as participants:
+            results = list(participants.map(lambda _: self.finish(assignment,proposal,evidence=invocation), range(2)))
+        task = self.store.get(self.ticket)
+        state = flow(task)
+        dispatch = current(task)
+        self.assertEqual(state['stage'],'repair')
+        self.assertEqual(dispatch['phase'],'repair')
+        self.assertEqual(dispatch['coordination_proposal'],assignment['id'])
+        self.assertEqual(state['coordination_proposals'][assignment['id']]['dispatch'],dispatch['id'])
+        self.assertEqual(state['coordination_proposals'][assignment['id']]['disposition'],'accepted')
+        self.assertEqual(state['repairs'],1)
+        self.assertEqual(sum(row['phase']=='repair' for row in state['assignments']),1)
+        self.assertEqual({result['calls'] for result in results},{6})
+        self.assertEqual(current(GoalEngine(self.store).prepare(self.ticket))['id'],dispatch['id'])
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        self.checkpoint('repair')
+        review = self.launch('review')
+        done = self.settle_report(review,self.trusted_review(review))
+        self.assertEqual(done['status'],'completed')
+        self.assertEqual([row['status'] for row in done['checks']],['PASS','PASS'])
+
+    def test_scoped_failed_commit_can_retry_same_receipt(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        with patch.object(GoalEngine,'_enqueue',side_effect=RuntimeError('injected storage interruption')):
+            with self.assertRaisesRegex(RuntimeError,'storage interruption'):
+                self.finish(assignment,proposal,evidence=invocation)
+        recovered = self.store.get(self.ticket)
+        self.assertEqual(current(recovered)['id'],assignment['id'])
+        self.assertNotIn('coordination_proposals',flow(recovered))
+        self.assertEqual(recovered['calls'],5)
+        task = self.finish(assignment,proposal,evidence=invocation)
+        self.assertEqual(current(task)['coordination_proposal'],assignment['id'])
+        self.assertEqual(task['calls'],6)
+
+    def test_scoped_pause_and_new_feedback_fence_coordinator_receipt(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        with self.engine.launch_gate(self.ticket,assignment['id'],assignment['run']):
+            pass
+        ticket = {'id':self.ticket,'goal_revision':1,'status_before_pause':'AUTHORIZED'}
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            OuterIntake._control_execution(db,ticket,'pause','web','pause')
+        task = self.finish(assignment,proposal,evidence=invocation)
+        self.assertEqual(task['status'],'paused')
+        self.assertEqual(flow(task)['coordination_proposals'][assignment['id']]['disposition'],'stale')
+        self.assertIsNone(current(task))
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            OuterIntake._control_execution(db,ticket,'resume','web','resume')
+        new_round = self.launch('coordinate')
+        self.assertNotEqual(new_round['id'],assignment['id'])
+        with self.store.connect() as db:
+            db.execute('INSERT INTO inbox_notes VALUES(?,?,?,?)',('web-note',self.ticket,'有新反馈','time'))
+        with self.assertRaisesRegex(Problem,'协调依据已变化'):
+            with self.engine.launch_gate(self.ticket,new_round['id'],new_round['run']):
+                self.fail('old context reached the launch gate')
+        fresh = self.finish(new_round,proposal,evidence=invocation)
+        self.assertEqual(flow(fresh)['coordination_proposals'][new_round['id']]['disposition'],'stale')
+        self.assertIsNone(current(fresh))
+
+    def test_scoped_retention_cannot_be_forged_or_changed_in_repair(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        tampered = dict(proposal,retained_artifacts=[{'path':'two.json','sha256':'0'*64}])
+        with self.assertRaisesRegex(ValueError,'文件版本不匹配'):
+            registry.validate_coordination(tampered,assignment['context']['coordinator'])
+        self.finish(assignment,proposal,evidence=invocation)
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        (self.workspace/'two.json').write_text('{"ok":false}')
+        task = self.checkpoint('repair')
+        self.assertEqual(task['status'],'blocked')
+        self.assertIn('保留的文件版本',task['error'])
+
+    def test_scoped_repair_and_continue_cannot_omit_verified_versions(self):
+        assignment, proposal, invocation = self.scoped_regression(extra_artifacts=35)
+        omitted = dict(proposal,retained_outputs=[],retained_artifacts=[])
+        context = assignment['context']['coordinator']
+        with self.assertRaisesRegex(ValueError,'全部文件版本'):
+            registry.validate_coordination(dict(omitted,action='CONTINUE'),
+                                           dict(context,available_actions=['CONTINUE']))
+        task = self.finish(assignment,omitted,evidence=invocation)
+        self.assertEqual(task['status'],'blocked')
+        self.assertIn('全部文件版本',task['error'])
+        self.assertIsNone(current(task))
+
+    def test_scoped_replan_can_change_verified_file_with_recorded_reason_and_full_recheck(self):
+        self.authorize(criterion(),criterion('two'),criterion('three'))
+        self.store.change(self.ticket,lambda task:flow(task).update(coordinator_profile=registry.SCOPED_COORDINATOR))
+        self.plan(['one'],['two'],['three'])
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        self.checkpoint()
+        first = self.launch('review')
+        self.settle_report(first,self.trusted_review(first))
+        (self.workspace/'two.json').write_text('{"ok":false}')
+        self.checkpoint()
+        second = self.launch('review')
+        self.settle_report(second,self.trusted_review(second))
+
+        coordinator = self.launch('coordinate')
+        context = coordinator['context']['coordinator']
+        self.assertEqual(context['verification_items'],['two'])
+        self.assertEqual(context['replan_verification_items'],['one','two'])
+        self.assertEqual(context['retained_outputs'],['one.json'])
+        proposal, invocation = self.scoped_proposal(coordinator,'REPLAN','更新 one.json 的排版，保持输出值')
+        proposal.update(retained_outputs=[],retained_artifacts=[])
+        for invalid, error in ((dict(proposal,plan_change=''), '不能为空'),
+                               (dict(proposal,scope_change=True), '不能扩大'),
+                               (dict(proposal,verification_items=['two']), '下一轮验收')):
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError,error):
+                registry.validate_coordination(invalid,context)
+        task = self.finish(coordinator,proposal,evidence=invocation)
+        self.assertEqual(flow(task)['stage'],'replan')
+        replan = self.launch('replan')
+        self.finish(replan,{'summary':'应用排版并修复本阶段','steps':[
+            {'objective':'对齐结构化输出','checks':['two']},{'objective':'完成第三阶段','checks':['three']}]})
+        (self.workspace/'one.json').write_text('{"ok": true}')
+        (self.workspace/'two.json').write_text('{"ok":true}')
+        self.checkpoint()
+        review = self.launch('review')
+        report = self.trusted_review(review)
+        self.assertEqual([(row['id'],row['status']) for row in report['validation']['checks']],
+                         [('one','PASS'),('two','PASS')])
+        self.assertNotEqual(report['checkpoint']['files']['one.json'],context['artifact_versions']['one.json'])
+        task = self.settle_report(review,report)
+        self.assertEqual(task['step'],2)
+        self.assertEqual(flow(task)['outer']['mandate_revision'],1)
+        self.assertEqual(flow(task)['revisions'][-1]['reason']['coordination']['plan_change'],proposal['plan_change'])
+
+    def test_long_replan_history_keeps_second_coordination_within_tool_budget(self):
+        from superagent.coordination_tools import _encode, _LIMIT
+        from superagent.outer_model import ModelFailure, SCOPED_PROMPT_VERSION
+        stages = [[f'item-{index}-{suffix}'.ljust(50,'x') for suffix in ('a','b')] for index in range(6)]
+        self.authorize(*(criterion(key,description='验' * 332) for keys in stages for key in keys))
+        self.store.change(self.ticket,lambda task:flow(task).update(coordinator_profile=registry.SCOPED_COORDINATOR))
+        long_plan = {'summary':'😀' * 3000,'steps':[{'objective':'😀' * 1500,'checks':keys} for keys in stages]}
+        self.finish(self.launch('plan'),long_plan)
+        for keys in stages:
+            for key in keys:
+                (self.workspace/f'{key}.json').write_text('{"ok":false}' if keys == stages[-1] else '{"ok":true}')
+            self.checkpoint()
+            review = self.launch('review')
+            self.settle_report(review,self.trusted_review(review))
+        first = self.launch('coordinate')
+        proposal, invocation = self.scoped_proposal(first,'REPLAN','调整最后阶段的执行方法')
+        self.finish(first,proposal,evidence=invocation)
+        self.finish(self.launch('replan'), {'summary':'🔍' * 3000,
+                                           'steps':[{'objective':'🔍' * 1500,'checks':stages[-1]}]})
+        self.checkpoint()
+        review = self.launch('review')
+        task = self.settle_report(review,self.trusted_review(review))
+        second = self.launch('coordinate')
+        evidence = second['context']['coordinator']['tool_evidence']
+        plan_versions = evidence['read_plan_versions']
+        current_plan = plan_versions['current']
+        previous = plan_versions['previous'][0]
+        original = flow(task)['revisions'][0]['plan']
+        self.assertEqual(current_plan['steps'][-1]['objective'],'🔍' * 1000)
+        self.assertTrue(current_plan['steps'][-1]['objective_truncated'])
+        self.assertTrue(current_plan['summary_truncated'])
+        self.assertEqual(task['plan']['steps'][-1]['objective'],'🔍' * 1500)
+        self.assertEqual((previous['version'],previous['previous'],previous['plan_sha256']),(1,None,digest(original)))
+        self.assertEqual(previous['plan']['steps'][-1]['acceptance'],stages[-1])
+        self.assertEqual(plan_versions['current_plan_sha256'],digest(task['plan']))
+        self.assertNotIn('verification',current_plan['steps'][-1])
+        self.assertEqual(original['steps'][-1]['objective'],'😀' * 1500)
+        self.assertGreater(len(_encode(dict(evidence,read_plan_versions={
+            **plan_versions,'current':task['plan'],
+        }))),_LIMIT)
+        self.assertLess(len(_encode(evidence)),_LIMIT)
+        with patch('superagent.outer_model.CodexOuterModel._execute',side_effect=ModelFailure('probe')) as invoke:
+            report = self.trusted_review(second)
+        invoke.assert_called_once()
+        self.assertEqual(report['evidence']['failure_code'],'probe')
+        self.assertEqual(report['evidence']['prompt_version'],SCOPED_PROMPT_VERSION)
+
+    def test_machine_pass_releases_retention_before_human_return(self):
+        coordinator, proposal, invocation = self.scoped_regression(require_signoff=True)
+        self.finish(coordinator,proposal,evidence=invocation)
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        self.checkpoint('repair')
+        review = self.launch('review')
+        task = self.settle_report(review,self.trusted_review(review))
+        self.assertEqual(task['status'],'awaiting_artifact_review')
+        self.assertNotIn('coordination_retention',flow(task))
+
+        intake = OuterIntake(Workbench(self.store))
+        ticket = {'id':self.ticket,'status':'AUTHORIZED','revision':1,'correlation_id':'event',
+                  'goal_revision':1,'acceptance_revision':1,'mandate_revision':1}
+        with self.store.connect() as db:
+            db.execute('INSERT INTO outer_tickets VALUES(?,?,?,?,?)',
+                       (self.ticket,'default','owner',json.dumps(ticket),'time'))
+        candidate = flow(task)['artifact_reviews'][-1]
+        result = intake.decide_artifact(self.ticket,'return',1,candidate['assignment'],candidate['artifact_sha256'],
+                                        '调整 two.json 的排版','operator-return',actor_id='owner')
+        self.assertEqual(result['action'],'ARTIFACT_RETURNED')
+        (self.workspace/'two.json').write_text('{"ok": true}')
+        self.checkpoint('repair')
+        subsequent = self.launch('review')
+        updated = self.settle_report(subsequent,self.trusted_review(subsequent))
+        self.assertEqual(updated['status'],'awaiting_artifact_review')
+        self.assertNotEqual(candidate['artifact_sha256'],flow(updated)['artifact_reviews'][-1]['artifact_sha256'])
+
+    def pause_bound_scoped_repair(self, *, claimed=False, audit_error=None):
+        coordinator, proposal, invocation = self.scoped_regression()
+        task = self.finish(coordinator,proposal,evidence=invocation)
+        dispatch = current(task)
+        event = run = 90
+        rule = 'odyssey-goal'
+        def source_outcome(state):
+            return {'event':event,'routed':[rule],
+                    'runs':[{'run':run,'rule':rule,'state':state,'attempts':0}]}
+        def hub_fact(state, claimed_at=None):
+            return {'version':1,'changes':[{'table':'runs','key':str(run),
+                     'row':{'id':run,'rule':rule,'state':state,'claimed_at':claimed_at,'attempts':0}}]}
+        facts = [hub_fact('queued')]
+        if claimed:
+            facts.append(hub_fact('claimed','time'))
+        facts.append(hub_fact('cancelled','time' if claimed else None))
+        hub = Mock()
+        hub.request.side_effect = [
+            {'event':event},source_outcome('queued'),source_outcome('queued'),{'ok':True},source_outcome('cancelled'),
+            *([audit_error,source_outcome('cancelled')] if audit_error else []),facts,
+        ]
+        runtime = GoalRuntime(self.store,hub)
+        bound = runtime.tick(self.ticket)
+        self.assertEqual(current(bound)['run'],run)
+        ticket = {'id':self.ticket,'goal_revision':1,'status_before_pause':'AUTHORIZED'}
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            OuterIntake._control_execution(db,ticket,'pause','web','pause')
+        stopped = runtime.tick(self.ticket)
+        self.assertEqual(stopped['status'],'stopping')
+        self.assertEqual(hub.request.call_args.args,('POST',f'/v1/runs/{run}/cancel',{}))
+        return GoalRuntime(self.store,hub), ticket, coordinator['id'], dispatch['id']
+
+    def test_paused_queued_scoped_repair_recomputes_after_hub_confirms_no_start(self):
+        runtime, ticket, coordinator, dispatch = self.pause_bound_scoped_repair()
+        before = self.store.get(self.ticket)
+        stopped = runtime.tick(self.ticket)
+        self.assertEqual(stopped['status'],'paused')
+        self.assertIsNone(current(stopped))
+        self.assertEqual(stopped['calls'],before['calls'])
+        self.assertEqual(flow(stopped)['checkpoint'],flow(before)['checkpoint'])
+        self.assertEqual(flow(stopped)['stage'],'coordinate')
+        self.assertEqual(flow(stopped)['repairs'],0)
+        self.assertEqual(flow(stopped)['coordination_proposals'][coordinator]['dispatch'],dispatch)
+        self.assertEqual(flow(stopped)['coordination_proposals'][coordinator]['dispatch_disposition'],
+                         'stale_before_launch')
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            OuterIntake._control_execution(db,ticket,'resume','web','resume')
+        next_round = self.launch('coordinate')
+        self.assertNotEqual(next_round['id'],coordinator)
+
+    def test_paused_claimed_repair_without_local_entry_is_not_confirmed_unstarted(self):
+        runtime, _, coordinator, _ = self.pause_bound_scoped_repair(claimed=True)
+        stopped = runtime.tick(self.ticket)
+        state = flow(stopped)
+        self.assertEqual(stopped['status'],'paused')
+        self.assertIsNone(current(stopped))
+        self.assertTrue(state['validation']['recovery_blocked'])
+        self.assertNotIn('dispatch_disposition',state['coordination_proposals'][coordinator])
+
+    def test_paused_repair_with_unavailable_hub_audit_keeps_conservative_recovery(self):
+        runtime, _, _, _ = self.pause_bound_scoped_repair(audit_error=Problem('中台不提供轮次时间线',404))
+        stopped = runtime.tick(self.ticket)
+        self.assertEqual(stopped['status'],'paused')
+        self.assertTrue(flow(stopped)['validation']['recovery_blocked'])
+
+    def test_paused_repair_retries_hub_audit_after_a_transient_error(self):
+        runtime, _, _, _ = self.pause_bound_scoped_repair(audit_error=Problem('中台暂不可用',503))
+        with self.assertRaisesRegex(Problem,'暂不可用'):
+            runtime.tick(self.ticket)
+        self.assertEqual(self.store.get(self.ticket)['status'],'stopping')
+        stopped = runtime.tick(self.ticket)
+        self.assertEqual(stopped['status'],'paused')
+        self.assertEqual(flow(stopped)['stage'],'coordinate')
+
+    def test_paused_unstarted_repair_cannot_adopt_externally_changed_bytes(self):
+        runtime, _, coordinator, _ = self.pause_bound_scoped_repair()
+        before = self.store.get(self.ticket)
+        (self.workspace/'two.json').write_text('{"ok": true}')
+        stopped = runtime.tick(self.ticket)
+        state = flow(stopped)
+        self.assertEqual(stopped['status'],'paused')
+        self.assertIsNone(current(stopped))
+        self.assertEqual(state['checkpoint'],flow(before)['checkpoint'])
+        self.assertEqual(stopped['calls'],before['calls'])
+        self.assertTrue(state['validation']['recovery_blocked'])
+        self.assertNotIn('dispatch_disposition',state['coordination_proposals'][coordinator])
+
+    def test_scoped_new_feedback_cancels_accepted_dispatch_before_hub_send(self):
+        appointment, proposal, invocation = self.scoped_regression()
+        task = self.finish(appointment,proposal,evidence=invocation)
+        dispatch = current(task)
+        with self.store.connect() as db:
+            db.execute('INSERT INTO inbox_notes VALUES(?,?,?,?)',('web-new',self.ticket,'新信息','time'))
+        task = self.engine.mark_send(self.ticket,dispatch['id'])
+        self.assertIsNone(current(task))
+        self.assertEqual(flow(task)['repairs'],0)
+        self.assertEqual(flow(task)['stage'],'coordinate')
+        record = flow(task)['coordination_proposals'][appointment['id']]
+        self.assertEqual(record['dispatch_disposition'],'stale_before_launch')
+        self.assertNotEqual(self.launch('coordinate')['id'],appointment['id'])
+
+    def test_scoped_new_feedback_fences_dispatched_repair_at_worker_gate(self):
+        appointment, proposal, invocation = self.scoped_regression()
+        self.finish(appointment,proposal,evidence=invocation)
+        repair = self.launch('repair')
+        with self.store.connect() as db:
+            db.execute('INSERT INTO inbox_notes VALUES(?,?,?,?)',('web-new',self.ticket,'新信息','time'))
+        def execute(*args,launch_gate):
+            with launch_gate():
+                self.fail('stale repair was allowed to run')
+        with patch('superagent.goal_codex.invoke',side_effect=execute):
+            report = self.trusted_review(repair)
+        self.assertIs(report['coordination_dispatch_stale'],True)
+        task = self.settle_report(repair,report)
+        self.assertEqual(task['calls'],6)
+        self.assertEqual(flow(task)['repairs'],0)
+        self.assertEqual(flow(task)['stage'],'coordinate')
+        self.assertIsNone(current(task))
+
+    def test_scoped_repair_will_not_launch_against_unregistered_bytes(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        self.finish(assignment,proposal,evidence=invocation)
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        repair = self.launch('repair')
+        report = self.trusted_review(repair)
+        self.assertIs(report['checkpoint_mismatch'],True)
+        task = self.engine.settle(self.ticket,repair['id'],repair['run'],'done',report,
+                                  recovery_checkpoint=registry.capture(self.workspace)[0])
+        self.assertEqual(task['status'],'blocked')
+        self.assertNotEqual(flow(task)['checkpoint']['digest'],registry.capture(self.workspace)[0]['digest'])
+
+    def test_scoped_tool_audit_gates_dispatch(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        task = self.finish(assignment,proposal,evidence=dict(invocation,tools=invocation['tools'][:-1]))
+        self.assertEqual(task['status'],'blocked')
+        self.assertIsNone(current(task))
+        self.assertEqual(flow(task)['coordination_proposals'][assignment['id']]['disposition'],'rejected')
+
+    def test_scoped_budget_is_rechecked_after_charging_coordinator(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        self.store.change(self.ticket,lambda task: task.update(elapsed_seconds=570))
+        task = self.finish(assignment,proposal,evidence=invocation)
+        self.assertEqual(task['status'],'budget_exhausted')
+        self.assertIsNone(current(task))
+        self.assertEqual(flow(task)['coordination_proposals'][assignment['id']]['disposition'],'rejected')
 
     def test_coordinator_actual_adapter_envelope_and_launch_gate(self):
         from superagent.test_goal_codex import _events

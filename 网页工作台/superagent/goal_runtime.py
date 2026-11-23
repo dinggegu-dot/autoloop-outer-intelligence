@@ -17,6 +17,7 @@ if __package__ in (None, ''):
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from workbench import Hub, Problem, Store
 from superagent.goal_engine import (
+    StaleCoordination,
     PACKAGE_LIMIT, GoalEngine, active_assignments, assignment_route, canonical, current, digest, flow,
 )
 
@@ -40,6 +41,36 @@ def missing_receipt_diagnostic(run, assignment):
         'hub_attempts': min(attempts, 1000) if type(attempts) is int and attempts >= 0 else None,
         'reserved_seconds': min(seconds, 86400) if type(seconds) is int and seconds >= 0 else None,
     }
+
+
+def hub_confirmed_unstarted(hub, run, rule):
+    # 来源接口不区分排队取消和领取后取消。以本人的中台轮次时间线确认。
+    try:
+        facts = hub.request('GET',f'/v1/runs/{run}/why')
+    except Problem as error:
+        if error.status >= 500 and error.status != 501:
+            raise
+        return False
+    if not isinstance(facts,list):
+        return False
+    states = []
+    for fact in facts:
+        if (not isinstance(fact,dict) or fact.get('version') != 1
+                or not isinstance(fact.get('changes'),list)):
+            return False
+        for change in fact['changes']:
+            if not isinstance(change,dict):
+                return False
+            if change.get('table') != 'runs' or change.get('key') != str(run):
+                continue
+            row = change.get('row')
+            if (not isinstance(row,dict) or row.get('id') != run or row.get('rule') != rule
+                    or 'claimed_at' not in row or row['claimed_at'] is not None
+                    or type(row.get('attempts')) is not int or row['attempts'] != 0
+                    or row.get('state') not in ('queued','cancelled')):
+                return False
+            states.append(row['state'])
+    return len(states) >= 2 and states[-1] == 'cancelled' and all(state == 'queued' for state in states[:-1])
 
 
 def attempt_file(root, ticket, key, name):
@@ -187,7 +218,18 @@ class GoalRuntime:
                      and report.get('outer_binding') == outer)
             recovery_checkpoint = None
             recovery_error = None
-            if assignment['phase'] in ('execute','repair') and (
+            confirmed_unstarted = (flow(task)['stop_requested'] and status == 'cancelled'
+                                  and assignment.get('coordination_proposal') is not None
+                                  and not any(os.path.lexists(path.parent/name)
+                                              for name in ('entered','report.json','process.json'))
+                                  and hub_confirmed_unstarted(self.hub,run,rule))
+            if confirmed_unstarted:
+                from superagent.outer_verification import capture
+                try:
+                    recovery_checkpoint = capture(self.store.workspace(ticket))[0]
+                except (OSError, RuntimeError, ValueError, Problem):
+                    pass
+            elif assignment['phase'] in ('execute','repair') and (
                     (not valid and not flow(task)['stop_requested']) or
                     (outer and (not valid or report.get('error') or flow(task)['stop_requested']))):
                 # 中台已确认终态且原模型已退出。只从原派工的工作区取证。
@@ -214,8 +256,8 @@ class GoalRuntime:
                 except (OSError, RuntimeError, ValueError, Problem):
                     report = dict(report,error='独立归档不存在、已改变或无法安全读取')
             settled = self.engine.settle(ticket,key,run,status,report,recovery_checkpoint=recovery_checkpoint,
-                                         recovery_error=recovery_error)
-            if not valid:
+                                         recovery_error=recovery_error,confirmed_unstarted=confirmed_unstarted)
+            if not valid and not confirmed_unstarted:
                 self.store.event(ticket,'goal_transport','中台轮次已结束，缺少有效业务回执',
                                  missing_receipt_diagnostic(run_row,assignment))
             return settled
@@ -323,9 +365,16 @@ def execute_assignment(store, assignment, directory, verification):
         if outer:
             report.update(outer_binding=outer,verifier_profile='outer-v2')
             if phase == 'review':
+                if assignment.get('coordination_proposal'):
+                    with GoalEngine(store).launch_gate(assignment['ticket'],assignment['id'],assignment['run']):
+                        pass
                 return execute_outer_review(assignment,workspace,directory,report)
             if phase == 'coordinate':
                 return execute_coordination(store,assignment,directory,report)
+            if assignment.get('coordination_proposal'):
+                from superagent.outer_verification import capture
+                if capture(workspace)[0] != assignment['checkpoint']:
+                    return dict(report,checkpoint_mismatch=True,error='待执行的协调动作与已核对的工作区版本不一致')
             prepare_outer_execution(assignment)
         base_id = assignment.get('workspace_base')
         if base_id:
@@ -450,6 +499,8 @@ def execute_assignment(store, assignment, directory, verification):
             if phase == 'review' and report['validation']['passed'] and result.get('passed') is True:
                 freeze_verified(workspace,directory,after)
                 report['delivery'] = {'assignment':assignment['id'],'files':after['files']}
+    except StaleCoordination as exc:
+        report.update(coordination_dispatch_stale=True,error=str(exc))
     except Exception as exc:
         report['error'] = f'{type(exc).__name__}: {str(exc)[:240]}'
     return report
@@ -465,8 +516,11 @@ def prepare_outer_execution(assignment):
         keys = {key for stage in assignment['plan']['steps'][step:] for key in stage['acceptance']}
     elif phase != 'plan':
         keys = set(assignment['plan']['steps'][step]['acceptance'])
+    instructions = (context.get('verification') or {}).get('coordination') or {}
     if phase == 'repair' and step + 1 == len(assignment['plan']['steps']):
         keys = None  # 最后一步返工可以修复最终复验发现的前序回归。
+    if keys is not None and phase in ('execute','repair') and instructions.get('schema_version')==2:
+        keys.update(instructions['verification_items'])
     context['approved_criteria'] = [
         {key: row[key] for key in ('criterion_id','requirement_ids','description','required','verifier_id')}
         | {'interface':{key:value for key,value in row['test_spec'].items() if key not in ('args','files')}}
@@ -479,6 +533,11 @@ def prepare_outer_execution(assignment):
     )
     if phase == 'replan':
         context['contract_instruction'] += '仅调整后续阶段的实施方案，保持现有阶段顺序和验收项不变。'
+    if instructions.get('schema_version')==2:
+        context['contract_instruction'] += (
+            'verification.coordination 是已生效的协调决定。处理其中列出的受影响阶段，'
+            '保留 retained_artifacts 中各文件的原始字节，并按 verification_items 复验。'
+        )
     if phase == 'repair' and context.get('human_review_feedback'):
         context['contract_instruction'] += (
             'human_review_feedback 是本人对已归档候选产物的退回意见。'
@@ -522,22 +581,28 @@ def execute_outer_review(assignment, workspace, directory, report):
 
 
 def execute_coordination(store, assignment, directory, report):
-    from superagent.outer_model import PROMPT_VERSION, CodexOuterModel, ModelFailure, role_invoke
-    from superagent.outer_verification import coordination_schema, validate_coordination
+    from superagent.outer_model import (
+        PROMPT_VERSION, SCOPED_PROMPT_VERSION, CodexOuterModel, ModelFailure, role_invoke,
+    )
+    from superagent.outer_verification import SCOPED_COORDINATOR, coordination_schema, validate_coordination
     context = assignment['context']['coordinator']
     start = time.time_ns()
     engine = GoalEngine(store)
-    adapter = CodexOuterModel(timeout=min(45,assignment['max_seconds'])).with_execution(
+    scoped = context.get('coordinator_profile') == SCOPED_COORDINATOR
+    limit = 120 if scoped else 45
+    adapter = CodexOuterModel(timeout=min(limit,assignment['max_seconds'])).with_execution(
         directory, lambda: engine.launch_gate(assignment['ticket'],assignment['id'],assignment['run'])
     )
     evidence = {
         'invocation_id':assignment['id'], 'snapshot_revision':context['input_snapshot_revision'],
-        'started_ns':start, 'prompt_version':PROMPT_VERSION, 'model':adapter.model,
+        'started_ns':start, 'prompt_version':SCOPED_PROMPT_VERSION if scoped else PROMPT_VERSION,
+        'model':adapter.model,
     }
     save_json(directory / 'coordination-start.json', evidence)
     try:
         invocation = role_invoke(adapter, 'goal_coordinator', context, coordination_schema(context))
         evidence.update({key:invocation[key] for key in ('model','usage','elapsed_ms','prompt_version')})
+        evidence.update({key:invocation[key] for key in ('session_id','tools') if key in invocation})
         report['model_audit'] = {key:invocation[key] for key in ('request','final_message','output_truncated')
                                  if key in invocation}
         proposal = validate_coordination(invocation['result'],context)

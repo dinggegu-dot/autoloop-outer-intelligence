@@ -1,10 +1,12 @@
 """目标工单状态机。Autoloop 负责运行事实，工作台事务负责业务决定。"""
 import hashlib
 import json
+import re
 import uuid
 from contextlib import contextmanager
 
 from workbench import Problem, now, require_v1_control
+from superagent.outer_verification import SCOPED_COORDINATOR
 
 
 MODEL = 'gpt-6.2-sol'
@@ -18,6 +20,10 @@ PACKAGE_ROUTES = {
     'implement': ('workbench.goal.implement', 'odyssey-goal-implement'),
     'analyze': ('workbench.goal.analyze', 'odyssey-goal-analyze'),
 }
+
+
+class StaleCoordination(Problem):
+    """当前提案的后续派工尚未启动，用户依据已改变。"""
 
 
 def canonical(value):
@@ -276,10 +282,11 @@ class GoalEngine:
             if outer and task.get('max_calls') is not None and task['calls'] >= task['max_calls']:
                 pause_or_block(task,'执行调用预算用完',budget=True)
                 return
-            if outer and phase == 'review':
-                from superagent.outer_verification import selected_criteria
-                criteria = selected_criteria(outer['acceptance_contract'], plan, task['step'])
-                minimum = 10 + 9 * sum(row['verifier_id']=='python-json-cli' for row in criteria)
+            if outer and (phase=='review' or (phase in ('execute','repair') and 'coordination_retention' in state)):
+                minimum = self._minimum_review_seconds(task)
+                if phase!='review':
+                    remaining -= minimum
+                    minimum = 10
                 if remaining < minimum:
                     pause_or_block(task,'剩余预算不足以完成本轮验收',budget=True)
                     return
@@ -291,6 +298,15 @@ class GoalEngine:
                 return
             details = {}
             if phase == 'coordinate':
+                if state.get('coordinator_profile') == SCOPED_COORDINATOR:
+                    inputs = self._outer_coordination_inputs(task['id'])
+                    if inputs.get('pending'):
+                        return
+                    ticket = inputs.get('ticket')
+                    if ticket is not None and (ticket['status'] != 'AUTHORIZED' or any(
+                            ticket[key] != outer[key] for key in ('goal_revision','acceptance_revision','mandate_revision'))):
+                        pause_or_block(task,'工单已有变更，等待确认当前目标和授权')
+                        return
                 state.setdefault('rechecks',0)
                 details['coordination_context'] = self._outer_coordination_context(task)
             self._enqueue(task,phase,int(remaining),**details)
@@ -350,6 +366,8 @@ class GoalEngine:
         binding = outer_binding(task)
         if binding is not None:
             assignment['outer_binding'] = binding
+            if phase == 'review' and state.get('coordination_review_items'):
+                assignment['additional_review_items'] = state['coordination_review_items']
         state['assignments'].append(assignment)
         if task['status']!='executing':
             task.update(status='queued',error='')
@@ -410,6 +428,10 @@ class GoalEngine:
         def apply(task):
             assignment = current(task,key)
             if assignment and not flow(task)['stop_requested']:
+                if (not assignment.get('send_attempted') and self._stale_coordination_dispatch(task,assignment)):
+                    assignment['state'] = 'cancelled'
+                    self._expire_coordination_dispatch(task,assignment)
+                    return
                 assignment['send_attempted'] = True
         return self.store.change(ticket, apply)
 
@@ -419,6 +441,8 @@ class GoalEngine:
             if (assignment and not assignment.get('send_attempted')
                     and flow(task)['stop_requested']):
                 assignment['state'] = 'cancelled'
+                if assignment.get('coordination_proposal'):
+                    self._expire_coordination_dispatch(task,assignment)
                 self._after_stop(task,key)
         return self.store.change(ticket, apply)
 
@@ -450,7 +474,7 @@ class GoalEngine:
         return self.store.change(ticket,apply)
 
     def settle(self, ticket, key, run, transport, report=None, *, recovery_checkpoint=None,
-               recovery_error=None):
+               recovery_error=None, confirmed_unstarted=False):
         if transport not in ('done','nothing','cancelled'):
             raise Problem('原轮尚未进入可核对的终态',409)
         def apply(task):
@@ -471,7 +495,30 @@ class GoalEngine:
                      and report.get('version') == assignment['version']
                      and report.get('outer_binding') == binding)
             assignment.update(state='settled', transport=transport, settled_at=now(), report=report if valid else None)
+            if (valid and report.get('coordination_dispatch_stale') is True
+                    and assignment.get('coordination_proposal')):
+                self._expire_coordination_dispatch(task,assignment)
+                if state['stop_requested']:
+                    self._after_stop(task,key)
+                else:
+                    task.update(status='queued',error='')
+                return
             if state['stop_requested']:
+                proposal_id = assignment.get('coordination_proposal')
+                if confirmed_unstarted and transport == 'cancelled' and report is None and proposal_id:
+                    coordinator = next((row for row in state['assignments'] if row['id'] == proposal_id), {})
+                    tool_evidence = coordinator.get('coordination_context',{}).get('tool_evidence',{})
+                    candidate = tool_evidence.get('read_verified_artifacts',{}).get('current_candidate',{})
+                    if (recovery_checkpoint and recovery_checkpoint == state['checkpoint']
+                            and recovery_checkpoint['digest'] == candidate.get('artifact_sha256')):
+                        self._expire_coordination_dispatch(task,assignment)
+                    else:
+                        # 未执行的派工不能把外部改动登记成原轮的产物。
+                        state['validation']['recovery_blocked'] = True
+                    self._after_stop(task,key)
+                    return
+                if assignment.get('coordination_context',{}).get('coordinator_profile') == SCOPED_COORDINATOR:
+                    self._record_scoped_proposal(task,assignment,report if valid else None,'stale','工单已暂停')
                 if transport == 'done' and valid:
                     self._charge(task, assignment, report)
                     if assignment['phase']=='package' and not report.get('error'):
@@ -497,6 +544,15 @@ class GoalEngine:
                 return
             task.update(status='queued',error='')
             self._charge(task, assignment, report if valid else None)
+            coordination_context = assignment.get('coordination_context',{})
+            scoped = coordination_context.get('coordinator_profile') == SCOPED_COORDINATOR
+            if scoped and coordination_context['guard'] != self._coordination_guard(task):
+                self._record_scoped_proposal(task,assignment,report if valid else None,'stale',
+                                             '协调期间工单或反馈已变化')
+                return
+            if scoped and (transport != 'done' or not valid or report.get('error')):
+                self._record_scoped_proposal(task,assignment,report if valid else None,'rejected',
+                                             '未收到可验证的协调提案')
             if transport != 'done' or not valid:
                 if recovery_error:
                     pause_or_block(task,recovery_error)
@@ -516,6 +572,9 @@ class GoalEngine:
                 self._failed_assignment(task,assignment,'执行终态已确认，业务回执缺失')
                 return
             if report.get('error'):
+                if assignment.get('coordination_proposal') and report.get('checkpoint_mismatch') is True:
+                    pause_or_block(task,'待执行的协调动作与已核对的工作区版本不一致')
+                    return
                 if binding and assignment['phase'] in ('execute','repair') and recovery_checkpoint:
                     state['checkpoint'] = recovery_checkpoint
                     self._recover(task,assignment,'实施轮次失败，先核对原派工的文件')
@@ -535,6 +594,8 @@ class GoalEngine:
                     state['validation'] = {'planning_feedback':reason}
                     self._recover(task,assignment,reason)
                 else:
+                    if assignment.get('coordination_context',{}).get('coordinator_profile') == SCOPED_COORDINATOR:
+                        self._record_scoped_proposal(task,assignment,report,'rejected',reason)
                     pause_or_block(task,reason)
         return self.store.change(ticket, apply)
 
@@ -663,8 +724,13 @@ class GoalEngine:
                 planned['steps'] = completed + planned['steps']
             decision(task,'plan_saved',assignment=assignment['id'],revision=revision)
             from copy import deepcopy
-            state['revisions'].append({'version':revision,'plan':deepcopy(planned),'reason':state['validation'],
-                                       'previous':task['version'] if phase=='replan' else None})
+            entry = {'version':revision,'plan':deepcopy(planned),'reason':state['validation'],
+                     'previous':task['version'] if phase=='replan' else None}
+            if state.get('coordinator_profile') == SCOPED_COORDINATOR:
+                entry['mandate_revision'] = state['outer']['mandate_revision']
+                if phase == 'replan':
+                    state['coordination_review_items'] = self._replan_review_items(task)
+            state['revisions'].append(entry)
             task.update(plan=planned,version=revision)
             if phase == 'plan' and state.get('outer'):
                 state['stage'] = 'execute'
@@ -685,6 +751,7 @@ class GoalEngine:
             checkpoint = report['checkpoint']
             if not isinstance(checkpoint,dict) or not checkpoint.get('digest'):
                 raise Problem('缺少实际工作区检查点')
+            self._verify_retained_artifacts(task, checkpoint)
             if state.get('workspace_base'):
                 if report.get('workspace_id')!=assignment['id']:
                     raise Problem('缺少独立工作区检查点')
@@ -781,6 +848,7 @@ class GoalEngine:
         if (report['verifier_profile'] != 'outer-v2' or not isinstance(checkpoint,dict) or not baseline
                 or checkpoint != baseline or not checkpoint.get('digest')):
             raise Problem('独立验收和实施检查点必须绑定同一交付版本')
+        self._verify_retained_artifacts(task,checkpoint)
         rows = report['validation']['checks']
         passed = validate_results(contract,task['plan'],assignment,checkpoint,rows)
         final = task['step']+1 == len(task['plan']['steps'])
@@ -802,6 +870,8 @@ class GoalEngine:
                 or delivery.get('artifact_sha256')!=checkpoint['digest']
                 or delivery.get('level') != ('goal' if final else 'stage')):
             raise Problem('缺少与当前验收版本和派工匹配的归档')
+        state.pop('coordination_retention',None)
+        state.pop('coordination_review_items',None)
         from superagent.outer_verification import needs_human_signoff
         if final and needs_human_signoff(contract):
             reviews = state.setdefault('artifact_reviews', [])
@@ -822,6 +892,9 @@ class GoalEngine:
         task['step'] += 1
         state['repairs'] = 0
         if not final:
+            if state.get('coordinator_profile') == SCOPED_COORDINATOR:
+                delivery = dict(delivery, step=assignment['step'], plan_revision=assignment['version'],
+                                evidence_refs=[row['evidence_ref'] for row in rows])
             state.setdefault('stage_deliveries',[]).append(delivery)
             state['outcome'] = 'PARTIAL_DELIVERY'
             state['stage'] = 'execute'
@@ -907,26 +980,269 @@ class GoalEngine:
             'verified_stages':stage_evidence,
             'evidence_refs':request['evidence_refs'],'available_actions':actions,
         }
+        if state.get('coordinator_profile') == SCOPED_COORDINATOR:
+            self._scope_coordination_context(task,context,rows,failed)
         context['input_snapshot_revision'] = digest([context,outer_binding(task)])
         return context
+
+    @staticmethod
+    def _minimum_review_seconds(task, *, additional=None):
+        from superagent.outer_verification import selected_criteria
+        state = flow(task)
+        contract = state['outer']['acceptance_contract']
+        if additional is None:
+            additional = state.get('coordination_review_items', ())
+        criteria = selected_criteria(contract,task['plan'],task['step'],additional=additional)
+        return 10 + 9 * sum(row['verifier_id']=='python-json-cli' for row in criteria)
+
+    @staticmethod
+    def _replan_review_items(task):
+        from superagent.outer_verification import selected_criteria
+        plan, step = task['plan'], task['step']
+        prior = {key for stage in plan['steps'][:step] for key in stage['acceptance']}
+        criteria = selected_criteria(flow(task)['outer']['acceptance_contract'],plan,step,additional=prior)
+        return [row['criterion_id'] for row in criteria]
+
+    def _scope_coordination_context(self, task, context, rows, failed):
+        from superagent.outer_intake import _model_text
+        from superagent.outer_verification import SCOPED_COORDINATOR_TOOLS
+        state = flow(task)
+        plan = task['plan']
+        checkpoint = state.get('checkpoint') or {}
+        failed_criteria = {row['criterion_id'] for row in failed}
+        affected_steps = [i for i, step in enumerate(plan['steps'][:task['step']+1])
+                          if i == task['step'] or failed_criteria.intersection(step['acceptance'])]
+        verification_items = [row['criterion_id'] for row in rows]
+        criteria = state['outer']['acceptance_contract']['criteria']
+        criterion_paths = {row['criterion_id']:row['test_spec'].get('path',row['test_spec'].get('script'))
+                           for row in criteria}
+        failing_paths = {criterion_paths[row['criterion_id']] for row in rows if row['status']!='PASS'}
+        passed_paths = {criterion_paths[row['criterion_id']] for row in rows if row['status']=='PASS'}
+        verified_stage_versions = self._verified_stage_versions(state,criterion_paths)
+        files = checkpoint.get('files',{})
+        unchanged = {path for version in verified_stage_versions for path,value in version['files'].items()
+                     if files.get(path) == value}
+        retained = (passed_paths | unchanged) - failing_paths
+        artifact_versions = {path:files[path] for path in checkpoint.get('artifacts',[]) if path in retained}
+        context['retained_outputs'] = list(artifact_versions)
+        if not failed or not checkpoint.get('digest'):
+            context['available_actions'] = ['REQUEST_APPROVAL','BLOCKED']
+        minimum_review_seconds = self._minimum_review_seconds(task)
+        replan_steps = list(range(task['step']+1))
+        replan_items = self._replan_review_items(task)
+        replan_review_seconds = self._minimum_review_seconds(task,additional=replan_items)
+        followup_rounds = {'CONTINUE':1, 'REPAIR':2, 'REPLAN':3}
+        remaining = context['remaining_budget_seconds']
+        remaining_calls = None if task.get('max_calls') is None else max(0,task['max_calls'] - task['calls'])
+        for action, rounds in followup_rounds.items():
+            review_seconds = replan_review_seconds if action == 'REPLAN' else minimum_review_seconds
+            if (action in context['available_actions']
+                    and (remaining < review_seconds + 10 * (rounds - 1)
+                         or (remaining_calls is not None and remaining_calls < rounds))):
+                context['available_actions'].remove(action)
+        affected_assignments = {delivery['assignment'] for delivery in state.get('stage_deliveries',[])
+                                if delivery.get('step') in affected_steps}
+        budget = {'seconds':remaining, 'calls':remaining_calls,
+                  'mandate_revision':context['mandate_revision'],
+                  'minimum_review_seconds':minimum_review_seconds,
+                  'replan_review_seconds':replan_review_seconds}
+        context.update(
+            coordinator_profile=SCOPED_COORDINATOR, affected_steps=affected_steps,
+            verification_items=verification_items, artifact_versions=artifact_versions,
+            replan_affected_steps=replan_steps, replan_verification_items=replan_items,
+            guard=self._coordination_guard(task),
+        )
+        revisions = [entry for entry in state['revisions'] if entry.get('mandate_revision') == context['mandate_revision']]
+        # 验收描述在提示中。保留完整计划的哈希，并限制 MCP 中叙述性文字的长度。
+        current_steps = []
+        for index, step in enumerate(plan['steps']):
+            limit = 1000 if index == task['step'] else 400
+            current_steps.append({
+                **{key:step[key] for key in ('title','acceptance','state')},
+                'objective':_model_text(step['objective'],limit),
+                'objective_truncated':len(step['objective']) > limit,
+            })
+        current_plan = dict(plan, summary=_model_text(plan['summary'],800), steps=current_steps,
+                            summary_truncated=len(plan['summary']) > 800)
+        previous_plans = [
+            {'version':entry['version'], 'previous':entry.get('previous'), 'plan_sha256':digest(entry['plan']),
+             'plan':{'summary':_model_text(entry['plan']['summary'],400),
+                     'steps':[{key:step[key] for key in ('title','acceptance','state')}
+                              for step in entry['plan']['steps']]}}
+            for entry in revisions[-3:-1]
+        ]
+        context['tool_evidence'] = dict(zip(SCOPED_COORDINATOR_TOOLS, (
+            {'failure':context['failure'], 'checks':context['verification_checks'],
+             'affected_steps':affected_steps, 'verification_items':verification_items,
+             'replan_affected_steps':replan_steps, 'replan_verification_items':replan_items,
+             'prior_stage_assignments_to_reverify':sorted(affected_assignments),
+             'recent_failed_reviews':self._recent_failed_reviews(task)},
+            {'current_candidate':{'artifact_sha256':checkpoint.get('digest')},
+             'retainable_file_versions':artifact_versions, 'verified_stages':verified_stage_versions},
+            {'current':current_plan, 'current_plan_sha256':digest(plan), 'previous':previous_plans},
+            budget,
+        )))
+
+    @staticmethod
+    def _verified_stage_versions(state, criterion_paths):
+        assignments = {row['id']:row for row in state['assignments']}
+        versions = []
+        for delivery in state.get('stage_deliveries',[]):
+            source = assignments[delivery['assignment']]['report']
+            passed = [row for row in source['validation']['checks'] if row['status']=='PASS']
+            paths = {criterion_paths[row['criterion_id']] for row in passed}
+            versions.append({
+                **{key:delivery[key] for key in ('assignment','artifact_sha256','step','plan_revision')},
+                'files':{path:value for path,value in delivery['files'].items() if path in paths},
+                'evidence_refs':[row['evidence_ref'] for row in passed],
+            })
+        return versions
+
+    @staticmethod
+    def _recent_failed_reviews(task):
+        state = flow(task)
+        latest = state['coordination']['assignment']
+        evaluated = {row['assignment'] for row in state['decisions']
+                     if row['kind']=='evaluated' and row.get('passed') is False}
+        recent = []
+        for assignment in reversed(state['assignments']):
+            if assignment['id'] not in evaluated or assignment['id']==latest:
+                continue
+            report = assignment.get('report') or {}
+            failed = [row for row in (report.get('validation') or {}).get('checks',[])
+                      if isinstance(row,dict) and row.get('status') in ('FAIL','ERROR','NOT_RUN','INCONCLUSIVE')
+                      and all(key in row for key in ('criterion_id','status','evidence_ref','artifact_sha256'))]
+            if failed:
+                recent.append({'assignment':assignment['id'],'run':assignment['run'],
+                               'step':assignment['step'],'plan_revision':assignment['version'],
+                               'checks':[{key:row[key] for key in ('criterion_id','status','evidence_ref','artifact_sha256')}
+                                         for row in failed]})
+            if len(recent)==3:
+                break
+        return recent
+
+    def _outer_coordination_inputs(self, ticket_id):
+        with self.store.connect() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='outer_tickets'").fetchone():
+                return {}
+            row = db.execute('SELECT body FROM outer_tickets WHERE id=?',(ticket_id,)).fetchone()
+            if not row:
+                return {}
+            ticket = json.loads(row[0])
+            pending = [value[0] for value in db.execute(
+                "SELECT id FROM outer_events WHERE ticket=? AND state IN ('PENDING','RUNNING') "
+                "AND json_extract(body,'$.type') IN ('message','selection') ORDER BY id",(ticket_id,))]
+        return {
+            'ticket':{key:ticket[key] for key in ('revision','goal_revision','acceptance_revision',
+                                                 'mandate_revision','status')},
+            'pending':pending,
+        }
+
+    def _coordination_guard(self, task):
+        state = flow(task)
+        return digest({
+            'authorization':outer_binding(task), 'mandate':state['mandate'],
+            'plan_revision':task['version'], 'plan':task['plan'], 'step':task['step'],
+            'checkpoint':state['checkpoint'], 'coordination':state['coordination'],
+            'validation':state['validation'], 'stage_deliveries':state.get('stage_deliveries',[]),
+            'user_inputs':self._coordination_source_revision(task),
+        })
+
+    def _coordination_source_revision(self, task):
+        return digest([
+            self.store.notes(task['id'],for_board=True),
+            self._outer_coordination_inputs(task['id']),
+            flow(task)['stop_generation'],
+        ])
+
+    def _stale_coordination_dispatch(self, task, assignment):
+        original = assignment.get('coordination_source_revision')
+        return original is not None and original != self._coordination_source_revision(task)
+
+    @staticmethod
+    def _expire_coordination_dispatch(task, assignment):
+        state = flow(task)
+        proposal_id = assignment['coordination_proposal']
+        record = state['coordination_proposals'][proposal_id]
+        record['dispatch_disposition'] = 'stale_before_launch'
+        action = record['proposal']['action']
+        if action == 'REPLAN':
+            state['replans'] -= 1
+            state['repairs'] = record['previous_repairs']
+        elif action == 'REPAIR':
+            state['repairs'] -= 1
+        elif action == 'CONTINUE':
+            state['rechecks'] -= 1
+        state.pop('coordination_retention',None)
+        state['validation'].pop('coordination',None)
+        state['stage'] = 'coordinate'
+        task['phase'] = 'review'
+        decision(task,'coordination_dispatch_stale',assignment=assignment['id'],proposal=proposal_id)
+
+    @staticmethod
+    def _record_scoped_proposal(task, assignment, report, disposition, reason=None, dispatch=None):
+        state = flow(task)
+        ledger = state.setdefault('coordination_proposals',{})
+        evidence = (report or {}).get('evidence')
+        context = assignment['coordination_context']
+        ledger[assignment['id']] = {
+            'assignment':assignment['id'], 'run':assignment['run'], 'at':now(),
+            'input_snapshot_revision':context['input_snapshot_revision'], 'guard':context['guard'],
+            'binding':assignment['outer_binding'], 'disposition':disposition,
+            'proposal':(report or {}).get('result'), 'invocation':evidence, 'reason':reason,
+            'dispatch': dispatch,
+        }
+        if disposition == 'stale':
+            decision(task,'coordination_stale',assignment=assignment['id'],run=assignment['run'],reason=reason)
+
+    @staticmethod
+    def _verify_retained_artifacts(task, checkpoint):
+        retained = flow(task).get('coordination_retention') or []
+        if retained and any((checkpoint.get('files') or {}).get(item['path']) != item['sha256']
+                            for item in retained):
+            raise Problem('实施改动了协调决定要求保留的文件版本')
+
+    @staticmethod
+    def _validate_scoped_invocation(invocation, context):
+        tools = invocation.get('tools')
+        session = invocation.get('session_id')
+        expected = context['tool_evidence']
+        if (not isinstance(session,str) or not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', session)
+                or not isinstance(tools,list) or len(tools)!=len(expected)
+                or any(not isinstance(entry,dict) or entry.get('name') not in expected
+                       or entry.get('status')!='completed'
+                       or entry.get('evidence_sha256')!=digest(expected[entry['name']]) for entry in tools)
+                or {entry['name'] for entry in tools}!=set(expected)):
+            raise Problem('协调证据未绑定本轮 Codex 会话和真实工具读取')
 
     def _apply_outer_coordination(self, task, assignment, report):
         from superagent.outer_verification import validate_coordination
         state = flow(task)
         context = dict(assignment['coordination_context'])
+        scoped = context.get('coordinator_profile') == SCOPED_COORDINATOR
         proposal = validate_coordination(report['result'],context)
         invocation = report['evidence']
         if (invocation.get('snapshot_revision') != context['input_snapshot_revision']
                 or invocation.get('invocation_id') != assignment['id']):
             raise Problem('协调建议未绑定有效的模型调用')
+        if scoped:
+            self._validate_scoped_invocation(invocation,context)
+            if any(row['id'] != assignment['id']
+                   and ((row.get('report') or {}).get('evidence') or {}).get('session_id') == invocation['session_id']
+                   for row in state['assignments']):
+                raise Problem('协调提案必须使用本轮独立的 Codex 会话')
         current_context = self._outer_coordination_context(task)
         action = proposal['action']
         if (action not in current_context['available_actions'] or
                 (action in ('CONTINUE','REPAIR','REPLAN') and task.get('max_calls') is not None
                  and task['calls'] >= task['max_calls'])):
+            if scoped:
+                self._record_scoped_proposal(task,assignment,report,'rejected','剩余预算或动作已变化')
             pause_or_block(task,'协调完成时剩余预算不足或建议已过期',budget=True)
             return
-        decision(task,'coordinated',assignment=assignment['id'],run=assignment['run'],proposal=proposal,
+        previous_repairs = state['repairs']
+        if not scoped:
+            decision(task,'coordinated',assignment=assignment['id'],run=assignment['run'],proposal=proposal,
                  invocation=invocation,correlation_id=state['outer']['correlation_id'])
         if action == 'REQUEST_APPROVAL':
             pause_or_block(task,proposal['reason'])
@@ -946,6 +1262,25 @@ class GoalEngine:
             state['validation'] = dict(state['validation'] or {}, coordination=proposal)
             state['stage'] = action.lower()
             task['phase'] = 'plan' if action=='REPLAN' else 'execute'
+        if scoped:
+            dispatch = None
+            if action in ('CONTINUE','REPAIR','REPLAN'):
+                state['coordination_retention'] = proposal['retained_artifacts']
+                seconds = current_context['remaining_budget_seconds']
+                budget = current_context['tool_evidence']['read_remaining_budget']
+                if action == 'REPLAN':
+                    # 重规划后还需要一轮实际实施和当前及已交付阶段的复验。
+                    seconds -= budget['replan_review_seconds'] + 10
+                elif action == 'REPAIR':
+                    seconds -= budget['minimum_review_seconds']
+                self._enqueue(task,state['stage'],seconds,coordination_proposal=assignment['id'],
+                              coordination_source_revision=self._coordination_source_revision(task))
+                dispatch = state['assignments'][-1]['id']
+            self._record_scoped_proposal(task,assignment,report,'accepted',dispatch=dispatch)
+            if action=='REPLAN':
+                state['coordination_proposals'][assignment['id']]['previous_repairs'] = previous_repairs
+            decision(task,'coordinated',assignment=assignment['id'],run=assignment['run'],proposal=proposal,
+                     invocation=invocation,correlation_id=state['outer']['correlation_id'],dispatch=dispatch)
 
     @staticmethod
     def _accept_checkpoint(task, assignment, checkpoint):
@@ -1023,10 +1358,16 @@ class GoalEngine:
             db.execute('BEGIN IMMEDIATE')
             task = json.loads(db.execute('SELECT body FROM tasks WHERE id=?',(ticket,)).fetchone()[0])
             assignment = current(task,key)
+            if (assignment and assignment['run'] == run and self._stale_coordination_dispatch(task,assignment)):
+                raise StaleCoordination('协调后新收到工单反馈，原派工未启动',409)
             if (not assignment or assignment['run'] != run or task['paused']
                     or flow(task)['stop_requested'] or assignment['version'] != task['version']
                     or assignment['mandate_digest'] != digest(flow(task)['mandate'])
                     or assignment.get('verification_digest',digest(None)) != digest(flow(task).get('verification_contract'))
                     or assignment.get('outer_binding') != outer_binding(task)):
                 raise Problem('派工已停止或变更，未放行模型',409)
+            context = assignment.get('coordination_context',{})
+            if (context.get('coordinator_profile') == SCOPED_COORDINATOR
+                    and context['guard'] != self._coordination_guard(task)):
+                raise Problem('协调依据已变化，未放行原版本工具读取',409)
             yield

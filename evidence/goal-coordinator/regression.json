@@ -1,0 +1,332 @@
+{
+  "synthetic": true,
+  "entry": "POST /api/tasks",
+  "mode": "regression",
+  "passed": true,
+  "formal_source": {
+    "original_sha256": {
+      "server.py": "a11018f1012d98b3c467a4788eaa02105f1b106858a3ff3252163b528324758d",
+      "tasks.js": "5f1954081d731cc25cbbd4bec690a39a152d5ffe0f652e0c8690c4672a539766",
+      "index.html": "6b2d87bd3c3438291dc366ae9c9d058c5d1af0290318b5e6a854e63baf21b3df",
+      "workbench.py": "ca3a4f72b38abbe081d59074737e4bf6b2668f0721dc9bf0c1a4100e15d95d46"
+    },
+    "copied_sha256": {
+      "server.py": "af1a167a1b4fb6d228b117367ee67b1910710a51bf617fbdac85feaebdb7dcd3",
+      "tasks.js": "ad57fae3b388b4fa80c65586e8f3aa95e6b587fce60a6881500949cdbe0bd4ce",
+      "index.html": "be7996d45804443569965e0ed15a224b9bcdbdd90465862bda7b07269f4f9729",
+      "workbench.py": "ac5c6af815cbbf6acbb2e2c93916ccdda5fb7ec77728b0d7c54ec3d56ef84cd8"
+    },
+    "copied_paths_examined": 109,
+    "runtime_credentials_local_config_absent": true
+  },
+  "source_sha256": {
+    "server.py": "af1a167a1b4fb6d228b117367ee67b1910710a51bf617fbdac85feaebdb7dcd3",
+    "outer_workbench.py": "02f37f7f6801862f9bc25940774681934a11c9be53d6c7c20b53979b0520881d",
+    "superagent/goal_engine.py": "06822e8e3c2a3e1d7ec32e19a71d3f81cef9d881e1280b8199e5594c14fc2d21",
+    "superagent/goal_runtime.py": "089b3307400a8f06311431cfcedfd192350fa477872b434899023001eac79c06",
+    "superagent/outer_model.py": "d82322407310e9cda08ae8b31b02e1d0f900ee9db4e669e818ea8a56b4e33d01",
+    "superagent/coordination_tools.py": "7ce70115c682bfc5aaf39753b346c2dbe2fba7af7feacf782dea37e6b656a63a"
+  },
+  "ticket": "wb-79a42fb2e5624e09b9ce29662f203fca",
+  "criteria": {
+    "search.py": [
+      "search-matches-variant",
+      "search-no-matches-control",
+      "search-sample-matches",
+      "search-sample-no-matches"
+    ],
+    "update.py": [
+      "update-add-remove-variant",
+      "update-deduplicate-variant",
+      "update-sample-add-remove",
+      "update-sample-deduplicate"
+    ]
+  },
+  "wrong_approval_version_rejected": true,
+  "approved": {
+    "goal_revision": 1,
+    "acceptance_revision": 1,
+    "revision": 3
+  },
+  "stage_one": {
+    "checks": {
+      "search-sample-matches": "PASS",
+      "search-matches-variant": "PASS",
+      "search-sample-no-matches": "PASS",
+      "search-no-matches-control": "PASS"
+    },
+    "artifact_sha256": "669fbb7039f3c9e5954cccd918a222671c6b3a9fcd33a278b6d584afb2c98e47"
+  },
+  "worker_restart": {
+    "assignment": "2f9c010a89d4407b9a428949b519ff31",
+    "run": 4,
+    "prior_transport": "claimed",
+    "prior_report": false,
+    "process_changed": true
+  },
+  "order_duplicate": true,
+  "approval_duplicate": true,
+  "regression": {
+    "checks": {
+      "search-sample-matches": "FAIL",
+      "search-matches-variant": "FAIL",
+      "search-sample-no-matches": "FAIL",
+      "search-no-matches-control": "FAIL",
+      "update-sample-add-remove": "PASS",
+      "update-add-remove-variant": "PASS",
+      "update-sample-deduplicate": "PASS",
+      "update-deduplicate-variant": "PASS"
+    },
+    "fault": {
+      "assignment": "2f9c010a89d4407b9a428949b519ff31",
+      "run": 4,
+      "path": "search.py",
+      "before": "c50f0a00b62d4465288b0151c3cb610841ea8fd70533b1158891dc8833d6ea14",
+      "after": "a171f0672def348bb01c63e16b5d35e209a1743d570c738f42405664f1d739e9",
+      "checkpoint": "96026eacd690e869a5d3b519cd43c17e39783897ec211a2635fc37ca3d35d2b6",
+      "unaffected_update_sha256": "3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139"
+    },
+    "failed_review": "b433e9b584f1459a8c087111d49bceea",
+    "wrong_candidate_download_status": 404
+  },
+  "coordination": [
+    {
+      "id": "b5a1ef8946844568a031e43429c9799e",
+      "run": 6,
+      "version": 1,
+      "result": {
+        "action": "REPAIR",
+        "affected_steps": [
+          0,
+          1
+        ],
+        "approval_required": false,
+        "evidence_refs": [
+          "sha256:80a9733e0cd58d9e769eb1a0dee1153e7105842baabfa22572c9d438075fd441",
+          "sha256:65191ecfa3cf77c9cabe648c1023a34d844d759e0d3073c7663e5136dde41c5e",
+          "sha256:9504776da986991b3edc94e34c0d676052a6915e9c3be5114d4b9356e51cf63d",
+          "sha256:d84d9e563b1079b53a409676157c33608078f5dd4ca63267d6faeced622d266e"
+        ],
+        "input_snapshot_revision": "f1faaf56cb68383007ce1f6f062e34e7e5a01c4256de2329820dc3f429d0ea92",
+        "plan_change": "重新派工覆盖第 0、1 步。第 0 步以先前验过的 search.py 版本 c50f0a00b62d4465288b0151c3cb610841ea8fd70533b1158891dc8833d6ea14 为基线，对照当前候选及实际输出，修复前缀查询和 JSON 输出的回归。第 1 步核对 update.py 的文件哈希并沿用已验版本。在最终组合产物上从两个命令行入口隔离运行全部八项验收，逐项解析标准输出并比对完整 JSON。",
+        "reason": "当前候选的 search.py 四项验收均因实际 JSON 与预期不符而失败。第 0 步有独立验过的查询版本可供对照，update.py 的四项验收均通过两次隔离运行。授权版本 1 剩余 3306 秒，可安排本地修复和复验，审查至少需要 82 秒。",
+        "remaining_risk": "失败记录只确认 JSON 不一致，具体原因仍待核对。最终组合产物的八项验收仍待复验。",
+        "retained_artifacts": [
+          {
+            "path": "update.py",
+            "sha256": "3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139"
+          }
+        ],
+        "retained_outputs": [
+          "update.py"
+        ],
+        "schema_version": 2,
+        "scope_change": false,
+        "verification_items": [
+          "search-sample-matches",
+          "search-matches-variant",
+          "search-sample-no-matches",
+          "search-no-matches-control",
+          "update-sample-add-remove",
+          "update-add-remove-variant",
+          "update-sample-deduplicate",
+          "update-deduplicate-variant"
+        ]
+      },
+      "error": null,
+      "evidence": {
+        "elapsed_ms": 28524,
+        "ended_ns": 1795433652404081000,
+        "invocation_id": "b5a1ef8946844568a031e43429c9799e",
+        "model": "gpt-6.2-sol",
+        "prompt_version": 7,
+        "snapshot_revision": "f1faaf56cb68383007ce1f6f062e34e7e5a01c4256de2329820dc3f429d0ea92",
+        "started_ns": 1795433623880436000,
+        "tools": [
+          {
+            "evidence_sha256": "dbd9365e0984ebd356dc88a1908be80cfea61583697e221e16a262cb8749ebb6",
+            "name": "read_verified_artifacts",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "3acf446663052e5d217dbe7383f892f0a253b1a0022d2f9b1b7f827173e8897b",
+            "name": "read_failure_evidence",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "eaf504910a096a5680525497bc21f7cfe6918062c72139777b3b3e99bc100173",
+            "name": "read_plan_versions",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "0d91f1651eae9ae868073812bd5cf6419acd02ef98e1e0781eee9a4b9e47655d",
+            "name": "read_remaining_budget",
+            "status": "completed"
+          }
+        ],
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 16512,
+          "input_tokens": 53508,
+          "output_tokens": 939,
+          "reasoning_output_tokens": 80
+        },
+        "session_sha256": "58c8409d646fe7a4c47f94e2df92921a1a44ba94289a28e2fd229881acfb3bef"
+      }
+    }
+  ],
+  "call_trace": {
+    "call": "b5a1ef8946844568a031e43429c9799e",
+    "tools": [
+      {
+        "evidence_sha256": "dbd9365e0984ebd356dc88a1908be80cfea61583697e221e16a262cb8749ebb6",
+        "name": "read_verified_artifacts",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "3acf446663052e5d217dbe7383f892f0a253b1a0022d2f9b1b7f827173e8897b",
+        "name": "read_failure_evidence",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "eaf504910a096a5680525497bc21f7cfe6918062c72139777b3b3e99bc100173",
+        "name": "read_plan_versions",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "0d91f1651eae9ae868073812bd5cf6419acd02ef98e1e0781eee9a4b9e47655d",
+        "name": "read_remaining_budget",
+        "status": "completed"
+      }
+    ],
+    "trace": {
+      "run": 6,
+      "decision": {
+        "action": "REPAIR",
+        "affected_steps": [
+          0,
+          1
+        ],
+        "approval_required": false,
+        "evidence_refs": [
+          "sha256:80a9733e0cd58d9e769eb1a0dee1153e7105842baabfa22572c9d438075fd441",
+          "sha256:65191ecfa3cf77c9cabe648c1023a34d844d759e0d3073c7663e5136dde41c5e",
+          "sha256:9504776da986991b3edc94e34c0d676052a6915e9c3be5114d4b9356e51cf63d",
+          "sha256:d84d9e563b1079b53a409676157c33608078f5dd4ca63267d6faeced622d266e"
+        ],
+        "input_snapshot_revision": "f1faaf56cb68383007ce1f6f062e34e7e5a01c4256de2329820dc3f429d0ea92",
+        "plan_change": "重新派工覆盖第 0、1 步。第 0 步以先前验过的 search.py 版本 c50f0a00b62d4465288b0151c3cb610841ea8fd70533b1158891dc8833d6ea14 为基线，对照当前候选及实际输出，修复前缀查询和 JSON 输出的回归。第 1 步核对 update.py 的文件哈希并沿用已验版本。在最终组合产物上从两个命令行入口隔离运行全部八项验收，逐项解析标准输出并比对完整 JSON。",
+        "reason": "当前候选的 search.py 四项验收均因实际 JSON 与预期不符而失败。第 0 步有独立验过的查询版本可供对照，update.py 的四项验收均通过两次隔离运行。授权版本 1 剩余 3306 秒，可安排本地修复和复验，审查至少需要 82 秒。",
+        "remaining_risk": "失败记录只确认 JSON 不一致，具体原因仍待核对。最终组合产物的八项验收仍待复验。",
+        "retained_artifacts": [
+          {
+            "path": "update.py",
+            "sha256": "3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139"
+          }
+        ],
+        "retained_outputs": [
+          "update.py"
+        ],
+        "schema_version": 2,
+        "scope_change": false,
+        "verification_items": [
+          "search-sample-matches",
+          "search-matches-variant",
+          "search-sample-no-matches",
+          "search-no-matches-control",
+          "update-sample-add-remove",
+          "update-add-remove-variant",
+          "update-sample-deduplicate",
+          "update-deduplicate-variant"
+        ]
+      },
+      "subsequent_runs": [
+        {
+          "phase": "repair",
+          "assignment": "4e9abae5ab9345fbb06d77772f30d48c",
+          "run": 7,
+          "state": "settled"
+        },
+        {
+          "phase": "review",
+          "assignment": "aa3702c1d67344e499d696e13a427f32",
+          "run": 8,
+          "state": "settled",
+          "passed": true,
+          "delivery_digest": "67793a79d52e1aa387cfda0ea9946accd86f92b61f5eff8a6a0a2313d4316b7a"
+        }
+      ],
+      "disposition": "accepted",
+      "reason": null,
+      "dispatch": "4e9abae5ab9345fbb06d77772f30d48c",
+      "dispatch_disposition": null
+    }
+  },
+  "proposal_duplicate": {
+    "assignment": "b5a1ef8946844568a031e43429c9799e",
+    "run": 6,
+    "dispatch": "4e9abae5ab9345fbb06d77772f30d48c",
+    "tools": [
+      {
+        "evidence_sha256": "dbd9365e0984ebd356dc88a1908be80cfea61583697e221e16a262cb8749ebb6",
+        "name": "read_verified_artifacts",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "3acf446663052e5d217dbe7383f892f0a253b1a0022d2f9b1b7f827173e8897b",
+        "name": "read_failure_evidence",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "eaf504910a096a5680525497bc21f7cfe6918062c72139777b3b3e99bc100173",
+        "name": "read_plan_versions",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "0d91f1651eae9ae868073812bd5cf6419acd02ef98e1e0781eee9a4b9e47655d",
+        "name": "read_remaining_budget",
+        "status": "completed"
+      }
+    ]
+  },
+  "unseen_inputs": [
+    {
+      "id": "unseen-search",
+      "passed": true,
+      "detail": "expected JSON matched in both isolated executions"
+    },
+    {
+      "id": "unseen-update",
+      "passed": true,
+      "detail": "expected JSON matched in both isolated executions"
+    }
+  ],
+  "delivery": {
+    "checks": {
+      "search-sample-matches": "PASS",
+      "search-matches-variant": "PASS",
+      "search-sample-no-matches": "PASS",
+      "search-no-matches-control": "PASS",
+      "update-sample-add-remove": "PASS",
+      "update-add-remove-variant": "PASS",
+      "update-sample-deduplicate": "PASS",
+      "update-deduplicate-variant": "PASS"
+    },
+    "artifact_sha256": "67793a79d52e1aa387cfda0ea9946accd86f92b61f5eff8a6a0a2313d4316b7a",
+    "mandate_revision": 1,
+    "files": {
+      "search.py": "6847d4c6d1d7b00b230c63491ef92e54dcecf8e34dd0becbe51e8e9251b291fc",
+      "update.py": "3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139",
+      "xcrun_db": "767b97e4e6c44f3e9a7b2496c54bcc1c3901650873f4fc67d811e051bd9f6e8b"
+    },
+    "versioned_sample": {
+      "manifest_sha256": "95970dc206c2d4cd3cace5b793cd62b39f134d49307648ec9bc4c516883ad3b3",
+      "files": {
+        "update.py": "3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139",
+        "search.py": "6847d4c6d1d7b00b230c63491ef92e54dcecf8e34dd0becbe51e8e9251b291fc"
+      }
+    }
+  },
+  "formal_listener_pid_unchanged": true,
+  "recovered_checkpoint": "96026eacd690e869a5d3b519cd43c17e39783897ec211a2635fc37ca3d35d2b6"
+}

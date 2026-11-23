@@ -27,13 +27,15 @@ python3 -B 网页工作台/server.py --port 43351 \
   --goal-pilot --outer-intelligence
 ```
 
+启用仓库版的普通建单试点时，另加 `--outer-workbench-entry`。正式安装源码生成的隔离副本开放普通 Web 建单试点，沿用正式源码现有的飞书桥协议。签名 V2 飞书桥使用仓库版服务。
+
 从王国地图进入「任务工作台」，或打开 [/workbench](http://127.0.0.1:43351/workbench)。如已有本机原版画册，可给看板命令追加 `--odyssey-assets "/绝对路径/assets/odyssey"`。
 
 在浏览器打开 [本机试点看板](http://127.0.0.1:43351/)。看板处理 V2 接单与人工决定，协调器负责推进派工及对账。Hub 的 `workbench.goal.assignment` 路由指向本机 Worker。启动器命令含历史 `--verify csv-v1` 参数，V2 派工由内嵌批准绑定选择自己的验收契约。V2 使用每张工单的契约，启动参数中无需提供固定契约或启用 V1 团队试点。
 
 查看页面和空工单状态只涉及本机。提交需求后，看板可启动真实 Codex 接单判断。待批准卡展示目标、限制、逐项验收与预算。批准后通过同一工单查看记录，并核对实际归档的文件和逐项证据。若需要独立飞书试点，为上述看板进程附加 `--feishu-socket` 和 `--feishu-decision-key`，使用本人私有目录与独立桥配置，密钥要求为本人拥有且无组或其他用户权限的 32 字节文件。现役飞书桥和现役看板使用各自的目录与配置。
 
-若本机通过已启用的回环 HTTP 代理连接 ChatGPT，可在启动看板前将 `AUTOLOOP_OUTER_PROXY_PORT` 设为该代理的实际端口。外层 Codex CLI 将通过 `127.0.0.1` 上的此端口建立 HTTPS 连接。默认直接连接。这个设置只影响模型传输，模型仍按只读、无工具方式启动。
+若本机通过已启用的回环 HTTP 代理连接 ChatGPT，可在启动看板前将 `AUTOLOOP_OUTER_PROXY_PORT` 设为该代理的实际端口。外层 Codex CLI 将通过 `127.0.0.1` 上的此端口建立 HTTPS 连接。默认直接连接。接单研判和验收设计读取结构化快照。选择普通入口试点的新单需要目标协调时，协调角色可使用该工单的四项只读 MCP 工具。[首批外层 Agent 试点](../product/goal-coordinator-first-batch.md)
 
 ## 停机和回到上一版
 

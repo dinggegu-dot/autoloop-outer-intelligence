@@ -1,0 +1,193 @@
+{
+  "synthetic": true,
+  "entry": "POST /api/tasks",
+  "mode": "pause-stale",
+  "passed": true,
+  "source_sha256": {
+    "server.py": "af1a167a1b4fb6d228b117367ee67b1910710a51bf617fbdac85feaebdb7dcd3",
+    "outer_workbench.py": "02f37f7f6801862f9bc25940774681934a11c9be53d6c7c20b53979b0520881d",
+    "superagent/goal_engine.py": "06822e8e3c2a3e1d7ec32e19a71d3f81cef9d881e1280b8199e5594c14fc2d21",
+    "superagent/goal_runtime.py": "089b3307400a8f06311431cfcedfd192350fa477872b434899023001eac79c06",
+    "superagent/outer_model.py": "d82322407310e9cda08ae8b31b02e1d0f900ee9db4e669e818ea8a56b4e33d01",
+    "superagent/coordination_tools.py": "7ce70115c682bfc5aaf39753b346c2dbe2fba7af7feacf782dea37e6b656a63a"
+  },
+  "ticket": "wb-e6dc08e963904f449e24cbbb7e9e38bb",
+  "criteria": {
+    "search.py": [
+      "search-candidate-variation",
+      "search-example-matches",
+      "search-example-no-matches",
+      "search-prefix-variation"
+    ],
+    "update.py": [
+      "update-additions-variation",
+      "update-example-add-and-remove",
+      "update-example-duplicate-addition",
+      "update-removal-variation"
+    ]
+  },
+  "wrong_approval_version_rejected": true,
+  "approved": {
+    "goal_revision": 1,
+    "acceptance_revision": 1,
+    "revision": 3
+  },
+  "stage_one": {
+    "checks": {
+      "search-example-matches": "PASS",
+      "search-prefix-variation": "PASS",
+      "search-example-no-matches": "PASS",
+      "search-candidate-variation": "PASS"
+    },
+    "artifact_sha256": "a043d6398e4f228de8009636c3261a2f398154baaed363810f124de6a0c4269a"
+  },
+  "regression": {
+    "checks": {
+      "search-example-matches": "FAIL",
+      "search-prefix-variation": "FAIL",
+      "search-example-no-matches": "FAIL",
+      "search-candidate-variation": "FAIL",
+      "update-example-add-and-remove": "PASS",
+      "update-removal-variation": "PASS",
+      "update-example-duplicate-addition": "PASS",
+      "update-additions-variation": "PASS"
+    },
+    "fault": {
+      "assignment": "45e7db7faed14e75b414915206a1df98",
+      "run": 4,
+      "path": "search.py",
+      "before": "0d8ede6d304c689128379febf1451f423dc19a9f22ea0fc8fbd1c2ed6c16e85c",
+      "after": "a171f0672def348bb01c63e16b5d35e209a1743d570c738f42405664f1d739e9",
+      "checkpoint": "f5b0eed405ea5413e2c03fe623f3614bcb5a167f7d62a66ffe59eb99db385584",
+      "unaffected_update_sha256": "f8da38feab0f103156540552f9965b04e9cac078639e4bca9165ffd0b1497a72"
+    },
+    "failed_review": "b402070c0a2b4741804b94b64af35c89",
+    "wrong_candidate_download_status": 404
+  },
+  "coordination": [
+    {
+      "id": "73e9fb4b70d84d20aa450947238fb28b",
+      "run": 6,
+      "version": 1,
+      "result": {
+        "action": "REPAIR",
+        "affected_steps": [
+          0,
+          1
+        ],
+        "approval_required": false,
+        "evidence_refs": [
+          "sha256:9fe50d621c2a525a53d176d8c4ca4c3255462398e0df801817d99f080fa56180",
+          "sha256:f014a949f31cb3c6720005b6139f96639d767d89c80a2cce1c6b84786e7b3f29",
+          "sha256:393601f8c196453af68ac9af8553f8edd662989103d37b811f34d0c63b655e2c",
+          "sha256:c2a70438a8eb7595d797023209ccf05162c06df6f9df468ec4e7a92cc9ea3497"
+        ],
+        "input_snapshot_revision": "a274fd28a789078a8cdd24bb6cc79eb9f49a1d7ed8a705bce32a253b327e93e1",
+        "plan_change": "重新派工覆盖步骤 0 和 1。步骤 0 对照此前独立验过的 search.py 排查当前候选回归，修复字面前缀筛选、文件名升序和 matches JSON 输出中发现的偏差。步骤 1 复用下列确切版本的 update.py，核对其文件哈希，并在同一修复后候选上通过两个实际命令行入口重跑全部八项验收，解析标准输出并逐项核对数组内容和顺序，包括更新结果的去重。",
+        "reason": "当前合并候选的四项 search.py 验收均出现实际 JSON 与预期不符。步骤 0 的历史版本有独立通过记录，可用于定位回归。当前候选的四项 update.py 验收均在两次隔离运行中通过，且工具确认了可保留的文件版本。现有授权覆盖本地修复与复验，剩余 3155 秒，最低复核用时为 82 秒。",
+        "remaining_risk": "现有证据只表明查询输出与预期不符，具体回归原因仍待定位。历史查询通过记录和当前更新通过记录均需在修复后的同一候选上复验。",
+        "retained_artifacts": [
+          {
+            "path": "update.py",
+            "sha256": "f8da38feab0f103156540552f9965b04e9cac078639e4bca9165ffd0b1497a72"
+          }
+        ],
+        "retained_outputs": [
+          "update.py"
+        ],
+        "schema_version": 2,
+        "scope_change": false,
+        "verification_items": [
+          "search-example-matches",
+          "search-prefix-variation",
+          "search-example-no-matches",
+          "search-candidate-variation",
+          "update-example-add-and-remove",
+          "update-removal-variation",
+          "update-example-duplicate-addition",
+          "update-additions-variation"
+        ]
+      },
+      "error": null,
+      "evidence": {
+        "elapsed_ms": 30967,
+        "ended_ns": 1795433235369391000,
+        "invocation_id": "73e9fb4b70d84d20aa450947238fb28b",
+        "model": "gpt-6.2-sol",
+        "prompt_version": 7,
+        "snapshot_revision": "a274fd28a789078a8cdd24bb6cc79eb9f49a1d7ed8a705bce32a253b327e93e1",
+        "started_ns": 1795433204402882000,
+        "tools": [
+          {
+            "evidence_sha256": "fad3891498cd35ee7d346aad867fbff8560fc0bd73953eabfd83b303bf99dda1",
+            "name": "read_plan_versions",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "5e7be55ac95c8168d2c98d8799aa5c308d43c2c38fbdff717f5e39e0751455da",
+            "name": "read_verified_artifacts",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "21be2a60025f98879d8ce26a60c7690182f508716e66aa890be2aec41d3d5b76",
+            "name": "read_failure_evidence",
+            "status": "completed"
+          },
+          {
+            "evidence_sha256": "f258c78c02ef45c98b7dbbd396b51eeca27f396f1d2496ccca24c40d409fdbd8",
+            "name": "read_remaining_budget",
+            "status": "completed"
+          }
+        ],
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 16512,
+          "input_tokens": 53229,
+          "output_tokens": 1033,
+          "reasoning_output_tokens": 158
+        },
+        "session_sha256": "41f624883addb1aed23cf94af1a904b8e62a5ac4318b553516722ce1f729fdaf"
+      }
+    }
+  ],
+  "call_trace": {
+    "call": "73e9fb4b70d84d20aa450947238fb28b",
+    "tools": [
+      {
+        "evidence_sha256": "fad3891498cd35ee7d346aad867fbff8560fc0bd73953eabfd83b303bf99dda1",
+        "name": "read_plan_versions",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "5e7be55ac95c8168d2c98d8799aa5c308d43c2c38fbdff717f5e39e0751455da",
+        "name": "read_verified_artifacts",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "21be2a60025f98879d8ce26a60c7690182f508716e66aa890be2aec41d3d5b76",
+        "name": "read_failure_evidence",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "f258c78c02ef45c98b7dbbd396b51eeca27f396f1d2496ccca24c40d409fdbd8",
+        "name": "read_remaining_budget",
+        "status": "completed"
+      }
+    ],
+    "trace": {
+      "run": 6,
+      "decision": null,
+      "subsequent_runs": [],
+      "disposition": "stale",
+      "reason": "工单已暂停",
+      "dispatch": null,
+      "dispatch_disposition": null
+    }
+  },
+  "paused_stale_proposal": {
+    "assignment": "73e9fb4b70d84d20aa450947238fb28b",
+    "run": 6,
+    "status": "paused",
+    "repair_count": 0
+  }
+}

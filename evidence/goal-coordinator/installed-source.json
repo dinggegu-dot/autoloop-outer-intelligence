@@ -1,0 +1,14 @@
+{
+  "original_sha256": {
+    "server.py": "a11018f1012d98b3c467a4788eaa02105f1b106858a3ff3252163b528324758d",
+    "tasks.js": "5f1954081d731cc25cbbd4bec690a39a152d5ffe0f652e0c8690c4672a539766",
+    "index.html": "6b2d87bd3c3438291dc366ae9c9d058c5d1af0290318b5e6a854e63baf21b3df",
+    "workbench.py": "ca3a4f72b38abbe081d59074737e4bf6b2668f0721dc9bf0c1a4100e15d95d46"
+  },
+  "copied_paths_examined": 105,
+  "runtime_credentials_local_config_absent": true,
+  "trusted_v2_verifier_sha256": {
+    "验收样例/目标驱动CSV/verifier.py": "d07c0e226e9393a1ba026a5479d94530a8b5863f38ec4da59f26813c229d2914",
+    "验收样例/目标驱动CSV/input.csv": "6e3140bd1fe3182f448b265b25690b6cf7eb5b89ba7678c61c9784776907c907"
+  }
+}

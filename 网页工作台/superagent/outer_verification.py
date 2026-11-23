@@ -33,6 +33,19 @@ COORDINATOR_SCHEMA = {
 }
 COORDINATOR_SCHEMA["required"] = list(COORDINATOR_SCHEMA["properties"])
 
+SCOPED_COORDINATOR = "scoped-v1"
+SCOPED_COORDINATOR_TOOLS = (
+    "read_failure_evidence", "read_verified_artifacts", "read_plan_versions", "read_remaining_budget",
+)
+_SCOPED_COORDINATOR_FIELDS = {
+    "affected_steps": {"type": "array", "items": {"type": "integer"}},
+    "retained_artifacts": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False, "required": ["path", "sha256"],
+        "properties": {"path": {"type": "string"}, "sha256": {"type": "string"}},
+    }},
+    "verification_items": {"type": "array", "items": {"type": "string"}},
+}
+
 _RESULT_SCHEMA = {"status": ["PASS", "FAIL", "INCONCLUSIVE", "NOT_RUN", "ERROR"]}
 _EVIDENCE_SCHEMA = {
     "required": ["assignment", "run", "artifact_id", "artifact_sha256", "acceptance_revision",
@@ -430,10 +443,10 @@ def _binding(criterion, contract, assignment, checkpoint):
     }
 
 
-def selected_criteria(contract, plan, step):
+def selected_criteria(contract, plan, step, *, additional=()):
     if step + 1 == len(plan["steps"]):
         return contract["criteria"]
-    keys = set(plan["steps"][step]["acceptance"])
+    keys = set(plan["steps"][step]["acceptance"]).union(additional)
     return [criterion for criterion in contract["criteria"] if criterion["criterion_id"] in keys]
 
 
@@ -450,7 +463,8 @@ def capture(workspace):
 def verify(contract, assignment, checkpoint, files, occupied):
     """可信 Worker 对单一工作区快照运行验证器，候选产物的 stdout 不进入证据。"""
     rows = []
-    for criterion in selected_criteria(contract, assignment["plan"], assignment["step"]):
+    for criterion in selected_criteria(contract, assignment["plan"], assignment["step"],
+                                       additional=assignment.get("additional_review_items", ())):
         status, detail = _criterion_result(criterion, files, occupied)
         row = dict(_binding(criterion, contract, assignment, checkpoint), status=status, detail=detail)
         row["environment"]["python"] = platform.python_version()
@@ -460,7 +474,8 @@ def verify(contract, assignment, checkpoint, files, occupied):
 
 
 def validate_results(contract, plan, assignment, checkpoint, rows):
-    criteria = selected_criteria(contract, plan, assignment["step"])
+    criteria = selected_criteria(contract, plan, assignment["step"],
+                                 additional=assignment.get("additional_review_items", ()))
     if type(rows) is not list or len(rows) != len(criteria) or not criteria:
         raise ValueError("缺少与阶段绑定的逐项验收结果")
     for criterion, row in zip(criteria, rows):
@@ -493,6 +508,20 @@ def validate_results(contract, plan, assignment, checkpoint, rows):
 def coordination_schema(context):
     schema = deepcopy(COORDINATOR_SCHEMA)
     fields = schema["properties"]
+    if context.get("coordinator_profile") == SCOPED_COORDINATOR:
+        fields.update(deepcopy(_SCOPED_COORDINATOR_FIELDS))
+        schema["required"].extend(_SCOPED_COORDINATOR_FIELDS)
+        fields["schema_version"]["enum"] = [2]
+        fields["affected_steps"]["items"]["enum"] = context.get("replan_affected_steps", context["affected_steps"])
+        checks = context.get("replan_verification_items", context["verification_items"])
+        if checks:
+            fields["verification_items"]["items"]["enum"] = checks
+        else:
+            fields["verification_items"]["maxItems"] = 0
+        if context["retained_outputs"]:
+            fields["retained_artifacts"]["items"]["properties"]["path"]["enum"] = context["retained_outputs"]
+        else:
+            fields["retained_artifacts"]["maxItems"] = 0
     fields["input_snapshot_revision"]["enum"] = [context["input_snapshot_revision"]]
     fields["action"]["enum"] = list(context["available_actions"])
     fields["evidence_refs"]["items"]["enum"] = list(context["evidence_refs"])
@@ -506,10 +535,14 @@ def coordination_schema(context):
 
 
 def validate_coordination(result, context):
-    if not isinstance(result, dict) or set(result) != set(COORDINATOR_SCHEMA["required"]):
+    scoped = context.get("coordinator_profile") == SCOPED_COORDINATOR
+    required = set(COORDINATOR_SCHEMA["required"])
+    if scoped:
+        required.update(_SCOPED_COORDINATOR_FIELDS)
+    if not isinstance(result, dict) or set(result) != required:
         raise ValueError("协调建议字段无效")
     action = result["action"]
-    if (type(result["schema_version"]) is not int or result["schema_version"] != 1
+    if (type(result["schema_version"]) is not int or result["schema_version"] != (2 if scoped else 1)
             or result["input_snapshot_revision"] != context["input_snapshot_revision"]
             or action not in context["available_actions"]):
         raise ValueError("协调建议版本或动作已失效")
@@ -528,4 +561,46 @@ def validate_coordination(result, context):
     _text(result["remaining_risk"])
     if action == "REPLAN" or result["plan_change"]:
         _text(result["plan_change"])
+    if scoped:
+        _validate_scoped_coordination(result, context, retained)
     return deepcopy(result)
+
+
+def _validate_scoped_coordination(result, context, retained):
+    action = result["action"]
+    available_steps = context["affected_steps"]
+    available_checks = context["verification_items"]
+    if action == "REPLAN":
+        available_steps = context.get("replan_affected_steps", available_steps)
+        available_checks = context.get("replan_verification_items", available_checks)
+    steps = result["affected_steps"]
+    if (type(steps) is not list or len(steps) > len(available_steps)
+            or any(type(step) is not int or step not in available_steps for step in steps)
+            or len(set(steps)) != len(steps)):
+        raise ValueError("协调建议引用了未登记的阶段")
+    checks = _list_of_strings(result["verification_items"])
+    if not set(checks) <= set(available_checks):
+        raise ValueError("协调建议引用了未批准的验收项")
+    if action in ("CONTINUE", "REPAIR", "REPLAN"):
+        if set(result["evidence_refs"]) != set(context["evidence_refs"]):
+            raise ValueError("继续派工必须覆盖本轮失败证据")
+        if set(checks) != set(available_checks) or set(steps) != set(available_steps):
+            raise ValueError("继续派工必须覆盖受影响阶段和下一轮验收")
+        if action in ("CONTINUE", "REPAIR") and set(retained) != set(context["artifact_versions"]):
+            raise ValueError("继续或返工必须保留系统确认的全部文件版本")
+    elif action == "REQUEST_APPROVAL":
+        if result["approval_required"] is not True:
+            raise ValueError("建议申请授权必须标明需本人批准")
+        _text(result["plan_change"])
+    artifacts = result["retained_artifacts"]
+    if type(artifacts) is not list or len(artifacts) != len(retained):
+        raise ValueError("保留成果必须逐项绑定文件版本")
+    paths = []
+    for item in artifacts:
+        if (not isinstance(item, dict) or set(item) != {"path", "sha256"}
+                or not isinstance(item["path"], str) or item["path"] not in retained
+                or item["sha256"] != context["artifact_versions"].get(item["path"])):
+            raise ValueError("保留成果文件版本不匹配")
+        paths.append(item["path"])
+    if set(paths) != set(retained):
+        raise ValueError("保留成果必须逐项绑定文件版本")
