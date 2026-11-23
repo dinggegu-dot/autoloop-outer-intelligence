@@ -161,8 +161,9 @@ def select_python(plist):
 
 
 def start_front():
-    launch("bootstrap", BOARD_PLIST)
-    wait_check(lambda: read_legacy(), "正式工作台或原 AFR 路线未恢复")
+    wait_check(lambda: launch("bootstrap", BOARD_PLIST, checked=False)
+               or launch("print", BOARD, checked=False), "正式工作台 LaunchAgent 未重新加载")
+    wait_check(read_legacy, "正式工作台或原 AFR 路线未恢复")
 
 
 def restore_front(backup):
