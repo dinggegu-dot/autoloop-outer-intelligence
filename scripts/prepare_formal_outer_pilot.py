@@ -148,21 +148,33 @@ def prepare(formal, target):
       body.role_models={plan:body.model_plan,execute:body.model_execute,review:body.model_review};""")
         tasks = replace_once(tasks, "    if(body.execution_mode === 'auto')body.budget_minutes=60;",
                              "    if(body.execution_mode === 'auto')body.budget_minutes=60;\n    }")
+        legacy_status = """    node('#task-form-status').textContent = capability?.configured
+      ? [form.elements.model_plan,form.elements.model_execute,form.elements.model_review].map(select=>modelName(select.value)).join(' → ')+(Array.from(form.elements).some(select=>select.value==='deepseek-dsh')?'。'+(state.catalogue?.dsh?.description||'正在读取 DSH 接入状态。'):'。全链使用 Codex，不依赖 DSH 连接。')
+      : '执行入口未就绪，提交的任务会保存在工作台。';"""
+        tasks = replace_once(tasks, legacy_status, '')
         tasks = replace_once(tasks, "  const modeInput=node('#task-mode')",
                              """  const outerToggle=node('#outer-opt-in');
   const approvalSettings=form.querySelector('.model-fields');
+  const createDescription=node('#task-dialog .dialog-description');
   const syncPilot=()=>{
-    const enabled=Boolean(state?.capability?.outer_workbench_entry);
+    const capability=state?.capability;
+    const enabled=Boolean(capability?.outer_workbench_entry);
     outerToggle.hidden=!enabled;
     const pilot=enabled&&form.elements.workflow.checked;
+    createDescription.hidden=pilot;
     approvalSettings.hidden=pilot;
     for(const id of ['task-mode','task-budget']){
       node('#'+id).hidden=pilot;
       node('label[for="'+id+'"]').hidden=pilot;
     }
     form.querySelector('.create-options .draft-warning').hidden=pilot;
+    if(pilot){
+      node('#task-form-status').textContent='提交后，Codex 会梳理目标并拟定验收契约。你在原工单确认契约并批准后，才会开始执行。';
+      return;
+    }
+""" + legacy_status + """
   };
-  form.addEventListener('change',syncPilot);
+  form.elements.workflow.addEventListener('change',syncPilot);
   form.addEventListener('reset',()=>setTimeout(syncPilot,0));
   const modeInput=node('#task-mode')""")
         tasks = replace_once(tasks, "  function render() {", "  function render() {\n    syncPilot();")
