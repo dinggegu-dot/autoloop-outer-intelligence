@@ -176,6 +176,11 @@ def prepare(formal, target):
         for source in (BOARD / 'superagent').glob('*.py'):
             if not source.name.startswith('test_'):
                 shutil.copy2(source, target / 'superagent' / source.name)
+        # CLI 验收复用仓库中的 Seatbelt 策略。正式安装包没有此 V2 依赖。
+        verifier_dir = Path('验收样例/目标驱动CSV')
+        (target / verifier_dir).mkdir(parents=True)
+        for name in ('verifier.py', 'input.csv'):
+            shutil.copy2(BOARD / verifier_dir / name, target / verifier_dir / name)
         ui = target / 'outer-ui'
         ui.mkdir()
         for name in ('app.js', 'style.css', 'outer.js'):
