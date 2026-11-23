@@ -1,0 +1,118 @@
+{
+  "date": "2026-11-23",
+  "browser": "Google Chrome",
+  "entry": "ordinary form -> POST /api/tasks",
+  "passed": true,
+  "ticket": "wb-00296ad1022644b48e7fea2266a32a10",
+  "source_event": "evt-0ea2c4bffc394b1a9ff438968f5e1d5a",
+  "release": {
+    "candidate": "0072d84b4bc50f358779a6e5d827abd38e408508",
+    "port": 8765,
+    "legacy_tickets_preserved": 3,
+    "legacy_database_backups": [
+      "tasks.sqlite3",
+      "afr-topics.sqlite3",
+      "research-admissions.sqlite3"
+    ],
+    "legacy_source_sha256": {
+      "server.py": "a11018f1012d98b3c467a4788eaa02105f1b106858a3ff3252163b528324758d",
+      "index.html": "6b2d87bd3c3438291dc366ae9c9d058c5d1af0290318b5e6a854e63baf21b3df",
+      "tasks.js": "5f1954081d731cc25cbbd4bec690a39a152d5ffe0f652e0c8690c4672a539766"
+    },
+    "installed_overlay_sha256": {
+      "formal_outer_canary_wire.py": "5be4beac95c01db369e6494d5bfcec7ee874d041ed82981c03a8f01e245c4195",
+      "index.html": "a1a98d77e3d2caac0ff8d4ebbaaace62a012dc35366a32188e5ac8fdd45efff9",
+      "outer-canary/app.js": "138f1cca6d5d68a44937dc9100bea37ce6a93d2abd83c8ced20812762d7e1713",
+      "outer-canary/index.html": "595bea0af4585c9b68333c8194fa9f80851401f54331042f9c0860259b981c48",
+      "outer-canary/outer.js": "e4222da46e6e74392f7b0eb86fc89d0fd9e159f976aad4e20aa2d3df8a5cabd1",
+      "outer-canary/style.css": "b9de56c88d616d80269e2fd8827cb11d2baf12f35bf00537dddd80c7d8bed346",
+      "outer_canary.py": "aa4ef828e4929171dc553bf631c2fac0675e01459b3b54e87b1566d8cfa21441",
+      "server.py": "db4cca65438b1c0c32604d42b12e6665d98a931448a34187e4d51fc823431910",
+      "tasks.js": "aff90490754120cc6fd9b830a7533f955f1a466f5118ce3249bc8fd6ac71f5a5"
+    },
+    "gate": "fixed-synthetic-filename-index-v2",
+    "previous_gate": "fixed-synthetic-filename-index-v1",
+    "gateway_release": "11987e4305f436e96f8bb4ffdb71f615c797506f",
+    "side_supervisor_sha256": "007fc719524a9f88ffc42e4ffc5cf390c952aaec98170b5ab4d08ca72d82964a"
+  },
+  "approval_count": 1,
+  "mandate_revision": 1,
+  "route_isolation": true,
+  "legacy_routes_verified": true,
+  "draft_duplicate_reused": true,
+  "initial_draft": {
+    "ticket": "wb-43ec2f0b5b3c4f439bcd7718c5112f2c",
+    "status": "VERIFICATION_GAP",
+    "approved": false,
+    "reason": "The acceptance designer treated suggested implementation order as a requirement. The replacement template contains only testable CLI behavior."
+  },
+  "check_results": {
+    "search-alpha-example": "PASS",
+    "search-alpha-prefix-variation": "PASS",
+    "search-z-example": "PASS",
+    "search-z-match-variation": "PASS",
+    "update-alpine-example": "PASS",
+    "update-alpine-delete-variation": "PASS",
+    "update-zebra-example": "PASS",
+    "update-zebra-multiple-deletions": "PASS"
+  },
+  "model_roles": [
+    "acceptance_designer",
+    "intake_assessor"
+  ],
+  "final_run": 5,
+  "archive_sha256": "9902cd2eec7d6c2a4abd174cefbbb86af7bd971f193b20e8e5b89dd3480b7907",
+  "downloads_sha256": {
+    "search.py": "361079c069eac58a167481d8bbcc3bd0dbb1fbb643f8b257a44be58481bedfb6",
+    "update.py": "419b841f7fdf192fbf23066e1cac1a52f2039955152005014c03ade4cc92dccc"
+  },
+  "assignments": [
+    {
+      "id": "d305e3ea62ec4ae7af4480be0eb733d5",
+      "run": 1,
+      "phase": "plan",
+      "transport": "done"
+    },
+    {
+      "id": "389328ee5c724d388183c7ad12f3751a",
+      "run": 2,
+      "phase": "execute",
+      "transport": "done"
+    },
+    {
+      "id": "8a6a00656db64b5780861355b0be0331",
+      "run": 3,
+      "phase": "review",
+      "transport": "done"
+    },
+    {
+      "id": "347ff8579c88444aa1210050677f9d49",
+      "run": 4,
+      "phase": "execute",
+      "transport": "done"
+    },
+    {
+      "id": "2eaf7c64c59f41868b4695010f789f44",
+      "run": 5,
+      "phase": "review",
+      "transport": "done"
+    }
+  ],
+  "approval_entry": "same formal workbench approval API after the Chrome confirmation timed out",
+  "platform": "macOS, local 8765",
+  "isolation_preflight": {
+    "forged_origin_rejected": true,
+    "invalid_csrf_rejected": true,
+    "free_text_rejected": true,
+    "backend_direct_session_rejected": true,
+    "legacy_routes_available_when_side_stopped": true,
+    "legacy_routes_available_when_key_missing": true,
+    "supervised_scheduler_held_lease": true
+  },
+  "rollout_repairs": [
+    "limited the template to directly testable CLI behavior and retained the original unapproved draft",
+    "waited for LaunchAgent to finish unloading before loading the next executable",
+    "added supervised scheduling and verified exclusive lease before the single approval",
+    "performed approval once through the same Workbench API after the Chrome confirmation dialog did not write it"
+  ]
+}

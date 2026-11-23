@@ -1,5 +1,7 @@
 # V2 执行与验收记录
 
+2026-11-23，正式 8765 已开放首批外层 Agent 的固定合成工单灰度。正式 Chrome 普通新单通过一次批准和五轮后台派工，独立终验 8/8 通过。旧工单和 AFR 本机入口已读回。上线与实际回退范围见[正式灰度手册](../operations/formal-outer-canary.md)。
+
 2026-11-23，首批目标协调能力由 PR #11 合入 V2 候选。已在正式 8765 源码的隔离副本完成活动索引工单的暂停、冷备、原路径恢复和同一授权续办。复验后补齐增量更新，保留已验搜索文件，独立终验 4/4 通过。[回退演练](../operations/goal-coordinator-rollback.md#活动工单的冷备恢复与续办) · [PR #11](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/11)
 
 2026-11-20，AFR 本地检索回执已在真实 V2 工单逐行核对并签收。独立投放试点从合成文件到 Obsidian 初读原文 4.573 秒，正式白板出处 15.997 秒。[本轮工单、故障及复验](../testing/afr-integration.md)
