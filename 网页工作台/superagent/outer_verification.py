@@ -443,10 +443,10 @@ def _binding(criterion, contract, assignment, checkpoint):
     }
 
 
-def selected_criteria(contract, plan, step):
+def selected_criteria(contract, plan, step, *, additional=()):
     if step + 1 == len(plan["steps"]):
         return contract["criteria"]
-    keys = set(plan["steps"][step]["acceptance"])
+    keys = set(plan["steps"][step]["acceptance"]).union(additional)
     return [criterion for criterion in contract["criteria"] if criterion["criterion_id"] in keys]
 
 
@@ -463,7 +463,8 @@ def capture(workspace):
 def verify(contract, assignment, checkpoint, files, occupied):
     """可信 Worker 对单一工作区快照运行验证器，候选产物的 stdout 不进入证据。"""
     rows = []
-    for criterion in selected_criteria(contract, assignment["plan"], assignment["step"]):
+    for criterion in selected_criteria(contract, assignment["plan"], assignment["step"],
+                                       additional=assignment.get("additional_review_items", ())):
         status, detail = _criterion_result(criterion, files, occupied)
         row = dict(_binding(criterion, contract, assignment, checkpoint), status=status, detail=detail)
         row["environment"]["python"] = platform.python_version()
@@ -473,7 +474,8 @@ def verify(contract, assignment, checkpoint, files, occupied):
 
 
 def validate_results(contract, plan, assignment, checkpoint, rows):
-    criteria = selected_criteria(contract, plan, assignment["step"])
+    criteria = selected_criteria(contract, plan, assignment["step"],
+                                 additional=assignment.get("additional_review_items", ()))
     if type(rows) is not list or len(rows) != len(criteria) or not criteria:
         raise ValueError("缺少与阶段绑定的逐项验收结果")
     for criterion, row in zip(criteria, rows):
@@ -510,9 +512,10 @@ def coordination_schema(context):
         fields.update(deepcopy(_SCOPED_COORDINATOR_FIELDS))
         schema["required"].extend(_SCOPED_COORDINATOR_FIELDS)
         fields["schema_version"]["enum"] = [2]
-        fields["affected_steps"]["items"]["enum"] = context["affected_steps"]
-        if context["verification_items"]:
-            fields["verification_items"]["items"]["enum"] = context["verification_items"]
+        fields["affected_steps"]["items"]["enum"] = context.get("replan_affected_steps", context["affected_steps"])
+        checks = context.get("replan_verification_items", context["verification_items"])
+        if checks:
+            fields["verification_items"]["items"]["enum"] = checks
         else:
             fields["verification_items"]["maxItems"] = 0
         if context["retained_outputs"]:
@@ -564,20 +567,28 @@ def validate_coordination(result, context):
 
 
 def _validate_scoped_coordination(result, context, retained):
+    action = result["action"]
+    available_steps = context["affected_steps"]
+    available_checks = context["verification_items"]
+    if action == "REPLAN":
+        available_steps = context.get("replan_affected_steps", available_steps)
+        available_checks = context.get("replan_verification_items", available_checks)
     steps = result["affected_steps"]
-    if (type(steps) is not list or len(steps) > len(context["affected_steps"])
-            or any(type(step) is not int or step not in context["affected_steps"] for step in steps)
+    if (type(steps) is not list or len(steps) > len(available_steps)
+            or any(type(step) is not int or step not in available_steps for step in steps)
             or len(set(steps)) != len(steps)):
         raise ValueError("协调建议引用了未登记的阶段")
     checks = _list_of_strings(result["verification_items"])
-    if not set(checks) <= set(context["verification_items"]):
+    if not set(checks) <= set(available_checks):
         raise ValueError("协调建议引用了未批准的验收项")
-    if result["action"] in ("CONTINUE", "REPAIR", "REPLAN"):
+    if action in ("CONTINUE", "REPAIR", "REPLAN"):
         if set(result["evidence_refs"]) != set(context["evidence_refs"]):
             raise ValueError("继续派工必须覆盖本轮失败证据")
-        if set(checks) != set(context["verification_items"]) or set(steps) != set(context["affected_steps"]):
+        if set(checks) != set(available_checks) or set(steps) != set(available_steps):
             raise ValueError("继续派工必须覆盖受影响阶段和下一轮验收")
-    elif result["action"] == "REQUEST_APPROVAL":
+        if action in ("CONTINUE", "REPAIR") and set(retained) != set(context["artifact_versions"]):
+            raise ValueError("继续或返工必须保留系统确认的全部文件版本")
+    elif action == "REQUEST_APPROVAL":
         if result["approval_required"] is not True:
             raise ValueError("建议申请授权必须标明需本人批准")
         _text(result["plan_change"])

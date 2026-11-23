@@ -366,6 +366,8 @@ class GoalEngine:
         binding = outer_binding(task)
         if binding is not None:
             assignment['outer_binding'] = binding
+            if phase == 'review' and state.get('coordination_review_items'):
+                assignment['additional_review_items'] = state['coordination_review_items']
         state['assignments'].append(assignment)
         if task['status']!='executing':
             task.update(status='queued',error='')
@@ -472,7 +474,7 @@ class GoalEngine:
         return self.store.change(ticket,apply)
 
     def settle(self, ticket, key, run, transport, report=None, *, recovery_checkpoint=None,
-               recovery_error=None):
+               recovery_error=None, confirmed_unstarted=False):
         if transport not in ('done','nothing','cancelled'):
             raise Problem('原轮尚未进入可核对的终态',409)
         def apply(task):
@@ -502,6 +504,19 @@ class GoalEngine:
                     task.update(status='queued',error='')
                 return
             if state['stop_requested']:
+                proposal_id = assignment.get('coordination_proposal')
+                if confirmed_unstarted and transport == 'cancelled' and report is None and proposal_id:
+                    coordinator = next((row for row in state['assignments'] if row['id'] == proposal_id), {})
+                    tool_evidence = coordinator.get('coordination_context',{}).get('tool_evidence',{})
+                    candidate = tool_evidence.get('read_verified_artifacts',{}).get('current_candidate',{})
+                    if (recovery_checkpoint and recovery_checkpoint == state['checkpoint']
+                            and recovery_checkpoint['digest'] == candidate.get('artifact_sha256')):
+                        self._expire_coordination_dispatch(task,assignment)
+                    else:
+                        # 未执行的派工不能把外部改动登记成原轮的产物。
+                        state['validation']['recovery_blocked'] = True
+                    self._after_stop(task,key)
+                    return
                 if assignment.get('coordination_context',{}).get('coordinator_profile') == SCOPED_COORDINATOR:
                     self._record_scoped_proposal(task,assignment,report if valid else None,'stale','工单已暂停')
                 if transport == 'done' and valid:
@@ -713,6 +728,8 @@ class GoalEngine:
                      'previous':task['version'] if phase=='replan' else None}
             if state.get('coordinator_profile') == SCOPED_COORDINATOR:
                 entry['mandate_revision'] = state['outer']['mandate_revision']
+                if phase == 'replan':
+                    state['coordination_review_items'] = self._replan_review_items(task)
             state['revisions'].append(entry)
             task.update(plan=planned,version=revision)
             if phase == 'plan' and state.get('outer'):
@@ -853,6 +870,8 @@ class GoalEngine:
                 or delivery.get('artifact_sha256')!=checkpoint['digest']
                 or delivery.get('level') != ('goal' if final else 'stage')):
             raise Problem('缺少与当前验收版本和派工匹配的归档')
+        state.pop('coordination_retention',None)
+        state.pop('coordination_review_items',None)
         from superagent.outer_verification import needs_human_signoff
         if final and needs_human_signoff(contract):
             reviews = state.setdefault('artifact_reviews', [])
@@ -872,7 +891,6 @@ class GoalEngine:
         task['plan']['steps'][task['step']]['state'] = 'completed'
         task['step'] += 1
         state['repairs'] = 0
-        state.pop('coordination_retention',None)
         if not final:
             if state.get('coordinator_profile') == SCOPED_COORDINATOR:
                 delivery = dict(delivery, step=assignment['step'], plan_revision=assignment['version'],
@@ -968,13 +986,25 @@ class GoalEngine:
         return context
 
     @staticmethod
-    def _minimum_review_seconds(task):
+    def _minimum_review_seconds(task, *, additional=None):
         from superagent.outer_verification import selected_criteria
-        contract = flow(task)['outer']['acceptance_contract']
-        criteria = selected_criteria(contract,task['plan'],task['step'])
+        state = flow(task)
+        contract = state['outer']['acceptance_contract']
+        if additional is None:
+            additional = state.get('coordination_review_items', ())
+        criteria = selected_criteria(contract,task['plan'],task['step'],additional=additional)
         return 10 + 9 * sum(row['verifier_id']=='python-json-cli' for row in criteria)
 
+    @staticmethod
+    def _replan_review_items(task):
+        from superagent.outer_verification import selected_criteria
+        plan, step = task['plan'], task['step']
+        prior = {key for stage in plan['steps'][:step] for key in stage['acceptance']}
+        criteria = selected_criteria(flow(task)['outer']['acceptance_contract'],plan,step,additional=prior)
+        return [row['criterion_id'] for row in criteria]
+
     def _scope_coordination_context(self, task, context, rows, failed):
+        from superagent.outer_intake import _model_text
         from superagent.outer_verification import SCOPED_COORDINATOR_TOOLS
         state = flow(task)
         plan = task['plan']
@@ -993,39 +1023,63 @@ class GoalEngine:
         unchanged = {path for version in verified_stage_versions for path,value in version['files'].items()
                      if files.get(path) == value}
         retained = (passed_paths | unchanged) - failing_paths
-        artifact_versions = {path:files[path] for path in context['retained_outputs'] if path in retained}
+        artifact_versions = {path:files[path] for path in checkpoint.get('artifacts',[]) if path in retained}
         context['retained_outputs'] = list(artifact_versions)
         if not failed or not checkpoint.get('digest'):
             context['available_actions'] = ['REQUEST_APPROVAL','BLOCKED']
         minimum_review_seconds = self._minimum_review_seconds(task)
+        replan_steps = list(range(task['step']+1))
+        replan_items = self._replan_review_items(task)
+        replan_review_seconds = self._minimum_review_seconds(task,additional=replan_items)
         followup_rounds = {'CONTINUE':1, 'REPAIR':2, 'REPLAN':3}
         remaining = context['remaining_budget_seconds']
         remaining_calls = None if task.get('max_calls') is None else max(0,task['max_calls'] - task['calls'])
         for action, rounds in followup_rounds.items():
+            review_seconds = replan_review_seconds if action == 'REPLAN' else minimum_review_seconds
             if (action in context['available_actions']
-                    and (remaining < minimum_review_seconds + 10 * (rounds - 1)
+                    and (remaining < review_seconds + 10 * (rounds - 1)
                          or (remaining_calls is not None and remaining_calls < rounds))):
                 context['available_actions'].remove(action)
         affected_assignments = {delivery['assignment'] for delivery in state.get('stage_deliveries',[])
                                 if delivery.get('step') in affected_steps}
         budget = {'seconds':remaining, 'calls':remaining_calls,
                   'mandate_revision':context['mandate_revision'],
-                  'minimum_review_seconds':minimum_review_seconds}
+                  'minimum_review_seconds':minimum_review_seconds,
+                  'replan_review_seconds':replan_review_seconds}
         context.update(
             coordinator_profile=SCOPED_COORDINATOR, affected_steps=affected_steps,
             verification_items=verification_items, artifact_versions=artifact_versions,
+            replan_affected_steps=replan_steps, replan_verification_items=replan_items,
             guard=self._coordination_guard(task),
         )
         revisions = [entry for entry in state['revisions'] if entry.get('mandate_revision') == context['mandate_revision']]
+        # 验收描述在提示中。保留完整计划的哈希，并限制 MCP 中叙述性文字的长度。
+        current_steps = []
+        for index, step in enumerate(plan['steps']):
+            limit = 1000 if index == task['step'] else 400
+            current_steps.append({
+                **{key:step[key] for key in ('title','acceptance','state')},
+                'objective':_model_text(step['objective'],limit),
+                'objective_truncated':len(step['objective']) > limit,
+            })
+        current_plan = dict(plan, summary=_model_text(plan['summary'],800), steps=current_steps,
+                            summary_truncated=len(plan['summary']) > 800)
+        previous_plans = [
+            {'version':entry['version'], 'previous':entry.get('previous'), 'plan_sha256':digest(entry['plan']),
+             'plan':{'summary':_model_text(entry['plan']['summary'],400),
+                     'steps':[{key:step[key] for key in ('title','acceptance','state')}
+                              for step in entry['plan']['steps']]}}
+            for entry in revisions[-3:-1]
+        ]
         context['tool_evidence'] = dict(zip(SCOPED_COORDINATOR_TOOLS, (
             {'failure':context['failure'], 'checks':context['verification_checks'],
              'affected_steps':affected_steps, 'verification_items':verification_items,
+             'replan_affected_steps':replan_steps, 'replan_verification_items':replan_items,
              'prior_stage_assignments_to_reverify':sorted(affected_assignments),
              'recent_failed_reviews':self._recent_failed_reviews(task)},
             {'current_candidate':{'artifact_sha256':checkpoint.get('digest')},
              'retainable_file_versions':artifact_versions, 'verified_stages':verified_stage_versions},
-            {'current':plan, 'previous':[{'version':entry['version'],'previous':entry.get('previous'),
-                                           'plan':entry['plan']} for entry in revisions[-3:-1]]},
+            {'current':current_plan, 'current_plan_sha256':digest(plan), 'previous':previous_plans},
             budget,
         )))
 
@@ -1213,10 +1267,12 @@ class GoalEngine:
             if action in ('CONTINUE','REPAIR','REPLAN'):
                 state['coordination_retention'] = proposal['retained_artifacts']
                 seconds = current_context['remaining_budget_seconds']
-                minimum_review = current_context['tool_evidence']['read_remaining_budget']['minimum_review_seconds']
-                if action in ('REPAIR','REPLAN'):
-                    # 保留后续确定性复验的时间。重规划后还需要一轮实际实施。
-                    seconds -= minimum_review + (10 if action=='REPLAN' else 0)
+                budget = current_context['tool_evidence']['read_remaining_budget']
+                if action == 'REPLAN':
+                    # 重规划后还需要一轮实际实施和当前及已交付阶段的复验。
+                    seconds -= budget['replan_review_seconds'] + 10
+                elif action == 'REPAIR':
+                    seconds -= budget['minimum_review_seconds']
                 self._enqueue(task,state['stage'],seconds,coordination_proposal=assignment['id'],
                               coordination_source_revision=self._coordination_source_revision(task))
                 dispatch = state['assignments'][-1]['id']

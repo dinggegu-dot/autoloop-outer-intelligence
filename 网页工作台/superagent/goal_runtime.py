@@ -43,6 +43,36 @@ def missing_receipt_diagnostic(run, assignment):
     }
 
 
+def hub_confirmed_unstarted(hub, run, rule):
+    # 来源接口不区分排队取消和领取后取消。以本人的中台轮次时间线确认。
+    try:
+        facts = hub.request('GET',f'/v1/runs/{run}/why')
+    except Problem as error:
+        if error.status >= 500 and error.status != 501:
+            raise
+        return False
+    if not isinstance(facts,list):
+        return False
+    states = []
+    for fact in facts:
+        if (not isinstance(fact,dict) or fact.get('version') != 1
+                or not isinstance(fact.get('changes'),list)):
+            return False
+        for change in fact['changes']:
+            if not isinstance(change,dict):
+                return False
+            if change.get('table') != 'runs' or change.get('key') != str(run):
+                continue
+            row = change.get('row')
+            if (not isinstance(row,dict) or row.get('id') != run or row.get('rule') != rule
+                    or 'claimed_at' not in row or row['claimed_at'] is not None
+                    or type(row.get('attempts')) is not int or row['attempts'] != 0
+                    or row.get('state') not in ('queued','cancelled')):
+                return False
+            states.append(row['state'])
+    return len(states) >= 2 and states[-1] == 'cancelled' and all(state == 'queued' for state in states[:-1])
+
+
 def attempt_file(root, ticket, key, name):
     # ticket 与派工 ID 在可信账本核对后传到这里。
     return root / 'goal-attempts' / ticket / key / name
@@ -188,7 +218,18 @@ class GoalRuntime:
                      and report.get('outer_binding') == outer)
             recovery_checkpoint = None
             recovery_error = None
-            if assignment['phase'] in ('execute','repair') and (
+            confirmed_unstarted = (flow(task)['stop_requested'] and status == 'cancelled'
+                                  and assignment.get('coordination_proposal') is not None
+                                  and not any(os.path.lexists(path.parent/name)
+                                              for name in ('entered','report.json','process.json'))
+                                  and hub_confirmed_unstarted(self.hub,run,rule))
+            if confirmed_unstarted:
+                from superagent.outer_verification import capture
+                try:
+                    recovery_checkpoint = capture(self.store.workspace(ticket))[0]
+                except (OSError, RuntimeError, ValueError, Problem):
+                    pass
+            elif assignment['phase'] in ('execute','repair') and (
                     (not valid and not flow(task)['stop_requested']) or
                     (outer and (not valid or report.get('error') or flow(task)['stop_requested']))):
                 # 中台已确认终态且原模型已退出。只从原派工的工作区取证。
@@ -215,8 +256,8 @@ class GoalRuntime:
                 except (OSError, RuntimeError, ValueError, Problem):
                     report = dict(report,error='独立归档不存在、已改变或无法安全读取')
             settled = self.engine.settle(ticket,key,run,status,report,recovery_checkpoint=recovery_checkpoint,
-                                         recovery_error=recovery_error)
-            if not valid:
+                                         recovery_error=recovery_error,confirmed_unstarted=confirmed_unstarted)
+            if not valid and not confirmed_unstarted:
                 self.store.event(ticket,'goal_transport','中台轮次已结束，缺少有效业务回执',
                                  missing_receipt_diagnostic(run_row,assignment))
             return settled
@@ -478,7 +519,7 @@ def prepare_outer_execution(assignment):
     instructions = (context.get('verification') or {}).get('coordination') or {}
     if phase == 'repair' and step + 1 == len(assignment['plan']['steps']):
         keys = None  # 最后一步返工可以修复最终复验发现的前序回归。
-    if phase=='execute' and instructions.get('schema_version')==2:
+    if keys is not None and phase in ('execute','repair') and instructions.get('schema_version')==2:
         keys.update(instructions['verification_items'])
     context['approved_criteria'] = [
         {key: row[key] for key in ('criterion_id','requirement_ids','description','required','verifier_id')}
@@ -540,18 +581,22 @@ def execute_outer_review(assignment, workspace, directory, report):
 
 
 def execute_coordination(store, assignment, directory, report):
-    from superagent.outer_model import PROMPT_VERSION, CodexOuterModel, ModelFailure, role_invoke
+    from superagent.outer_model import (
+        PROMPT_VERSION, SCOPED_PROMPT_VERSION, CodexOuterModel, ModelFailure, role_invoke,
+    )
     from superagent.outer_verification import SCOPED_COORDINATOR, coordination_schema, validate_coordination
     context = assignment['context']['coordinator']
     start = time.time_ns()
     engine = GoalEngine(store)
-    limit = 120 if context.get('coordinator_profile') == SCOPED_COORDINATOR else 45
+    scoped = context.get('coordinator_profile') == SCOPED_COORDINATOR
+    limit = 120 if scoped else 45
     adapter = CodexOuterModel(timeout=min(limit,assignment['max_seconds'])).with_execution(
         directory, lambda: engine.launch_gate(assignment['ticket'],assignment['id'],assignment['run'])
     )
     evidence = {
         'invocation_id':assignment['id'], 'snapshot_revision':context['input_snapshot_revision'],
-        'started_ns':start, 'prompt_version':PROMPT_VERSION, 'model':adapter.model,
+        'started_ns':start, 'prompt_version':SCOPED_PROMPT_VERSION if scoped else PROMPT_VERSION,
+        'model':adapter.model,
     }
     save_json(directory / 'coordination-start.json', evidence)
     try:

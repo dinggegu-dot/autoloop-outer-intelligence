@@ -12,7 +12,10 @@ from unittest.mock import patch
 
 from superagent.codex_worker import _object
 from superagent.coordination_tools import DESCRIPTIONS, SERVER, _handle, _read, serve
-from superagent.outer_model import CodexOuterModel, ModelFailure, ACCEPTANCE_SCHEMA, TXT, role_invoke
+from superagent.goal_engine import plan_result
+from superagent.outer_model import (
+    CodexOuterModel, ModelFailure, ACCEPTANCE_SCHEMA, SCOPED_PROMPT_VERSION, TXT, role_invoke,
+)
 
 
 def local_executable(directory, program):
@@ -51,11 +54,15 @@ class OuterModelTest(unittest.TestCase):
             self.assertEqual(set(reads), {name})
 
     def test_scoped_prompt_projects_evidence_and_checks_for_actual_calls(self):
+        plan = plan_result({'summary':'阶段摘要' + '中' * 2900,
+                            'steps':[{'objective':'中' * 1490,'checks':[f'item-{n}']} for n in range(6)]},1)
         context = {
-            'coordinator_profile': 'scoped-v1', 'ticket_id': 'ticket-a',
+            'coordinator_profile': 'scoped-v1', 'ticket_id': 'ticket-a', 'plan':plan,
             'verification_checks': ['FAILURE-INLINE-MARKER'],
-            'tool_evidence': {name: 'TOOL-ONLY-MARKER' for name in DESCRIPTIONS},
+            'tool_evidence': {name: 'TOOL-ONLY-MARKER' for name in DESCRIPTIONS}
+                             | {'read_plan_versions':{'current':plan}},
         }
+        self.assertGreater(len(json.dumps(context,ensure_ascii=False).encode()),64_000)
         adapter = CodexOuterModel().with_execution(Path('/tmp'), contextlib.nullcontext)
         with patch.object(adapter, '_execute', side_effect=ModelFailure('probe')) as mock:
             with self.assertRaisesRegex(ModelFailure, 'probe') as error:
@@ -65,7 +72,20 @@ class OuterModelTest(unittest.TestCase):
         self.assertNotIn('FAILURE-INLINE-MARKER', prompt)
         self.assertNotIn('TOOL-ONLY-MARKER', prompt)
         self.assertEqual(evidence, context['tool_evidence'])
-        self.assertEqual(error.exception.receipt()['prompt_version'], 7)
+        self.assertEqual(error.exception.receipt()['prompt_version'], SCOPED_PROMPT_VERSION)
+
+    def test_scoped_prompt_and_tool_evidence_each_have_a_byte_limit(self):
+        evidence = {name: {} for name in DESCRIPTIONS}
+        scoped = {'coordinator_profile':'scoped-v1','ticket_id':'test','tool_evidence':evidence}
+        adapter = CodexOuterModel().with_execution(Path('/tmp'),contextlib.nullcontext)
+        with patch.object(adapter,'_execute') as execute:
+            for context in (dict(scoped,goal='中' * 22_000),
+                            dict(scoped,tool_evidence=dict(evidence,read_plan_versions='中' * 22_000)),
+                            {'plan_summary':'中' * 22_000}):
+                with self.subTest(scoped='coordinator_profile' in context):
+                    with self.assertRaisesRegex(ModelFailure,'context_budget'):
+                        role_invoke(adapter,'goal_coordinator',context,_object(action=TXT))
+            execute.assert_not_called()
 
     def test_native_event_alone_cannot_claim_a_tool_read(self):
         from superagent.outer_model import _completed_tools
