@@ -215,7 +215,7 @@ class OuterIntake:
                 raise Problem('已发卡片不能绑定新版工单', 409)
 
     def submit(self, *, source, source_event_id, actor_id, text, source_thread_id=None, tenant='default',
-               ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None):
+               ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None, workbench_request=None):
         identity = self._source(source, source_event_id, actor_id, tenant, source_thread_id)
         _string(text, '原始需求', 6000)
         _, _, actor, tenant, thread = identity
@@ -231,10 +231,17 @@ class OuterIntake:
             linked = self._thread(db, source, tenant, thread)
             requested = ticket_id
             ticket_id = ticket_id or linked
+            if workbench_request is not None:
+                if source != 'web' or ticket_id or thread or question_id or replace_requirement_ids is not None:
+                    raise Problem('工作台试点入口仅用于新建工单', 409)
+                if db.execute('SELECT 1 FROM tasks WHERE request_id=?', (source_event_id,)).fetchone():
+                    raise Problem('同一个请求编号不能切换执行路线', 409)
+
             row, duplicate = self._insert(db, identity, ticket_id, {
                 'type': 'message', 'text': text, 'ticket_id': requested,
                 'expected_ticket_revision': expected_ticket_revision, 'question_id': question_id,
                 'replace_requirement_ids': replace_requirement_ids,
+                **({'force_new': True, 'workbench_request': workbench_request} if workbench_request is not None else {}),
             }, role='intake_assessor')
             if duplicate:
                 return self._event_view(row, True)
@@ -403,6 +410,10 @@ class OuterIntake:
                       approval_terms={'workspace': str(self.store.workspace(ticket_id)), 'scope': _SCOPE,
                                      'forbidden_operations': _FORBIDDEN, 'budget_seconds': 3600,
                                       'execution_model': 'gpt-6.2-sol'})
+        request = json.loads(event['body']).get('workbench_request')
+        if request is not None:
+            ticket['coordinator_profile'] = 'scoped-v1'
+            ticket['workbench_name'] = request['name']
         db.execute('INSERT INTO outer_tickets VALUES(?,?,?,?,?)',
                    (ticket_id, event['tenant'], event['actor'], _json(ticket), ticket['updated_at']))
         return ticket
@@ -440,6 +451,12 @@ class OuterIntake:
                             'prior_messages': {row['id']: _model_text(json.loads(row['body']).get('text', ''), 1000)
                                                for row in rows if row['id'] != event['id']}},
         )
+        for row in rows:
+            request = json.loads(row['body']).get('workbench_request')
+            if request:
+                original = {key: _model_text(request[key], limit)
+                            for key, limit in (('name', 80), ('acceptance', 4000)) if request[key]}
+                context['untrusted_text']['workbench_request'] = {'event_id': row['id'], **original}
         if event['role'] == 'intake_assessor' and message.get('replace_requirement_ids'):
             selected = set(message['replace_requirement_ids'])
             context['replace_requirements'] = [
@@ -622,6 +639,10 @@ class OuterIntake:
         confirms = bool(ticket['question'])
         untrusted = snapshot['untrusted_text']
         actual_text = {**untrusted['prior_messages'], event['id']: untrusted['current_message']}
+        original = untrusted.get('workbench_request')
+        if original:
+            ref = original['event_id']
+            actual_text[ref] += '\n' + original.get('acceptance', '')
         replacements = set(json.loads(event['body']).get('replace_requirement_ids') or ())
         goal = dict(ticket_id=ticket['id'], goal_statement=statement, revision=ticket['goal_revision'] + 1,
                     source_refs=sorted(source_keys), created_at=now(), created_by='intake_assessor', status='DRAFT')
@@ -863,14 +884,16 @@ class OuterIntake:
                                              budget_seconds=budget_minutes * 60)
             except (ValueError, KeyError, TypeError):
                 raise Problem('验收或授权契约未通过批准前完整性校验', 409) from None
-            options = dict(request_id=str(uuid.UUID(event['id'][4:])), name=summary[:80], goal=summary,
+            options = dict(request_id=str(uuid.UUID(event['id'][4:])),
+                           name=ticket.get('workbench_name') or summary[:80], goal=summary,
                            acceptance=criteria, budget_minutes=budget_minutes,
                            role_models=dict.fromkeys(('plan', 'execute', 'review'), 'gpt-6.1-sol'))
+            profile = ticket.get('coordinator_profile')
             if ticket['task_id']:
-                self._replace_authorized(db, ticket, options, outer)
+                self._replace_authorized(db, ticket, options, outer, profile=profile)
             else:
                 self.store.create(options, source='feishu' if source == 'feishu' else 'board', workflow='goal',
-                                  _db=db, _outer=outer)
+                                  _db=db, _outer=outer, _coordinator_profile=profile)
             ticket.update(task_id=ticket_id, status='AUTHORIZED', revision=ticket['revision']+1,
                           goal_contract=goal, acceptance_contract=acceptance, mandate=mandate,
                           mandate_revision=mandate['revision'], error='')
@@ -939,7 +962,7 @@ class OuterIntake:
             self._finish(db,event,'DONE',result,ticket)
             return result
 
-    def _replace_authorized(self, db, ticket, options, outer):
+    def _replace_authorized(self, db, ticket, options, outer, *, profile=None):
         from .goal_engine import active_assignments
         body = db.execute('SELECT body FROM tasks WHERE id=?', (ticket['id'],)).fetchone()
         previous = json.loads(body[0])
@@ -947,7 +970,7 @@ class OuterIntake:
         if previous['status'] not in ('paused', 'completed', 'rejected') or active_assignments(previous):
             raise Problem('范围变化需要先暂停原任务并等待旧派工退出', 409)
         self._record_revision(db, ticket['id'], 'execution_archive', ticket['mandate_revision'], previous)
-        active = self.store._initialize_outer(outer)
+        active = self.store._initialize_outer(outer, profile)
         generation = outer['mandate_revision']
         self.store._create_workspace(ticket['id'], generation=generation, recoverable=True)
         # 审计记录保留旧产物和执行，但新版从独立工作区与空证据链开始。

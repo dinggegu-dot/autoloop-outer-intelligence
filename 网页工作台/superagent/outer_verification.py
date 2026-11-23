@@ -33,6 +33,19 @@ COORDINATOR_SCHEMA = {
 }
 COORDINATOR_SCHEMA["required"] = list(COORDINATOR_SCHEMA["properties"])
 
+SCOPED_COORDINATOR = "scoped-v1"
+SCOPED_COORDINATOR_TOOLS = (
+    "read_failure_evidence", "read_verified_artifacts", "read_plan_versions", "read_remaining_budget",
+)
+_SCOPED_COORDINATOR_FIELDS = {
+    "affected_steps": {"type": "array", "items": {"type": "integer"}},
+    "retained_artifacts": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False, "required": ["path", "sha256"],
+        "properties": {"path": {"type": "string"}, "sha256": {"type": "string"}},
+    }},
+    "verification_items": {"type": "array", "items": {"type": "string"}},
+}
+
 _RESULT_SCHEMA = {"status": ["PASS", "FAIL", "INCONCLUSIVE", "NOT_RUN", "ERROR"]}
 _EVIDENCE_SCHEMA = {
     "required": ["assignment", "run", "artifact_id", "artifact_sha256", "acceptance_revision",
@@ -493,6 +506,19 @@ def validate_results(contract, plan, assignment, checkpoint, rows):
 def coordination_schema(context):
     schema = deepcopy(COORDINATOR_SCHEMA)
     fields = schema["properties"]
+    if context.get("coordinator_profile") == SCOPED_COORDINATOR:
+        fields.update(deepcopy(_SCOPED_COORDINATOR_FIELDS))
+        schema["required"].extend(_SCOPED_COORDINATOR_FIELDS)
+        fields["schema_version"]["enum"] = [2]
+        fields["affected_steps"]["items"]["enum"] = context["affected_steps"]
+        if context["verification_items"]:
+            fields["verification_items"]["items"]["enum"] = context["verification_items"]
+        else:
+            fields["verification_items"]["maxItems"] = 0
+        if context["retained_outputs"]:
+            fields["retained_artifacts"]["items"]["properties"]["path"]["enum"] = context["retained_outputs"]
+        else:
+            fields["retained_artifacts"]["maxItems"] = 0
     fields["input_snapshot_revision"]["enum"] = [context["input_snapshot_revision"]]
     fields["action"]["enum"] = list(context["available_actions"])
     fields["evidence_refs"]["items"]["enum"] = list(context["evidence_refs"])
@@ -506,10 +532,14 @@ def coordination_schema(context):
 
 
 def validate_coordination(result, context):
-    if not isinstance(result, dict) or set(result) != set(COORDINATOR_SCHEMA["required"]):
+    scoped = context.get("coordinator_profile") == SCOPED_COORDINATOR
+    required = set(COORDINATOR_SCHEMA["required"])
+    if scoped:
+        required.update(_SCOPED_COORDINATOR_FIELDS)
+    if not isinstance(result, dict) or set(result) != required:
         raise ValueError("协调建议字段无效")
     action = result["action"]
-    if (type(result["schema_version"]) is not int or result["schema_version"] != 1
+    if (type(result["schema_version"]) is not int or result["schema_version"] != (2 if scoped else 1)
             or result["input_snapshot_revision"] != context["input_snapshot_revision"]
             or action not in context["available_actions"]):
         raise ValueError("协调建议版本或动作已失效")
@@ -528,4 +558,38 @@ def validate_coordination(result, context):
     _text(result["remaining_risk"])
     if action == "REPLAN" or result["plan_change"]:
         _text(result["plan_change"])
+    if scoped:
+        _validate_scoped_coordination(result, context, retained)
     return deepcopy(result)
+
+
+def _validate_scoped_coordination(result, context, retained):
+    steps = result["affected_steps"]
+    if (type(steps) is not list or len(steps) > len(context["affected_steps"])
+            or any(type(step) is not int or step not in context["affected_steps"] for step in steps)
+            or len(set(steps)) != len(steps)):
+        raise ValueError("协调建议引用了未登记的阶段")
+    checks = _list_of_strings(result["verification_items"])
+    if not set(checks) <= set(context["verification_items"]):
+        raise ValueError("协调建议引用了未批准的验收项")
+    if result["action"] in ("CONTINUE", "REPAIR", "REPLAN"):
+        if set(result["evidence_refs"]) != set(context["evidence_refs"]):
+            raise ValueError("继续派工必须覆盖本轮失败证据")
+        if set(checks) != set(context["verification_items"]) or set(steps) != set(context["affected_steps"]):
+            raise ValueError("继续派工必须覆盖受影响阶段和下一轮验收")
+    elif result["action"] == "REQUEST_APPROVAL":
+        if result["approval_required"] is not True:
+            raise ValueError("建议申请授权必须标明需本人批准")
+        _text(result["plan_change"])
+    artifacts = result["retained_artifacts"]
+    if type(artifacts) is not list or len(artifacts) != len(retained):
+        raise ValueError("保留成果必须逐项绑定文件版本")
+    paths = []
+    for item in artifacts:
+        if (not isinstance(item, dict) or set(item) != {"path", "sha256"}
+                or not isinstance(item["path"], str) or item["path"] not in retained
+                or item["sha256"] != context["artifact_versions"].get(item["path"])):
+            raise ValueError("保留成果文件版本不匹配")
+        paths.append(item["path"])
+    if set(paths) != set(retained):
+        raise ValueError("保留成果必须逐项绑定文件版本")

@@ -17,6 +17,7 @@ if __package__ in (None, ''):
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from workbench import Hub, Problem, Store
 from superagent.goal_engine import (
+    StaleCoordination,
     PACKAGE_LIMIT, GoalEngine, active_assignments, assignment_route, canonical, current, digest, flow,
 )
 
@@ -323,9 +324,16 @@ def execute_assignment(store, assignment, directory, verification):
         if outer:
             report.update(outer_binding=outer,verifier_profile='outer-v2')
             if phase == 'review':
+                if assignment.get('coordination_proposal'):
+                    with GoalEngine(store).launch_gate(assignment['ticket'],assignment['id'],assignment['run']):
+                        pass
                 return execute_outer_review(assignment,workspace,directory,report)
             if phase == 'coordinate':
                 return execute_coordination(store,assignment,directory,report)
+            if assignment.get('coordination_proposal'):
+                from superagent.outer_verification import capture
+                if capture(workspace)[0] != assignment['checkpoint']:
+                    return dict(report,checkpoint_mismatch=True,error='待执行的协调动作与已核对的工作区版本不一致')
             prepare_outer_execution(assignment)
         base_id = assignment.get('workspace_base')
         if base_id:
@@ -450,6 +458,8 @@ def execute_assignment(store, assignment, directory, verification):
             if phase == 'review' and report['validation']['passed'] and result.get('passed') is True:
                 freeze_verified(workspace,directory,after)
                 report['delivery'] = {'assignment':assignment['id'],'files':after['files']}
+    except StaleCoordination as exc:
+        report.update(coordination_dispatch_stale=True,error=str(exc))
     except Exception as exc:
         report['error'] = f'{type(exc).__name__}: {str(exc)[:240]}'
     return report
@@ -465,8 +475,11 @@ def prepare_outer_execution(assignment):
         keys = {key for stage in assignment['plan']['steps'][step:] for key in stage['acceptance']}
     elif phase != 'plan':
         keys = set(assignment['plan']['steps'][step]['acceptance'])
+    instructions = (context.get('verification') or {}).get('coordination') or {}
     if phase == 'repair' and step + 1 == len(assignment['plan']['steps']):
         keys = None  # 最后一步返工可以修复最终复验发现的前序回归。
+    if phase=='execute' and instructions.get('schema_version')==2:
+        keys.update(instructions['verification_items'])
     context['approved_criteria'] = [
         {key: row[key] for key in ('criterion_id','requirement_ids','description','required','verifier_id')}
         | {'interface':{key:value for key,value in row['test_spec'].items() if key not in ('args','files')}}
@@ -479,6 +492,11 @@ def prepare_outer_execution(assignment):
     )
     if phase == 'replan':
         context['contract_instruction'] += '仅调整后续阶段的实施方案，保持现有阶段顺序和验收项不变。'
+    if instructions.get('schema_version')==2:
+        context['contract_instruction'] += (
+            'verification.coordination 是已生效的协调决定。处理其中列出的受影响阶段，'
+            '保留 retained_artifacts 中各文件的原始字节，并按 verification_items 复验。'
+        )
     if phase == 'repair' and context.get('human_review_feedback'):
         context['contract_instruction'] += (
             'human_review_feedback 是本人对已归档候选产物的退回意见。'
@@ -523,11 +541,12 @@ def execute_outer_review(assignment, workspace, directory, report):
 
 def execute_coordination(store, assignment, directory, report):
     from superagent.outer_model import PROMPT_VERSION, CodexOuterModel, ModelFailure, role_invoke
-    from superagent.outer_verification import coordination_schema, validate_coordination
+    from superagent.outer_verification import SCOPED_COORDINATOR, coordination_schema, validate_coordination
     context = assignment['context']['coordinator']
     start = time.time_ns()
     engine = GoalEngine(store)
-    adapter = CodexOuterModel(timeout=min(45,assignment['max_seconds'])).with_execution(
+    limit = 120 if context.get('coordinator_profile') == SCOPED_COORDINATOR else 45
+    adapter = CodexOuterModel(timeout=min(limit,assignment['max_seconds'])).with_execution(
         directory, lambda: engine.launch_gate(assignment['ticket'],assignment['id'],assignment['run'])
     )
     evidence = {
@@ -538,6 +557,7 @@ def execute_coordination(store, assignment, directory, report):
     try:
         invocation = role_invoke(adapter, 'goal_coordinator', context, coordination_schema(context))
         evidence.update({key:invocation[key] for key in ('model','usage','elapsed_ms','prompt_version')})
+        evidence.update({key:invocation[key] for key in ('session_id','tools') if key in invocation})
         report['model_audit'] = {key:invocation[key] for key in ('request','final_message','output_truncated')
                                  if key in invocation}
         proposal = validate_coordination(invocation['result'],context)

@@ -71,10 +71,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise Problem('当前实例未启用智能接单',404)
                 return self.json_response(dispatch(workbench.outer(),'web',cmd,body))
             if path == '/api/tasks':
-                if getattr(workbench,'outer_enabled',False):
-                    raise Problem('请在智能接单入口登记需求',409)
+                from outer_workbench import create_task
                 with self.server.task_actions:
-                    result = workbench.create(body)
+                    result = create_task(workbench, body)
                 return self.json_response(result, 201)
             match = re.fullmatch(r'/api/tasks/(wb-[a-f0-9]{32})/(answer|pause|resume|revise|reviewer|handoff|note|move-note)', path)
             if not match:
@@ -110,7 +109,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response({'enabled':False})
             from outer_channels import dispatch
             try:
-                return self.json_response({'enabled':True,'drafts':dispatch(wb.outer(),'web','list',{})})
+                return self.json_response({'enabled':True,'workbench_entry':wb.outer_workbench_entry,
+                                           'drafts':dispatch(wb.outer(),'web','list',{})})
             except (Problem,sqlite3.Error):
                 return self.json_response({'error':'暂时无法读取目标草案'},503)
         if route.startswith('/api/tasks'):
@@ -248,6 +248,7 @@ if __name__ == '__main__':
     parser.add_argument('--goal-contract',type=Path, help='目标试点默认验收契约 JSON')
     parser.add_argument('--goal-team',action='store_true', help='启用隔离多工作包路线')
     parser.add_argument('--outer-intelligence',action='store_true',help='在隔离目标试点启用版本化智能接单')
+    parser.add_argument('--outer-workbench-entry',action='store_true',help='允许从普通建单表单选择目标试点')
     parser.add_argument('--odyssey-assets',type=Path,default=(ROOT/'assets/odyssey' if (ROOT/'assets/odyssey').is_dir() else None),help='本机原版画册目录，仅开放已知地图素材')
     parser.add_argument('--afr-root',type=Path,help='AFR v1 CLI 所在仓库绝对路径')
     parser.add_argument('--afr-python',type=Path,help='本机运行 AFR CLI 的 Python 3.11+')
@@ -285,6 +286,8 @@ if __name__ == '__main__':
         parser.error('画册不完整或包含链接，请指定原版素材目录')
     if args.outer_intelligence and not (args.goal_pilot and args.runtime and args.hub_home):
         parser.error('智能接单需要显式指定目标试点、runtime 和 hub-home')
+    if args.outer_workbench_entry and not args.outer_intelligence:
+        parser.error('普通入口试点须同时启用智能接单')
     if args.outer_intelligence and (args.goal_contract or args.goal_team):
         parser.error('智能接单采用每张工单已批准的验收契约')
     if args.outer_intelligence and (args.runtime.resolve()==(ROOT/'.runtime').resolve() or
@@ -312,7 +315,8 @@ if __name__ == '__main__':
         server.workbench = Workbench(Store(args.runtime) if args.runtime else None,
                                     Hub(args.hub_home) if args.hub_home else None,
                                     goal_enabled=args.goal_pilot, goal_contract=goal_contract,goal_team=args.goal_team,
-                                    outer_enabled=args.outer_intelligence, outer_model=outer_model)
+                                    outer_enabled=args.outer_intelligence, outer_model=outer_model,
+                                    outer_workbench_entry=args.outer_workbench_entry)
         server.odyssey_assets = args.odyssey_assets.resolve() if args.odyssey_assets else None
         server.task_actions = threading.Lock()
         server.afr_panel = afr_panel

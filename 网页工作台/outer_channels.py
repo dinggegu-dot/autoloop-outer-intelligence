@@ -94,9 +94,9 @@ def journey(draft):
         elif phase in ('blocked','budget_exhausted') or outcome == 'AWAITING_REVIEW':
             station = 'decision'
             instruction = execution.get('error') or '请核对阻塞原因与授权范围，再决定如何调整。'
-            ledger = flow.get('decisions', [])
-            if len(ledger) >= 2 and [entry.get('kind') for entry in ledger[-2:]] == ['coordinated','blocked']:
-                proposal = ledger[-2].get('proposal') or {}
+            recent = {entry.get('kind'): entry for entry in flow.get('decisions', [])[-2:]}
+            if recent.keys() == {'coordinated','blocked'}:
+                proposal = recent['coordinated'].get('proposal') or {}
                 if proposal.get('action') in ('REQUEST_APPROVAL','BLOCKED'):
                     label = '需确认变更' if proposal['action'] == 'REQUEST_APPROVAL' else '协调后受阻'
                     instruction = proposal.get('reason') or instruction

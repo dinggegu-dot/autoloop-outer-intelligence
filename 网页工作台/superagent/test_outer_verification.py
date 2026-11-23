@@ -12,7 +12,7 @@ from superagent import outer_verification as registry
 from superagent.goal_engine import MODEL, GoalEngine, current, flow
 from superagent.goal_runtime import execute_assignment
 from superagent.outer_intake import OuterIntake
-from workbench import Store
+from workbench import Problem, Store
 
 
 def criterion(key='one', **updates):
@@ -389,6 +389,172 @@ class OuterExecutionTests(unittest.TestCase):
         task = self.settle_report(review,self.trusted_review(review))
         self.assertEqual(task['status'],'completed')
         self.assertEqual(flow(task)['revisions'][0]['plan']['steps'][0]['state'],'pending')
+
+    def scoped_regression(self):
+        self.authorize(criterion(),criterion('two'))
+        self.store.change(self.ticket,lambda task: flow(task).update(coordinator_profile=registry.SCOPED_COORDINATOR))
+        self.plan(['one'],['two'])
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        self.checkpoint()
+        first = self.launch('review')
+        self.settle_report(first,self.trusted_review(first))
+        (self.workspace/'one.json').write_text('{"ok":false}')
+        (self.workspace/'two.json').write_text('{"ok":true}')
+        self.checkpoint()
+        final = self.launch('review')
+        self.settle_report(final,self.trusted_review(final))
+        assignment = self.launch('coordinate')
+        context = assignment['context']['coordinator']
+        self.assertEqual(context['affected_steps'],[0,1])
+        self.assertEqual(context['verification_items'],['one','two'])
+        self.assertEqual(context['tool_evidence']['read_verified_artifacts']['verified_stages'][0]['assignment'],
+                         first['id'])
+        proposal = {'schema_version':2,'input_snapshot_revision':context['input_snapshot_revision'],
+                    'evidence_refs':context['evidence_refs'],'action':'REPAIR','reason':'修复前序回归',
+                    'plan_change':'修复导入结果','affected_steps':[0,1],'verification_items':['one','two'],
+                    'retained_outputs':['two.json'],
+                    'retained_artifacts':[{'path':'two.json','sha256':context['artifact_versions']['two.json']}],
+                    'scope_change':False,'approval_required':False,'remaining_risk':'需要重新跑全部验收'}
+        from superagent.goal_engine import digest
+        invocation = {'snapshot_revision':context['input_snapshot_revision'],'invocation_id':assignment['id'],
+                      'started_ns':0,'ended_ns':1_000_000_000,'session_id':str(uuid4()),
+                      'tools':[{'name':name,'status':'completed','evidence_sha256':digest(value)}
+                               for name,value in context['tool_evidence'].items()]}
+        return assignment, proposal, invocation
+
+    def test_scoped_proposal_and_dispatch_are_committed_once(self):
+        from concurrent.futures import ThreadPoolExecutor
+        assignment, proposal, invocation = self.scoped_regression()
+        with ThreadPoolExecutor(max_workers=2) as participants:
+            results = list(participants.map(lambda _: self.finish(assignment,proposal,evidence=invocation), range(2)))
+        task = self.store.get(self.ticket)
+        state = flow(task)
+        dispatch = current(task)
+        self.assertEqual(state['stage'],'repair')
+        self.assertEqual(dispatch['phase'],'repair')
+        self.assertEqual(dispatch['coordination_proposal'],assignment['id'])
+        self.assertEqual(state['coordination_proposals'][assignment['id']]['dispatch'],dispatch['id'])
+        self.assertEqual(state['coordination_proposals'][assignment['id']]['disposition'],'accepted')
+        self.assertEqual(state['repairs'],1)
+        self.assertEqual(sum(row['phase']=='repair' for row in state['assignments']),1)
+        self.assertEqual({result['calls'] for result in results},{6})
+        self.assertEqual(current(GoalEngine(self.store).prepare(self.ticket))['id'],dispatch['id'])
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        self.checkpoint('repair')
+        review = self.launch('review')
+        done = self.settle_report(review,self.trusted_review(review))
+        self.assertEqual(done['status'],'completed')
+        self.assertEqual([row['status'] for row in done['checks']],['PASS','PASS'])
+
+    def test_scoped_failed_commit_can_retry_same_receipt(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        with patch.object(GoalEngine,'_enqueue',side_effect=RuntimeError('injected storage interruption')):
+            with self.assertRaisesRegex(RuntimeError,'storage interruption'):
+                self.finish(assignment,proposal,evidence=invocation)
+        recovered = self.store.get(self.ticket)
+        self.assertEqual(current(recovered)['id'],assignment['id'])
+        self.assertNotIn('coordination_proposals',flow(recovered))
+        self.assertEqual(recovered['calls'],5)
+        task = self.finish(assignment,proposal,evidence=invocation)
+        self.assertEqual(current(task)['coordination_proposal'],assignment['id'])
+        self.assertEqual(task['calls'],6)
+
+    def test_scoped_pause_and_new_feedback_fence_coordinator_receipt(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        with self.engine.launch_gate(self.ticket,assignment['id'],assignment['run']):
+            pass
+        ticket = {'id':self.ticket,'goal_revision':1,'status_before_pause':'AUTHORIZED'}
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            OuterIntake._control_execution(db,ticket,'pause','web','pause')
+        task = self.finish(assignment,proposal,evidence=invocation)
+        self.assertEqual(task['status'],'paused')
+        self.assertEqual(flow(task)['coordination_proposals'][assignment['id']]['disposition'],'stale')
+        self.assertIsNone(current(task))
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            OuterIntake._control_execution(db,ticket,'resume','web','resume')
+        new_round = self.launch('coordinate')
+        self.assertNotEqual(new_round['id'],assignment['id'])
+        with self.store.connect() as db:
+            db.execute('INSERT INTO inbox_notes VALUES(?,?,?,?)',('web-note',self.ticket,'有新反馈','time'))
+        with self.assertRaisesRegex(Problem,'协调依据已变化'):
+            with self.engine.launch_gate(self.ticket,new_round['id'],new_round['run']):
+                self.fail('old context reached the launch gate')
+        fresh = self.finish(new_round,proposal,evidence=invocation)
+        self.assertEqual(flow(fresh)['coordination_proposals'][new_round['id']]['disposition'],'stale')
+        self.assertIsNone(current(fresh))
+
+    def test_scoped_retention_cannot_be_forged_or_changed_in_repair(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        tampered = dict(proposal,retained_artifacts=[{'path':'two.json','sha256':'0'*64}])
+        with self.assertRaisesRegex(ValueError,'文件版本不匹配'):
+            registry.validate_coordination(tampered,assignment['context']['coordinator'])
+        self.finish(assignment,proposal,evidence=invocation)
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        (self.workspace/'two.json').write_text('{"ok":false}')
+        task = self.checkpoint('repair')
+        self.assertEqual(task['status'],'blocked')
+        self.assertIn('保留的文件版本',task['error'])
+
+    def test_scoped_new_feedback_cancels_accepted_dispatch_before_hub_send(self):
+        appointment, proposal, invocation = self.scoped_regression()
+        task = self.finish(appointment,proposal,evidence=invocation)
+        dispatch = current(task)
+        with self.store.connect() as db:
+            db.execute('INSERT INTO inbox_notes VALUES(?,?,?,?)',('web-new',self.ticket,'新信息','time'))
+        task = self.engine.mark_send(self.ticket,dispatch['id'])
+        self.assertIsNone(current(task))
+        self.assertEqual(flow(task)['repairs'],0)
+        self.assertEqual(flow(task)['stage'],'coordinate')
+        record = flow(task)['coordination_proposals'][appointment['id']]
+        self.assertEqual(record['dispatch_disposition'],'stale_before_launch')
+        self.assertNotEqual(self.launch('coordinate')['id'],appointment['id'])
+
+    def test_scoped_new_feedback_fences_dispatched_repair_at_worker_gate(self):
+        appointment, proposal, invocation = self.scoped_regression()
+        self.finish(appointment,proposal,evidence=invocation)
+        repair = self.launch('repair')
+        with self.store.connect() as db:
+            db.execute('INSERT INTO inbox_notes VALUES(?,?,?,?)',('web-new',self.ticket,'新信息','time'))
+        def execute(*args,launch_gate):
+            with launch_gate():
+                self.fail('stale repair was allowed to run')
+        with patch('superagent.goal_codex.invoke',side_effect=execute):
+            report = self.trusted_review(repair)
+        self.assertIs(report['coordination_dispatch_stale'],True)
+        task = self.settle_report(repair,report)
+        self.assertEqual(task['calls'],6)
+        self.assertEqual(flow(task)['repairs'],0)
+        self.assertEqual(flow(task)['stage'],'coordinate')
+        self.assertIsNone(current(task))
+
+    def test_scoped_repair_will_not_launch_against_unregistered_bytes(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        self.finish(assignment,proposal,evidence=invocation)
+        (self.workspace/'one.json').write_text('{"ok":true}')
+        repair = self.launch('repair')
+        report = self.trusted_review(repair)
+        self.assertIs(report['checkpoint_mismatch'],True)
+        task = self.engine.settle(self.ticket,repair['id'],repair['run'],'done',report,
+                                  recovery_checkpoint=registry.capture(self.workspace)[0])
+        self.assertEqual(task['status'],'blocked')
+        self.assertNotEqual(flow(task)['checkpoint']['digest'],registry.capture(self.workspace)[0]['digest'])
+
+    def test_scoped_tool_audit_gates_dispatch(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        task = self.finish(assignment,proposal,evidence=dict(invocation,tools=invocation['tools'][:-1]))
+        self.assertEqual(task['status'],'blocked')
+        self.assertIsNone(current(task))
+        self.assertEqual(flow(task)['coordination_proposals'][assignment['id']]['disposition'],'rejected')
+
+    def test_scoped_budget_is_rechecked_after_charging_coordinator(self):
+        assignment, proposal, invocation = self.scoped_regression()
+        self.store.change(self.ticket,lambda task: task.update(elapsed_seconds=570))
+        task = self.finish(assignment,proposal,evidence=invocation)
+        self.assertEqual(task['status'],'budget_exhausted')
+        self.assertIsNone(current(task))
+        self.assertEqual(flow(task)['coordination_proposals'][assignment['id']]['disposition'],'rejected')
 
     def test_coordinator_actual_adapter_envelope_and_launch_gate(self):
         from superagent.test_goal_codex import _events

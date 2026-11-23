@@ -49,7 +49,13 @@ function callHistory(article, call) {
           const trace = d.trace, proposal = trace.decision;
           body.append(element('h4','程序决定'+(trace.run == null ? '' : ' · Run '+trace.run)));
           body.append(element('p',proposal ? '已采纳「'+(actions[proposal.action] || proposal.action)+'」 · '+proposal.reason
-                                           : '账本尚无本次提案的采纳记录。'));
+                                           : trace.reason || '账本尚无本次提案的采纳记录。'));
+          if (trace.dispatch_disposition === 'stale_before_launch') {
+            body.append(element('p','后续派工因工单更新在启动前失效。'));
+          }
+          if (proposal?.affected_steps?.length) record(body,'受影响步骤',proposal.affected_steps.map(step=>step+1));
+          if (proposal?.retained_artifacts?.length) record(body,'保留成果的文件版本',proposal.retained_artifacts);
+          if (proposal?.verification_items?.length) record(body,'接下来复验',proposal.verification_items);
           if (trace.subsequent_runs.length) {
             body.append(element('h4','同一授权下的后续执行'));
             const runs=element('ol','');body.append(runs);
@@ -62,10 +68,12 @@ function callHistory(article, call) {
             }
           }
         }
+        if (d.session_id) record(body,'Codex 会话',d.session_id);
+        if (d.tools?.length) record(body,'工单证据工具与返回摘要',d.tools);
         record(body,'耗时',d.elapsed_ms == null ? '未记录' : d.elapsed_ms+' ms');
         record(body,'用量（tokens）',d.usage ?? '未记录');
         record(body,'失败原因',d.error ?? (['accepted','returned'].includes(d.state) ? '无' : '尚无失败回执'));
-        record(body,'实际输入快照',d.input);
+        record(body,'本轮工单快照',d.input);
         if (d.request) {
           record(body,'发送给 Codex 的提示词',d.request.prompt);
           record(body,'输出 Schema',d.request.output_schema);
@@ -108,12 +116,13 @@ export function mountOuter(request,notice,openTask){
   const call=(cmd,body)=>request('/api/outer/'+cmd,body);
   const area=by('outer'),detail=by('mission'),composer=by('composer'),form=composer.querySelector('form');
   const historyPanel=callHistory(detail,call);
-  const title=d=>d.goal_contract?.goal_statement || d.summary || d.id;
+  const title=d=>d.workbench_name || d.goal_contract?.goal_statement || d.summary || d.id;
   const query=new URLSearchParams(location.search);
-  let chosen=query.get('goal') || '', filter=Object.hasOwn(stations,query.get('station'))?query.get('station'):'', rows=[], event='', active=false, generation=0, key='', listKey='', pending='';
+  let chosen=query.get('goal') || '', filter=Object.hasOwn(stations,query.get('station'))?query.get('station'):'', rows=[], event=query.get('outer_event') || '', active=false, generation=0, key='', listKey='', pending='';
   const oldTask=query.get('task');
   function updateUrl(){
     const url=new URL(location.href);
+    if(!event)url.searchParams.delete('outer_event');
     if(filter)url.searchParams.set('station',filter);else url.searchParams.delete('station');
     if(chosen)url.searchParams.set('goal',chosen);else url.searchParams.delete('goal');
     if(url.hash==='#outer-history')url.hash='';
@@ -169,7 +178,9 @@ export function mountOuter(request,notice,openTask){
   function showDraft(d){
     const e=d.execution, flow=e?.goal_execution, decisions=flow?.decisions || [];
     const reviews=flow?.artifact_reviews || [], candidate=reviews.at(-1);
-    const signature=JSON.stringify([d.id,d.revision,d.status,d.journey,e?.status,e?.step,e?.error,decisions.length,reviews,flow?.validation?.checks]);
+    const assignments=flow?.assignments || [];
+    const dispatches=assignments.map(({id,phase,run,state,version,outer_binding})=>({id,phase,run,state,version,outer_binding}));
+    const signature=JSON.stringify([d.id,d.revision,d.status,d.journey,e?.status,e?.step,e?.error,decisions.length,reviews,dispatches,flow?.validation?.checks]);
     if(signature===key)return;
     const oldInput=detail.querySelector('textarea[data-binding]'),keep=oldInput?.dataset.binding===d.id+'/'+d.revision;
     const oldReview=detail.querySelector('textarea[data-candidate]');
@@ -184,6 +195,9 @@ export function mountOuter(request,notice,openTask){
     const binding={ticket_id:d.id,revision:d.revision,goal_revision:d.goal_revision,acceptance_revision:d.acceptance_revision};
     const command=(name,extra={})=>call(name,{...binding,...extra,request_id:crypto.randomUUID()});
     const heading=element('h3',title(d));heading.className='ticket-title';detail.append(heading);
+    if(d.workbench_name && g.goal_statement && d.workbench_name!==g.goal_statement){
+      detail.append(element('p',g.goal_statement));
+    }
     const meta=element('p',v.label+' · 目标 v'+d.goal_revision+' · 验收 v'+d.acceptance_revision);
     meta.className='meta';detail.append(meta);
     const decision=element('section');decision.id='decision';decision.className='decision';
@@ -229,8 +243,20 @@ export function mountOuter(request,notice,openTask){
         v.station==='delivery'||v.station==='flight'||v.artifact_review);box.id='progress';
       if(plan.length){const steps=element('ol');box.append(steps);for(const p of plan)steps.append(element('li',(p.state==='completed'?'✓ ':'')+(p.title||p.objective)));}
       if(!plan.length)box.append(element('p','尚无已登记的执行步骤。'));
+      if(dispatches.length){
+        const dispatch=fold(box,'派工与版本（'+dispatches.length+'）');
+        const labels={plan:'规划',execute:'实施',review:'验收',coordinate:'协调决定',repair:'修复',replan:'重新规划',package:'工作包'};
+        const states={pending:'待投递',dispatched:'已投递',settled:'已结算',cancelled:'已取消',unknown:'待核对'};
+        const list=element('ol');dispatch.append(list);
+        for(const row of dispatches){
+          list.append(element('li',[labels[row.phase]||row.phase,'方案 v'+row.version,
+            row.run==null?'尚未绑定 Run':'Run '+row.run,states[row.state]||row.state,'派工 '+row.id].join(' · ')));
+        }
+      }
       const evidence=element('div');evidence.id='checks';box.append(evidence);
-      for(const c of checks)evidence.append(element('p',c.status+' · '+(c.description||c.id)+' · '+(c.detail||'')));
+      for(const c of checks)evidence.append(element('p',(c.status || (c.passed===true?'通过':c.passed===false?'未通过':'待核对'))+' · '+(c.description||c.id)+' · '+(c.detail||'')));
+      const delivered=decisions.findLast(row=>row.kind==='delivered');
+      if(delivered?.digest)show(evidence,'最终交付检查点 SHA-256',delivered.digest);
       if(!checks.length)evidence.append(element('p','尚无逐项验收结果。'));
       const artifacts=element('div');artifacts.id='artifacts';box.append(artifacts);
       if(d.prior_deliveries?.length){
@@ -340,10 +366,11 @@ export function mountOuter(request,notice,openTask){
     const pass=++generation;
     try{
       const data=await request('/api/outer');if(pass!==generation)return;rows=data.drafts||[];
-      if(initial){initial=false;
-        if(oldTask&&!chosen&&!rows.some(r=>r.id===oldTask)){by('execution').open=true;by('execution').scrollIntoView();}
-        else if(filter&&!chosen)chosen=rows.find(r=>r.journey.station===filter)?.id||'';
-        if(!chosen&&!filter&&(!oldTask||rows.some(r=>r.id===oldTask)))chosen=rows.find(r=>r.id===oldTask)?.id || rows.find(r=>r.journey.station==='decision')?.id || rows[0]?.id || '';
+      if(initial){
+        initial=false;
+        if(!event && oldTask&&!chosen&&!rows.some(r=>r.id===oldTask)){by('execution').open=true;by('execution').scrollIntoView();}
+        else if(!event && filter && !chosen)chosen=rows.find(r=>r.journey.station===filter)?.id||'';
+        if(!event && !chosen && !filter && (!oldTask||rows.some(r=>r.id===oldTask)))chosen=rows.find(r=>r.id===oldTask)?.id || rows.find(r=>r.journey.station==='decision')?.id || rows[0]?.id || '';
       }
       if(event){
         const current=await call('event',{event_id:event});if(pass!==generation)return;
@@ -358,7 +385,7 @@ export function mountOuter(request,notice,openTask){
         if(current.ticket_id&&chosen!==current.ticket_id){chosen=current.ticket_id;filter='';updateUrl();}
         if(['DONE','REJECTED','NEEDS_ATTENTION','CANCELLED'].includes(current.state)){
           if(current.error||current.state!=='DONE')notice('本次请求需要处理 · '+(current.error||'请核对当前版本后重试。'));
-          event='';
+          event='';updateUrl();
         }
       }
       drawList();historyPanel.select(chosen);
@@ -381,7 +408,7 @@ export function mountOuter(request,notice,openTask){
       form.reset();composer.close();updateUrl();by('tickets').scrollIntoView();notice('目标已登记。');
     }catch(err){notice(err.message);}finally{active=false;await refresh();}
   };
-  area.hidden=false;by('execution').open=false;by('new').hidden=true;
+  area.hidden=false;by('execution').open=false;
   if(query.has('new')){composer.showModal();const url=new URL(location.href);url.searchParams.delete('new');history.replaceState(null,'',url);}
   refresh();setInterval(()=>{if(!document.hidden)refresh();},3500);
 }

@@ -97,15 +97,25 @@ form.onsubmit=async event=>{
     const body=Object.fromEntries(new FormData(form));
     body.request_id=creation||=crypto.randomUUID();
     body.role_models={plan:'gpt-6-astra',execute:'gpt-6-astra',review:'gpt-6-astra'};
-    const result=await request('/api/tasks',body);selected=result.task.id;
+    const result=await request('/api/tasks',body);
+    if(result.workflow==='outer'){
+      const target=new URL('/workbench',location.origin);
+      if(result.ticket_id)target.searchParams.set('goal',result.ticket_id);
+      else target.searchParams.set('outer_event',result.event_id);
+      location.assign(target);
+      return;
+    }
+    selected=result.task.id;
     history.replaceState(null,'','?task='+encodeURIComponent(selected));creation='';form.reset();
     notice(result.dispatch_error||'已登记。');await refresh();
   }catch(error){notice(error.message);}finally{busy=false;}
 };
 let outerMounted=false;
 async function start(){try{csrf=(await request('/api/session')).csrf;
-  if(!outerMounted && (await request('/api/outer')).enabled){
+  const outer=outerMounted ? null : await request('/api/outer');
+  if(outer?.enabled){
     const {mountOuter}=await import('./outer.js');
+    byId('outer-opt-in').hidden=!outer.workbench_entry;
     mountOuter(request,notice,async id=>{selected=id;byId('execution').open=true;await refresh();detail.scrollIntoView();});outerMounted=true;
   }
   if(!outerMounted&&new URLSearchParams(location.search).has("new")){form.elements.name.focus();}
