@@ -28,6 +28,8 @@
 | 沿用唯一授权 | 引擎在同一事务登记采用决定及待派工，后续实际运行 Run 7 修复和 Run 8 独立终验。接受的授权为 v1。重放原建单、原批准，以及已落盘的同一协调回执，原工单的派工清单保持八条。 |
 | 复验与交付 | Run 8 的 8 项检查全部通过，归档下载字节与账本一致。保留的 `update.py` SHA-256 为 `3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139`。交付清单 SHA-256 为 `67793a79d52e1aa387cfda0ea9946accd86f92b61f5eff8a6a0a2313d4316b7a`。另两组未列入工单的合成输入通过。 |
 
+原回归归档的完整清单含 `xcrun_db`，证据保留其文件名和摘要。仓库中的两份合成脚本另有独立清单摘要 `95970dc206c2d4cd3cace5b793cd62b39f134d49307648ec9bc4c516883ad3b3`。
+
 [回归证据及原工单调用摘要](../../evidence/goal-coordinator/regression.json) · [已验查询源码](../../evidence/goal-coordinator/final-artifact/search.py) · [已验增量更新源码](../../evidence/goal-coordinator/final-artifact/update.py)
 
 ## 暂停与迟到提案

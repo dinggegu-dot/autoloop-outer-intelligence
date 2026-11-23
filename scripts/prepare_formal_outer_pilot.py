@@ -40,7 +40,9 @@ def resolve_server(match):
         return pilot[:pilot.index("        if route.startswith('/api/tasks'):")] + formal
     if "files = {'/': 'index.html'" in formal and "'cover.html'" in pilot:
         anchor = '        if route not in files:'
-        entries = """        if getattr(self.server.workbench, 'outer_enabled', False):
+        entries = """        if getattr(self.server, 'afr_panel', None):
+            files.update({'/afr':'afr.html', '/afr.js':'afr.js'})
+        if getattr(getattr(self.server, 'workbench', None), 'outer_enabled', False):
             files.update({'/workbench':'outer-ui/index.html', '/outer-ui/app.js':'outer-ui/app.js',
                           '/outer-ui/style.css':'outer-ui/style.css', '/outer-ui/outer.js':'outer-ui/outer.js',
                           '/outer-ui/intake_dialog.js':'intake_dialog.js'})
@@ -107,13 +109,18 @@ def prepare(formal, target):
         server = replace_once(server, '        if not file.is_file():',
                               '        file = ROOT / files[route]\n        if not file.is_file():')
         server = replace_once(server, "default=(ROOT/'assets/odyssey' if (ROOT/'assets/odyssey').is_dir() else None)", 'default=None')
+        server = replace_once(server, '    args = parser.parse_args()\n',
+                              """    args = parser.parse_args()
+    if args.port == 8765:
+        parser.error('正式源码副本须使用不同于 8765 的端口')
+""")
         server = replace_once(server, '    if args.snapshot:\n        if not LEGACY_BOARD:',
                               '''    if not args.outer_intelligence:
         parser.error('正式工作台源码副本是隔离智能工单试点，请启用智能接单')
     if args.outer_intelligence:
         runtime, hub = args.runtime.resolve(), args.hub_home.resolve()
         marker = runtime.parent / '.goal-pilot'
-        if (args.port == 8765 or runtime.name != 'workbench' or hub != runtime.parent / 'hub'
+        if (runtime.name != 'workbench' or hub != runtime.parent / 'hub'
                 or not marker.is_file() or marker.is_symlink()
                 or Path('/private/tmp') not in runtime.parents):
             parser.error('正式工作台副本须使用隔离启动器目录及不同于 8765 的端口')
@@ -185,6 +192,7 @@ def prepare(formal, target):
             (target / name).write_text(content)
         for name in ('outer_channels.py', 'outer_workbench.py', 'afr_panel.py', 'afr.html', 'afr.js'):
             shutil.copy2(BOARD / name, target / name)
+        shutil.copy2(REPO / 'scripts' / 'afr_command_agent.py', target / 'afr_command_agent.py')
         for source in (BOARD / 'superagent').glob('*.py'):
             if not source.name.startswith('test_'):
                 shutil.copy2(source, target / 'superagent' / source.name)

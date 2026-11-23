@@ -316,7 +316,15 @@
     "mandate_revision": 1,
     "files": {
       "search.py": "6847d4c6d1d7b00b230c63491ef92e54dcecf8e34dd0becbe51e8e9251b291fc",
-      "update.py": "3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139"
+      "update.py": "3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139",
+      "xcrun_db": "767b97e4e6c44f3e9a7b2496c54bcc1c3901650873f4fc67d811e051bd9f6e8b"
+    },
+    "versioned_sample": {
+      "manifest_sha256": "95970dc206c2d4cd3cace5b793cd62b39f134d49307648ec9bc4c516883ad3b3",
+      "files": {
+        "update.py": "3c2812259aa48a5a234a8092810580dd975d9a4c1f402b7496753434a2b1d139",
+        "search.py": "6847d4c6d1d7b00b230c63491ef92e54dcecf8e34dd0becbe51e8e9251b291fc"
+      }
     }
   },
   "formal_listener_pid_unchanged": true,

@@ -115,6 +115,7 @@ async function start(){try{csrf=(await request('/api/session')).csrf;
   const outer=outerMounted ? null : await request('/api/outer');
   if(outer?.enabled){
     const {mountOuter}=await import('./outer.js');
+    form.hidden=!outer.workbench_entry;
     byId('outer-opt-in').hidden=!outer.workbench_entry;
     mountOuter(request,notice,async id=>{selected=id;byId('execution').open=true;await refresh();detail.scrollIntoView();});outerMounted=true;
   }

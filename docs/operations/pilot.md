@@ -27,6 +27,8 @@ python3 -B 网页工作台/server.py --port 43351 \
   --goal-pilot --outer-intelligence
 ```
 
+启用仓库版的普通建单试点时，另加 `--outer-workbench-entry`。正式安装源码生成的隔离副本开放普通 Web 建单试点，沿用正式源码现有的飞书桥协议。签名 V2 飞书桥使用仓库版服务。
+
 从王国地图进入「任务工作台」，或打开 [/workbench](http://127.0.0.1:43351/workbench)。如已有本机原版画册，可给看板命令追加 `--odyssey-assets "/绝对路径/assets/odyssey"`。
 
 在浏览器打开 [本机试点看板](http://127.0.0.1:43351/)。看板处理 V2 接单与人工决定，协调器负责推进派工及对账。Hub 的 `workbench.goal.assignment` 路由指向本机 Worker。启动器命令含历史 `--verify csv-v1` 参数，V2 派工由内嵌批准绑定选择自己的验收契约。V2 使用每张工单的契约，启动参数中无需提供固定契约或启用 V1 团队试点。
