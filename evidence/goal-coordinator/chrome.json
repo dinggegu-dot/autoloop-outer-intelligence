@@ -1,0 +1,280 @@
+{
+  "ticket": "wb-2d1ebe0a5aa74a0a9e70baff2b9e6690",
+  "status": "AUTHORIZED",
+  "mandate_revision": 1,
+  "role_calls": [
+    [
+      "intake_assessor",
+      "accepted",
+      "gpt-6.2-sol"
+    ],
+    [
+      "acceptance_designer",
+      "accepted",
+      "gpt-6.2-sol"
+    ]
+  ],
+  "criteria": {
+    "search.py": [
+      "search-example-alpha",
+      "search-example-z",
+      "search-prefix-sorted-variation",
+      "search-z-match-variation"
+    ],
+    "update.py": [
+      "update-duplicate-addition-variation",
+      "update-example-alpine",
+      "update-example-zebra",
+      "update-multiple-deletions-variation"
+    ]
+  },
+  "required_human_acceptance": false,
+  "approval_terms": {
+    "budget_seconds": 3600,
+    "execution_model": "gpt-6.2-sol",
+    "forbidden_operations": [
+      "network_tools",
+      "send",
+      "publish",
+      "install",
+      "payment",
+      "write_outside_workspace"
+    ],
+    "scope": [
+      "read_workspace",
+      "write_workspace",
+      "run_local_tests"
+    ]
+  },
+  "execution_status": "completed",
+  "execution_stage": "verified_complete",
+  "assignments": [
+    {
+      "id": "021119bb8a4b456c93ce6a13608f49a7",
+      "phase": "plan",
+      "run": 1,
+      "state": "settled"
+    },
+    {
+      "id": "d8755338c4424da5b62ca2d754eb21c8",
+      "phase": "execute",
+      "run": 2,
+      "state": "settled"
+    },
+    {
+      "id": "935ed1da6b5349c4b277dc57f01648a7",
+      "phase": "review",
+      "run": 3,
+      "state": "settled"
+    },
+    {
+      "id": "fbc1824b01814334a22c8935ea142c52",
+      "phase": "execute",
+      "run": 4,
+      "state": "settled"
+    },
+    {
+      "id": "149037090a2d4be19401d388f071b7e2",
+      "phase": "review",
+      "run": 5,
+      "state": "settled"
+    },
+    {
+      "id": "cfa43fa4534144dd898390524e658d5d",
+      "phase": "coordinate",
+      "run": 6,
+      "state": "settled"
+    },
+    {
+      "id": "aaede47f1b614b67a29f8ed97e563406",
+      "phase": "repair",
+      "run": 7,
+      "state": "settled"
+    },
+    {
+      "id": "5f3cc4ec4aa14f949fef5847f671bc08",
+      "phase": "review",
+      "run": 8,
+      "state": "settled"
+    }
+  ],
+  "checks": {
+    "search-example-alpha": "PASS",
+    "search-example-z": "PASS",
+    "update-example-alpine": "PASS",
+    "update-example-zebra": "PASS",
+    "search-prefix-sorted-variation": "PASS",
+    "search-z-match-variation": "PASS",
+    "update-multiple-deletions-variation": "PASS",
+    "update-duplicate-addition-variation": "PASS"
+  },
+  "approval_records": [
+    [
+      "approval_snapshot",
+      1
+    ],
+    [
+      "mandate",
+      1
+    ]
+  ],
+  "stage_one": {
+    "artifact_sha256": "abf7abd072ad190ad95824680d5d958062b6a6db0c45b00f102100d980750ecb",
+    "assignment": "935ed1da6b5349c4b277dc57f01648a7",
+    "files": {
+      "search.py": "fd794cf77194cf86abf9c2ee692a644d7374828dbcd8e83971773b74aef92f43"
+    },
+    "level": "stage",
+    "step": 0,
+    "plan_revision": 1,
+    "evidence_refs": [
+      "sha256:d5bb0a9c08ba39ba12a687c1feba32488e828a912e7a8694a21c8092c3fcd536",
+      "sha256:2b44b4582b286654c82935f6880ca924432ff6281d37673b0339b84c23051c9b",
+      "sha256:47c3fbba6a17a548df71dac69672d7799531274cb96bc4ceb01f208f23458de2",
+      "sha256:bfb40119ef5e72eacc22deaa99a8aaa86c56685707c10f0743fd8d38acc89049"
+    ]
+  },
+  "regression": {
+    "run": 4,
+    "checks": {
+      "search-example-alpha": "FAIL",
+      "search-example-z": "FAIL",
+      "update-example-alpine": "PASS",
+      "update-example-zebra": "PASS",
+      "search-prefix-sorted-variation": "FAIL",
+      "search-z-match-variation": "FAIL",
+      "update-multiple-deletions-variation": "PASS",
+      "update-duplicate-addition-variation": "PASS"
+    },
+    "failed_review": 5
+  },
+  "coordination": {
+    "call_id": "cfa43fa4534144dd898390524e658d5d",
+    "disposition": "accepted",
+    "model": "gpt-6.2-sol",
+    "run": 6,
+    "tools": {
+      "read_verified_artifacts": "f39658d750661aade6ff824c5c4d2de3961a3d9d42dfae54177a57e7410370cb",
+      "read_remaining_budget": "97c4703fa1b0bf11763106f2dd85743c95125d99f4201740f8715bbaed103273",
+      "read_failure_evidence": "ee527fe162db7db5a6103c095bcdc653c9cf78562912ebe8929b4cfa10faabd3",
+      "read_plan_versions": "cc9d6662f927a8dba9b702cd0259774eaa921e64535d55e98f90e43e17ca6529"
+    },
+    "session_sha256": "dc7485067c3c7944ee27e0bdd05f315c7d853ec18051358082c743b1e4d5367f",
+    "proposal": {
+      "action": "REPAIR",
+      "affected_steps": [
+        0,
+        1
+      ],
+      "approval_required": false,
+      "evidence_refs": [
+        "sha256:09e94ba6e8a6a81c1c8c68923b63ad769897dbb3c1b04f14cf7b7f72b925235d",
+        "sha256:fe57179799d4f9b5a4d44a2bb6d9f5cf5fb4db45932de9733e474bc8e37be836",
+        "sha256:b7100f026bd31ab09c9c1b4ae510d698580daab1d853416771164743589665b4",
+        "sha256:8aed522f49f9a05d361dc0c2ca450fde8cdcf792567872b45f99bbcefdfc53fd"
+      ],
+      "input_snapshot_revision": "ba1268d4189d9f62190580165ec33df654ef27ee7981c3b113664944affecfe4",
+      "plan_change": "按现有计划继续派工。步骤 0 对照已独立验过的 search.py 基线和当前候选的实际命令行输出，定位差异并修复查询行为，复验前缀匹配、排序、无命中和新增候选后的唯一命中。步骤 1 复用已验的 update.py 文件版本，核对 SHA-256 后在修复候选中复验新增、删除、去重和排序。八项复验均从命令行入口执行，检查退出码并比较完整的 JSON 对象。",
+      "reason": "当前候选的四项 search.py 验收输出与预期 JSON 不符。update.py 的四项验收均在两次隔离运行中通过，工具确认其文件版本可保留。现有授权剩余 3519 秒，最低复核时间为 82 秒。",
+      "remaining_risk": "失败记录只确认了 JSON 输出偏差，根因仍需通过实际调用和基线对照确定。修复候选仍需通过全部八项复验。",
+      "retained_artifacts": [
+        {
+          "path": "update.py",
+          "sha256": "3987ab948c5c283a3730effc6349a98fd8f7a4186f5708a78f693f52099125d1"
+        }
+      ],
+      "retained_outputs": [
+        "update.py"
+      ],
+      "schema_version": 2,
+      "scope_change": false,
+      "verification_items": [
+        "search-example-alpha",
+        "search-example-z",
+        "update-example-alpine",
+        "update-example-zebra",
+        "search-prefix-sorted-variation",
+        "search-z-match-variation",
+        "update-multiple-deletions-variation",
+        "update-duplicate-addition-variation"
+      ]
+    },
+    "subsequent_runs": [
+      {
+        "phase": "repair",
+        "assignment": "aaede47f1b614b67a29f8ed97e563406",
+        "run": 7,
+        "state": "settled"
+      },
+      {
+        "phase": "review",
+        "assignment": "5f3cc4ec4aa14f949fef5847f671bc08",
+        "run": 8,
+        "state": "settled",
+        "passed": true,
+        "delivery_digest": "84c29c7fb73895857b009b7914249cb036d188e91ec26d551e6f040ea3ccc350"
+      }
+    ]
+  },
+  "final_delivery": {
+    "files": {
+      "search.py": "640683775e1459dcb1850e7cffbbf821de3c38718ad5756fe4f1cbb850887cd3",
+      "update.py": "3987ab948c5c283a3730effc6349a98fd8f7a4186f5708a78f693f52099125d1"
+    },
+    "artifact_sha256": "84c29c7fb73895857b009b7914249cb036d188e91ec26d551e6f040ea3ccc350"
+  },
+  "hub_runs": [
+    [
+      1,
+      "done"
+    ],
+    [
+      2,
+      "done"
+    ],
+    [
+      3,
+      "done"
+    ],
+    [
+      4,
+      "done"
+    ],
+    [
+      5,
+      "done"
+    ],
+    [
+      6,
+      "done"
+    ],
+    [
+      7,
+      "done"
+    ],
+    [
+      8,
+      "done"
+    ]
+  ],
+  "http": {
+    "ordinary_form_201": 1,
+    "approve_200": 1,
+    "coordination_detail_200": 2,
+    "download_200": [
+      "/api/tasks/wb-2d1ebe0a5aa74a0a9e70baff2b9e6690/artifact?path=search.py&version=1",
+      "/api/tasks/wb-2d1ebe0a5aa74a0a9e70baff2b9e6690/artifact?path=update.py&version=1"
+    ]
+  },
+  "browser": "Google Chrome",
+  "entry": "普通新建工单 → /api/tasks → 原工单",
+  "browser_download_sha256": {
+    "search.py": "640683775e1459dcb1850e7cffbbf821de3c38718ad5756fe4f1cbb850887cd3",
+    "update.py": "3987ab948c5c283a3730effc6349a98fd8f7a4186f5708a78f693f52099125d1"
+  },
+  "form_wording_check": {
+    "trial_checked": "显示接单、验收和批准后实施",
+    "trial_unchecked": "还原普通执行模型提示"
+  },
+  "local_regression_count": 305
+}
