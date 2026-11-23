@@ -250,6 +250,17 @@ class Supervisor:
             time.sleep(0.2)
         raise ValueError(f'{name} 就绪超时，详见 runtime/{name}.log')
 
+    def scheduler_running(self):
+        lock = self.runtime / 'workbench/goal-runtime.lock'
+        if not lock.exists():
+            return False
+        with lock.open('r') as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+        return False
+
     def run(self):
         if not self.runtime.exists() and not self.runtime.is_symlink():
             self.initialize()
@@ -267,6 +278,10 @@ class Supervisor:
                                '--port', str(self.board_port)], dict(self.env, AUTOLOOP_CANARY_GATEWAY_KEY=self.gateway_key))
         self.wait_ready(lambda: board_log(f'Local: http://127.0.0.1:{self.board_port}')
                         and board_ready(self.board_port, self.gateway_key), 'board')
+        require(not self.scheduler_running(), '已有其他目标调度器持有灰度账本')
+        self.start('scheduler', [sys.executable, '-B', str(self.goal), 'serve',
+                                '--runtime', str(self.runtime / 'workbench'), '--hub', str(self.runtime / 'hub')], self.env)
+        self.wait_ready(self.scheduler_running, 'scheduler')
         self.alive()
         print('READY', flush=True)
         while True:
