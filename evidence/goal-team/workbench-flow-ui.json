@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-25",
+  "baseline": "45df215d9fa5b519a7d6c9420b3b6a19c9a52b86",
+  "tested_implementation": "d086442ccb50fae51e2076ba4ca7e22bb11d6a84",
+  "scope": "正式工作台形态的隔离副本；本轮复用既有已签收工单，不新增模型任务",
+  "entry_points": {
+    "mixed_queue": {
+      "type": "正式 Chrome、正式页面生成器及签名网关，使用合成数据模拟不同工单状态",
+      "visible_decisions": {
+        "ordinary": 4,
+        "codex": 3
+      },
+      "width_px": [
+        360,
+        1920
+      ],
+      "observed": [
+        "待决定排在推进与交付之前",
+        "普通审批、普通受阻和失败的修改各自直达原单对应位置",
+        "同名 Codex 单通过工单尾号定位",
+        "表单草稿、键盘焦点、深色和减少动态效果",
+        "普通数据中断或 Codex 网关失效时，另一侧仍可用",
+        "拒绝无效签名、恢复后重新读取、旧网关和灰度关闭可回退"
+      ]
+    },
+    "archived_ticket": {
+      "type": "真实 Chrome 与签名回环服务，读取既有真实 Codex 合成运行的账本及文件副本",
+      "reference": "authorized-workbench-live.json",
+      "delivered_version": 2,
+      "passed_checks": 2,
+      "total_checks": 2,
+      "first_version_marker": "Bring a notebook.",
+      "signed_version_marker": "Bring a pencil.",
+      "observed": [
+        "从已交付卡进入成果与验收",
+        "签收版本及静态 HTML 正文可读",
+        "同一次派工的双方方案、顾问问题及负责人修改清单",
+        "两条外层回执可分别展开，原始记录单独折叠"
+      ]
+    },
+    "coordinator": {
+      "type": "使用既有真实运行的脱敏回执，在前端渲染测试中复放",
+      "reference": "regression-real-api.json",
+      "observed": [
+        "返工做法与理由",
+        "保留的文件及完整摘要",
+        "下一轮验收项",
+        "四项已返回的工单工具",
+        "后续派工记录"
+      ]
+    }
+  },
+  "boundaries": [
+    "本轮未重跑真实模型，也未制造新的业务工单",
+    "混合待办中的内容为合成示例；签收工单来自之前的真实隔离运行",
+    "未解盲的候选来源受保护；当前有效锁票或已完成的历史可回看返修",
+    "正式入口对独立试验盲评仍沿用既有边界"
+  ],
+  "tests": {
+    "mode": "macOS、真实系统沙箱与本机回环，scripts/check.py",
+    "scripts": 30,
+    "browser_logic": 43,
+    "workbench": 99,
+    "superagent": 223,
+    "mobile": 49,
+    "integration": 5,
+    "passed": 449,
+    "failed": 0,
+    "skipped": 0
+  },
+  "rollback": {
+    "type": "在独立源码副本反向应用本轮代码差异，使用同一安装基线重建两层程序，逐文件校验 SHA-256",
+    "package_files": 95,
+    "changed_build_files": 14,
+    "baseline_restored": true,
+    "modifies_ledger": false
+  },
+  "independent_review": {
+    "reviewer": "GPT-6.2 Sol 独立复核",
+    "result": "通过",
+    "observed": "在两个隔离 Chrome 页面核对统一待办、原单焦点、正文、双方方案和真实外层记录，独立模拟双来源断开与恢复",
+    "fixes_rechecked": [
+      "无提交权限的协调事项归入待核对",
+      "新单区分勾选外发与实际登记，分步要求按需出现"
+    ]
+  }
+}
