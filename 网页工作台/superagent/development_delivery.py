@@ -93,7 +93,12 @@ def authorize_release(store, ticket, *, mandate, digest, repo, number, head, mod
                 'SELECT 1 FROM development_release_authorizations WHERE repo=? AND number=? AND head=? AND ticket<>?',
                 (*key, ticket)).fetchone():
             raise Problem('同一 PR 提交已绑定其他工单', 409)
-        if previous is None or tuple(previous[field] for field in ('repo','number','head','mode')) != (*key, mode):
+        match_payload = json.dumps(artifact_match,sort_keys=True) if artifact_match is not None else None
+        previous_match = previous and db.execute(
+            'SELECT body FROM development_release_matches WHERE authorization=?',(previous['id'],)).fetchone()
+        newly_verified = match_payload is not None and (not previous_match or previous_match[0] != match_payload)
+        if (previous is None or newly_verified
+                or tuple(previous[field] for field in ('repo','number','head','mode')) != (*key, mode)):
             db.execute('''INSERT INTO development_release_authorizations
                 (ticket,mandate,digest,repo,number,head,mode,approval_event,actor,authorized_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?)''',
@@ -101,7 +106,7 @@ def authorize_release(store, ticket, *, mandate, digest, repo, number, head, mod
         if artifact_match is not None:
             bound = _latest_authorization(db, ticket, candidate)
             db.execute('INSERT OR IGNORE INTO development_release_matches VALUES (?,?)',
-                       (bound['id'],json.dumps(artifact_match,sort_keys=True)))
+                       (bound['id'],match_payload))
     return read_release(store, ticket)
 
 
@@ -168,7 +173,7 @@ def record_progress(store, data):
             report['merge'] = merge
         if ship is not None:
             report['ship'] = ship
-        if data.get('detail') in ('closed', 'review', 'delivery', 'github', 'execution'):
+        if data.get('detail') in ('closed', 'review', 'delivery', 'github', 'execution', 'missing_independent_review'):
             report['detail'] = data['detail']
         db.execute('INSERT OR IGNORE INTO development_release_reports VALUES (?,?,?)',
                    (binding['id'], at, json.dumps(report, sort_keys=True)))
