@@ -1,4 +1,6 @@
 """验证正式灰度的本机边界。"""
+from pathlib import Path
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -49,6 +51,54 @@ class FormalOuterCanaryTests(unittest.TestCase):
                         dict(CUSTOM_ORDER, original_file="/local/file"), dict(CUSTOM_ORDER, cwd="/local/folder")):
             with self.subTest(field_changes=[key for key, value in invalid.items() if CUSTOM_ORDER.get(key) != value], changed_lengths=[len(v) for v in invalid.values() if isinstance(v, str)]):
                 self.assertFalse(valid_custom_order(invalid))
+
+    def test_home_drafts_read_requires_local_session_and_forwards_the_original_list(self):
+        gateway = OuterCanary.__new__(OuterCanary)
+        route = PREFIX + "drafts"
+        with patch.object(gateway, "forward") as forward:
+            handler = Response()
+            handler.session = lambda: False
+            handler.path = route
+            self.assertEqual(gateway.get(handler, route)[1], 403)
+            forward.assert_not_called()
+            handler.session = lambda: True
+            gateway.get(handler, route)
+            forward.assert_called_once_with(handler, "/api/outer")
+
+    def test_formal_home_ordinary_decisions_keep_current_actions_and_exclude_unknown(self):
+        module = Path(__file__).with_name("formal_home_goal_queue.js").resolve().as_uri()
+        presentation = Path(__file__).resolve().parents[1] / "网页工作台/task_presentation.js"
+        subprocess.run(["node", "--input-type=module", "-e", """
+            import assert from 'node:assert/strict';
+            const {projectFormalOrdinaryDecisions} = await import(process.argv[1]);
+            const {queueFor,nextAction} = await import(process.argv[2]);
+            const task = {id:'wb-existing', name:'合成普通工单', status:'awaiting_approval', version:2, cards:[
+              {id:1,state:'open',version:1,title:'原方案',text:'旧原因'},
+              {id:2,state:'closed',version:2,title:'已审方案',text:'已处理'},
+              {id:3,state:'open',version:2,title:'等待方案审批',text:'需要确认交付范围'},
+            ]};
+            const rows = projectFormalOrdinaryDecisions([
+              task,
+              {...task,id:'wb-outdated',cards:[task.cards[0]]},
+              {...task,id:'wb-stale',observation_stale:true},
+              {...task,id:'wb-blocked',status:'blocked',cards:[],error:'核对本地输入'},
+              {...task,id:'wb-paused',status:'paused',cards:[]},
+              {...task,id:'wb-budget',status:'budget_exhausted',cards:[]},
+              {...task,id:'wb-created',status:'created',cards:[]},
+              {...task,id:'wb-revision',status:'completed',cards:[],revision_pending:{state:'suspended'}},
+            ], queueFor, (task,card)=>task.version===card.version, nextAction);
+            assert.deepEqual(rows.map(({id,panel,anchor})=>[id,panel,anchor]), [
+              ['wb-existing','plan','approval'],
+              ['wb-blocked','overview','actions'],
+              ['wb-paused','overview','actions'],
+              ['wb-budget','overview','actions'],
+              ['wb-created','overview','actions'],
+              ['wb-revision','changes','changes'],
+            ]);
+            assert.equal(rows[0].reason,'需要确认交付范围');
+            assert.equal(rows[0].next,'核对方案并处理待办');
+            assert.equal(rows[1].reason,'核对本地输入');
+        """, module, presentation.as_uri()], check=True)
 
     def test_known_operations_keep_version_binding(self):
         self.assertTrue(valid_command("approve", BINDING))
