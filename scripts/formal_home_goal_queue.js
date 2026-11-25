@@ -45,7 +45,7 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
   const taskView = root.closest('.view-panel');
   const approvalView = approvals.closest('.view-panel');
   const stations = [
-    ['flight', '正在推进', '当前没有正在推进的 Codex 工单。'],
+    ['flight', '正在推进', '当前没有正在推进的团队工单。'],
     ['delivery', '已交付', '交付成果会显示在这里。'],
   ];
   const create = (tag, text, className) => {
@@ -64,13 +64,11 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
     item.append(create('h4', row.title), create('span', row.label, 'goal-chip'));
     const ordinary = Boolean(row.key);
     const ref = ordinary ? row.id.slice(0,11) : row.id.slice(-8);
-    const scope = ordinary ? '普通工单' : 'Codex 工单';
+    const scope = ordinary ? '普通工单' : row.routerTeam ? 'Router 团队' : '历史团队工单';
     item.append(create('small', scope+' '+ref, 'goal-muted'));
     if (row.station === 'decision') {
-      const why = create('dl', '', 'goal-why');
-      why.append(create('dt', '为什么等'), create('dd', row.reason || '工单在等待你的决定。'),
-        create('dt', '现在做什么'), create('dd', row.next || '打开工单查看待处理事项。'));
-      item.append(why);
+      const reason = row.reason || row.next;
+      if (reason) item.append(create('p', reason, 'goal-muted'));
     }
     const action = create(ordinary ? 'button' : 'a', row.action, 'goal-button');
     if (ordinary) {
@@ -96,7 +94,7 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
     const active = document.activeElement;
     const preserve = decisions.contains(active);
     const rows = [...ordinaryRows,...codexRows];
-    const key = JSON.stringify(rows.map(row=>[row.key,row.id,row.title,row.label,row.reason,row.next,row.panel,row.anchor,row.action]));
+    const key = JSON.stringify(rows.map(row=>[row.key,row.id,row.routerTeam,row.title,row.label,row.reason,row.next,row.panel,row.anchor,row.action]));
     if (key !== decisionKey) {
       decisionKey = key;
       decisionList.replaceChildren(...rows.map(card));
@@ -112,7 +110,7 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
   function draw(groups, projected = [], otherCounts = {}, message = '') {
     const active = document.activeElement;
     const preserve = content.contains(active) || other.contains(active);
-    const key = JSON.stringify(groups?.map(rows=>rows.map(row=>[row.id,row.title,row.anchor,row.label,row.action])));
+    const key = JSON.stringify(groups?.map(rows=>rows.map(row=>[row.id,row.routerTeam,row.title,row.anchor,row.label,row.action])));
     if (key !== queueKey) {
       queueKey = key;
       content.replaceChildren(...(groups || []).map((rows, index) => {
@@ -136,8 +134,8 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
     codexRows = projected;
     codexError = message;
     setText(codexStatus,message);
-    setText(approvalStatus,message ? '暂时无法核对 Codex 待决定工单。连接恢复后会自动更新。' : '');
-    const approvalLabel = codexRows.length ? '查看 '+codexRows.length+' 张待我决定的 Codex 工单' : '查看 Codex 待决定工单';
+    setText(approvalStatus,message ? '暂时无法核对待决定的团队工单。连接恢复后会自动更新。' : '');
+    const approvalLabel = codexRows.length ? '查看 '+codexRows.length+' 张待我决定的团队工单' : '查看待决定的团队工单';
     setText(approvalLink,approvalLabel);
     root.hidden = groups === null;
     approvals.hidden = groups === null && !message;
@@ -166,10 +164,10 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
         response = await read();
       }
       if (response.status === 404) return draw(null);
-      if (!response.ok) throw Error('无法读取 Codex 工单');
+      if (!response.ok) throw Error('无法读取团队工单');
       const data = await response.json();
       if (data.enabled === false) return draw(null);
-      if (data.enabled !== true || !Array.isArray(data.drafts)) throw Error('Codex 工单记录不可用');
+      if (data.enabled !== true || !Array.isArray(data.drafts)) throw Error('团队工单记录不可用');
       if (!data.drafts.length && data.goal_team_enabled !== true) return draw(null);
       if (!projection) {
         const module = new URL('/outer-canary/goal_team.js',location.origin);
@@ -184,7 +182,7 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
       draw(stations.map(([station])=>sortQueue(queue(station),station)), sortQueue(queue('decision'),'decision'),
         {dock:queue('dock').length, unknown:queue('unknown').length});
     } catch {
-      draw(null, [], {}, 'Codex 工单待办暂无法核对。连接恢复后会自动更新，也可以重试。');
+      draw(null, [], {}, '团队工单待办暂无法核对。连接恢复后会自动更新，也可以重试。');
     } finally {
       retry.removeAttribute('aria-disabled');
       inFlight = false;

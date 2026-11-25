@@ -12,12 +12,16 @@ const tabs = { progress: '进度', artifacts: '成果与验收', decisions: '决
 const anchors = {
   mission: 'progress', decision: 'progress', scope: 'progress', criteria: 'progress',
   budget: 'progress', progress: 'progress', checks: 'artifacts', artifacts: 'artifacts', 'blind-review': 'artifacts',
-  revisions: 'decisions', 'outer-history': 'decisions', timeline: 'decisions', decisions: 'decisions',
+  feedback: 'decisions', revisions: 'decisions', 'outer-history': 'decisions', timeline: 'decisions', decisions: 'decisions',
 };
 const titleOf = row => row.workbench_name || row.goal_contract?.goal_statement || row.summary || row.name || row.id;
 const preferenceOf = row => row.execution?.pending_preference || row.pending_preference;
-const directionQuestion = question => Number.isInteger(question?.step) && question.step>0;
+const directionQuestion = question => question?.requires_option===true ||
+  (Number.isInteger(question?.step) && question.step>0);
 const stepLabel = step => Number.isInteger(step) && step>=0 ? '第 '+(step+1)+' 步' : '';
+const pendingTicketSelection = receipt => Boolean(!receipt?.selected_by &&
+  (receipt?.router_selection===true || receipt?.choices?.length));
+const needsModelConsent = row => row.needs_model_consent===true && !['PAUSED','STOPPED'].includes(row.status);
 const currentClarification = row => row.status === 'AWAITING_CLARIFICATION' &&
   String(row.question?.answer_status).toLowerCase() !== 'answered' && row.question?.question_id;
 const deliveriesOf = row => row.execution?.goal_execution?.artifact_reviews || [];
@@ -42,7 +46,8 @@ const innerRepairStates = {
   waiting_review:'新版已保存，等待负责人复验',
 };
 const teamReviewModes = {
-  review: {label:'比较方案并审稿', scope:'负责人和顾问分别提出方案，确定做法后，由顾问查看初稿并提出修改意见。'},
+  adaptive_review: {label:'简单直接做，复杂再比较', scope:'负责人和执行者默认使用 Sol，只读顾问默认使用 Astra。复杂工单才比较方案，只有重要取舍需要你决定。'},
+  review: {label:'主动比较双方案并审稿', scope:'负责人和顾问分别提出方案，确定做法后，由顾问查看初稿并提出修改意见。'},
   review_and_decide: {label:'分步交付，第 2 步请我定方向', scope:'适合至少两步能分别验收的工单。第 2 步初稿完成后请你定方向。'},
 };
 const canReviseAtDecision = row => row.journey?.modify ?? (row.status==='VERIFICATION_GAP');
@@ -84,6 +89,10 @@ export function projectGoalRow(row,{allowFreeText=true}={}) {
     station='unknown'; label='待核对'; reason='尚无可确认的本轮回执。'; action='查看原因';
   } else if (stopping) {
     station = 'flight'; label = '正在停止'; reason = '等待本轮退出'; action = '看进度';
+  } else if (needsModelConsent(row)) {
+    station='decision'; anchor='decision'; label='待授权读取原话';
+    reason='原话已登记在本机。请核对是否可交给本单团队。'; next='同意后，团队会开始整理目标和验收条件。';
+    action='查看原话与授权';
   } else if (station === 'decision') {
     anchor = 'decision';
     if (preference && row.status !== 'PAUSED' && row.status !== 'STOPPED') {
@@ -131,7 +140,7 @@ export function projectGoalRow(row,{allowFreeText=true}={}) {
     }
   }
   return {
-    title: titleOf(row), id: row.id, station, anchor, label, reason, next, action,
+    title: titleOf(row), id: row.id, station, anchor, label, reason, next, action, routerTeam: Boolean(row.ticket_team),
     at: (station==='delivery' && row.delivery_at) || row.last_business_at || row.execution?.updated_at || row.updated_at || '',
     waitingSince: preference?.created_at || row.decision_since || row.question?.created_at || row.updated_at || '',
     due: preference?.due_at || row.decision_due_at || '',
@@ -152,8 +161,10 @@ function workflowSteps(row, model) {
     else current=1;
   } else return null;
   const stages=el('ol',null,'goal-workflow');
+  const labels = row.ticket_team ? ['目标与授权','团队审稿与执行','独立验收','交付与回执'] :
+    ['接单与批准','派工与推进','独立核验','签收与交付'];
   stages.setAttribute('aria-label','工单所在环节');
-  for (const [index,label] of ['接单与批准','派工与推进','独立核验','签收与交付'].entries()) {
+  for (const [index,label] of labels.entries()) {
     const item=el('li',label);
     if (index===current) { item.setAttribute('aria-current','step'); item.append(el('small','当前')); }
     stages.append(item);
@@ -180,15 +191,16 @@ export function mountTeamReviewControl(anchor, initial='') {
   const select=el('select');
   select.id='team-review-mode';
   select.name='team_review_mode';
-  const automatic=el('option','随任务自动安排');
+  const automatic=el('option','简单直接做，复杂再比较');
   automatic.value='';
   select.append(automatic);
-  for (const [value,{label}] of Object.entries(teamReviewModes)) {
+  for (const value of ['review','review_and_decide']) {
+    const {label}=teamReviewModes[value];
     const option=el('option',label);
     option.value=value;
     select.append(option);
   }
-  if (Object.hasOwn(teamReviewModes,initial)) select.value=initial;
+  if (['review','review_and_decide'].includes(initial)) select.value=initial;
   const hint=el('small','请写明至少两步可以分别验收的成果。','goal-muted');
   hint.id='team-review-hint';
   const showHint=()=>{hint.hidden=select.value!=='review_and_decide';};
@@ -542,7 +554,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   formalModelInputConsent=false} = {}) {
   const call = (command, data) => request('/api/outer/'+command,data);
   const supportsExperiments = !formalModelInputConsent;
-  const canSendText = row => !formalModelInputConsent || row.allow_model_input===true;
+  const requiresModelConsent = row => formalModelInputConsent || Boolean(row.ticket_team);
+  const canSendText = row => !requiresModelConsent(row) || row.allow_model_input===true;
   const project = row => projectGoalRow(row,{allowFreeText:canSendText(row)});
   const getDraft = draftStore();
   const queueHead = el('div',null,'goal-toolbar');
@@ -578,7 +591,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   function approveAction(heading, text, label, fn, cancelLabel='取消') {
     confirmTitle.textContent = heading; confirmText.textContent = text; confirmButton.textContent = label;
     cancelButton.textContent=cancelLabel;
-    if (formalModelInputConsent) ++loadVersion;
+    ++loadVersion;
     confirmation = fn; confirmBox.showModal(); cancelButton.focus();
   }
   function askModelInputConsent(purpose, label, submit, consequence='') {
@@ -720,8 +733,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   }
   async function perform(row, command, fields, feedback, success, draft, nextAnchor) {
     if (commandInFlight || !connected || row.id!==focused || selectedSnapshot!==row) return;
-    const useTicketRevision = ['extend_team_budget','lock_blind_ballot'].includes(command) ||
-      (formalModelInputConsent && command==='submit');
+    const useTicketRevision = ['extend_team_budget','lock_blind_ballot','authorize_model_input'].includes(command) ||
+      (requiresModelConsent(row) && command==='submit');
     const version = useTicketRevision ? {ticket_id:row.id,revision:row.revision} : binding(row);
     const payload = {...version,...fields};
     const fingerprint = JSON.stringify([command,payload]);
@@ -891,7 +904,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     parent.append(writeButton(direction ? '提交修改方向' : '提交选择','goal-submit-preference',()=>{
       const option=options.find(item=>item.id===draft.data.option_id);
       const option_id=option?.id;
-      const text=!allowFreeText || (formalModelInputConsent && !field.value.trim()) ? '' : field.value;
+      const text=!allowFreeText || (requiresModelConsent(row) && !field.value.trim()) ? '' : field.value;
       const conflict=preferenceDirectionConflict(option,text);
       if (conflict) { feedback.textContent=conflict; field.focus(); return; }
       if (!option_id && (q.requires_option || !text.trim())) {
@@ -909,7 +922,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         question_id:q.id,question_revision:q.revision,candidate_digest:q.candidate_digest,
         answer:{option_id,text},...consent,
       },feedback,'选择已记录，正在刷新原单。',draft);
-      if (formalModelInputConsent && text) {
+      if (requiresModelConsent(row) && text) {
         askModelInputConsent('你填写的意见将发送给 Codex 模型，用于继续处理这张工单。','同意并提交',submit);
       } else submit();
     },true));
@@ -917,12 +930,27 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   function draftVersion(parent,label,digest) {
     parent.append(el('h4',label),el('code',digest,'goal-muted'));
   }
+  function authorizeIntake(row,parent) {
+    const original=row.original_request?.text || row.original_request?.goal;
+    if (!original) {
+      parent.append(el('p','暂时无法读取原话。请重新打开原单后再核对。','goal-muted'));
+      return;
+    }
+    copy(parent,'原话',original);
+    const scope='团队会使用本单原话整理目标和验收条件。执行前仍需在原单批准。';
+    parent.append(el('p',scope,'goal-muted'));
+    const feedback=actionStatus(parent);
+    parent.append(writeButton('允许把本单原话交给团队','goal-authorize-model-input',()=>{
+      approveAction('允许把本单原话交给团队？',scope,'确认交给团队',
+        ()=>perform(row,'authorize_model_input',{allow_model_input:true},feedback,'本次授权已登记。'));
+    },true));
+  }
   function clarificationForm(row, parent) {
     const q=row.question, draft=getDraft(row.id+'/clarification/'+q.question_id+'/'+row.revision);
     const feedback=actionStatus(parent);
     const submit=text=>{
       const send=(consent={})=>perform(row,'submit',{text,question_id:q.question_id,...consent},feedback,'澄清回复已登记。',draft);
-      if (formalModelInputConsent) {
+      if (requiresModelConsent(row)) {
         askModelInputConsent('这条澄清答复将发送给 Codex 模型，用于补齐原单条件。','同意并提交',send);
       } else send();
     };
@@ -962,6 +990,15 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const steps=execution?.plan?.steps || [];
     const activeAssignment=flow.assignments?.findLast(item=>item.step===execution?.step && item.state==='dispatched');
     parent.append(el('h3','执行进度'));
+    const routeLabels={direct:'直接实施',compare:'比较双方案'};
+    const route=routeLabels[execution?.plan?.execution_route];
+    if (route) copy(parent,'已定路线 · '+route,execution.plan.route_reason);
+    if (row.ticket_team) {
+      const names={lead:'负责人',implementer:'执行者',advisor:'只读顾问',design_advisor:'只读顾问',reviewer:'独立验收者'};
+      const used=[...new Set((execution?.team_activity || []).filter(call=>call.status==='completed' && names[call.role] && call.model)
+        .map(call=>names[call.role]+' '+call.model))];
+      if (used.length) parent.append(el('p','已完成的角色调用 · '+used.join(' · '),'goal-muted'));
+    }
     if (!steps.length) parent.append(el('p','尚无已登记的执行步骤。','goal-muted'));
     else {
       const list=el('ol',null,'goal-steps');
@@ -977,11 +1014,23 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
           else if(activeAssignment && ['executing','reviewing'].includes(execution.status))label='正在'+(phases[activeAssignment.phase] || '推进');
         }
         item.append(el('span',label,'goal-chip'),el('strong',step.title||step.objective));
+        const stepRoute=routeLabels[step.execution_route];
+        if (stepRoute) item.append(el('small',stepRoute,'goal-muted'));
         list.append(item);
       }
       parent.append(list);
     }
     displayTeamHandoffs(row,parent);
+    if (row.ticket_team) {
+      const box=details('Router 回执','router-dispatch');
+      box.append(el('p','Router 已接单，本单有独立团队。'));
+      const receipts=(flow.decisions || []).filter(item=>['run_bound','delivered'].includes(item.kind));
+      for (const receipt of [...receipts].reverse()) {
+        const label=receipt.kind==='delivered'?'本单已验收并登记交付':'中台已接单 · Run '+receipt.run;
+        box.append(el('p',[time(receipt.at),label].filter(Boolean).join(' · ')));
+      }
+      parent.append(box);
+    }
     displayInnerRepairs(row,parent);
     const assignments=flow.assignments || [];
     if (assignments.length) {
@@ -998,7 +1047,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const records=projectTeamHandoffs(row);
     if (!records.length) return;
     const section=el('section',null,'goal-inner-repairs');
-    const heading=el('h3','团队审稿');
+    const heading=el('h3','双方案与初稿审阅');
     heading.id='goal-team-handoffs-title';
     section.setAttribute('aria-labelledby',heading.id);
     section.append(heading);
@@ -1245,11 +1294,39 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       const reason=field.value;
       const submit=(consent={})=>perform(row,'return_artifact',{...reviewed,reason,...consent},
         feedback,'已记录 '+name+' 的退回理由。',draft,'artifacts');
-      if (formalModelInputConsent) {
+      if (requiresModelConsent(row)) {
         askModelInputConsent('退回 '+name+' 后，退回理由将发送给 Codex 模型，用于继续修改这版交付。','同意并退回',submit);
       } else submit();
     }));
     parent.append(rejection);
+  }
+  function displayDevelopmentDelivery(parent, delivery) {
+    if (!delivery) return;
+    const labels = {
+      unauthorized:'等待发布授权', awaiting_report:'已授权，等待交付回执',
+      accepted:'发布流程已接单', reviewing:'正在独立审查', checking:'正在运行自动检查',
+      reviewed:'审查已通过', merging:'正在合并', shipping:'正在发布',
+      returned:'发布流程已退回', retrying:'正在重试发布流程',
+      merged:'PR 已合并，项目无线上服务', docs_only:'文档已合并，无需发布', live:'已上线，线上验证通过',
+      scope_mismatch:'发布记录超出本次授权范围',
+    };
+    const {status,authorization,receipt,history}=delivery;
+    const box=details('开发发布回执','development-delivery');
+    box.id='goal-section-development-delivery';
+    const summary=box.querySelector('summary');
+    const label=status==='live' && !(receipt?.merge && receipt?.ship) ? '线上验证待核对' : labels[status];
+    if (label) summary.append(el('small',label,'goal-chip'));
+    if (authorization) {
+      copy(box,'合并请求',authorization.repo+' #'+authorization.number);
+      copy(box,'授权范围',authorization.mode==='release'?'合并与发布':'仅独立审查');
+      copy(box,'审查提交',authorization.head);
+    }
+    if (receipt?.merge) copy(box,'合并提交',receipt.merge);
+    if (receipt?.ship) copy(box,'Ship 运行',String(receipt.ship));
+    if (receipt?.at) copy(box,'最近回执',time(receipt.at));
+    if (history?.length>1) textList(box,'同版发布记录',history.slice(1).flatMap(item=>
+      labels[item.status] ? [[time(item.at),labels[item.status]].filter(Boolean).join(' · ')] : []));
+    parent.append(box);
   }
   function displayArtifacts(row, parent) {
     const execution=row.execution, flow=execution?.goal_execution || {};
@@ -1281,6 +1358,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       parent.append(el('p','尚无经过独立核验的交付文件。','goal-muted'));
       machineChecks(parent,flow.validation?.checks,'machine');
     }
+    displayDevelopmentDelivery(parent,row.development_delivery);
     displayInnerRepairs(row,parent);
     const past=[...(row.prior_deliveries || []),...reviews.filter(item=>item!==existing)].reverse();
     if (past.length && !protectedBallot) {
@@ -1294,12 +1372,59 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       parent.append(history);
     }
   }
+  function displayRouterFeedback(row,parent) {
+    if (!row.ticket_team) return;
+    const box=details('补充资料与反馈','router-feedback',section==='feedback');
+    box.id='goal-section-feedback';
+    const subscribed=row.status!=='STOPPED';
+    box.append(el('p',subscribed ? '已订阅本单。补充资料和测试、评审结果会登记到原单。' :
+      '此单已停止。','goal-muted'));
+    const channels={web:'网页',dsh:'DSH',feishu:'飞书'};
+    const bindings=[...new Set((row.subscription?.bindings || []).map(item=>channels[item.source]).filter(channel=>channel && channel!=='网页'))];
+    if (bindings.length) box.append(el('p','已关联'+bindings.join('、')+'会话。','goal-muted'));
+    const feedbackArticle=item=>{
+      const article=el('article',null,'goal-router-feedback');
+      const state=item.handed_to_team?'已交给团队':item.allow_model_input===false?'仅本机登记':'已登记';
+      const stamp=[time(item.received_at),channels[item.source],state].filter(Boolean).join(' · ');
+      if (stamp) article.append(el('small',stamp,'goal-muted'));
+      if (item.text) article.append(el('p',item.text,'goal-copy-block'));
+      if (item.draft_unaffected) article.append(el('p','当前初稿保持原版，补充已登记供后续使用。','goal-muted'));
+      if (item.candidate_unaffected) article.append(el('p',row.execution?.status==='awaiting_artifact_review' ?
+        '当前候选已封存。这条补充未纳入本版验收。若作品需要修改，请在「成果与验收」中退回。' :
+        '交付版本已封存。这条补充未纳入本版验收。如需继续处理，可另开工单。','goal-muted'));
+      return article;
+    };
+    if (subscribed && canSendText(row)) {
+      const draft=getDraft(row.id+'/router-feedback');
+      const {group,field}=input('补充资料、测试结果或评审意见',draft,'text','goal-supplement-text',{required:true});
+      box.append(group);
+      const status=actionStatus(box);
+      box.append(writeButton('补充到原单','goal-submit-supplement',()=>{
+        const text=field.value.trim();
+        if (!text) { status.textContent='请填写要补充的内容。'; field.focus(); return; }
+        const submit=(consent={})=>perform(row,'submit',{intent:'supplement',text,...consent},
+          status,'补充已登记到原单。',draft);
+        if (requiresModelConsent(row))
+          askModelInputConsent('这次补充会发送给 Codex，作为本单团队处理时的参考。','同意并补充',submit);
+        else submit();
+      }));
+    }
+    const [latest,...older]=row.subscription?.entries || [];
+    if (latest) box.append(feedbackArticle(latest));
+    if (older.length) {
+      const history=details('更早的补充','router-feedback-history');
+      history.append(...older.map(feedbackArticle));
+      box.append(history);
+    }
+    parent.append(box);
+  }
   function displayDecisions(row,parent) {
     const execution=row.execution, flow=execution?.goal_execution || {};
     const decisions=flow.decisions || [];
     const candidate=deliveriesOf(row).at(-1);
     const protectedBallot=candidate?.state==='pending' && blindRequired(row,candidate) && !blindLocked(row,candidate);
     parent.append(el('h3','决定与记录'));
+    displayRouterFeedback(row,parent);
     if (row.question?.answer && String(row.question.answer_status).toLowerCase()==='answered')
       copy(parent,'已记录的澄清',row.question.answer);
     const answers=execution?.preference_answers || decisions.filter(entry=>entry.kind==='preference_answered');
@@ -1378,7 +1503,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       textList(ledger,null,decisions); diagnostics.append(ledger);
     }
     if (!canSendText(row) || row.journey?.modify===false || ['PAUSED','STOPPED'].includes(row.status) || row.journey?.artifact_review || preferenceOf(row) || currentClarification(row)) return;
-    const update=details('补充或修改要求','revisions',section==='revisions'); update.id='goal-section-revisions';
+    const update=details(row.ticket_team?'变更目标或验收要求':'补充或修改要求','revisions',section==='revisions'); update.id='goal-section-revisions';
     const draft=getDraft(row.id+'/changes/'+row.revision);
     const contract=row.goal_contract || {};
     const replaceable=['deliverables','required_capabilities','nonfunctional_requirements','constraints','assumptions','out_of_scope']
@@ -1395,17 +1520,18 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       }
       update.append(replace);
     }
-    const {group,field}=input('希望补充或修改什么？',draft,'text','goal-revision-text',{required:true});
+    const {group,field}=input(row.ticket_team?'目标或验收要求要怎么改？':'希望补充或修改什么？',draft,'text','goal-revision-text',{required:true});
     update.append(group);
     const feedback=actionStatus(update);
-    update.append(writeButton('提交本单要求','goal-submit-revision',()=>{
+    update.append(writeButton(row.ticket_team?'提交变更':'提交本单要求','goal-submit-revision',()=>{
       if (!field.value.trim()) { feedback.textContent='请填写要求。'; field.focus(); return; }
       const replace_requirement_ids=choices.filter(option=>option.checked).map(option=>option.value);
       const text=field.value;
-      const submit=(consent={})=>perform(row,'submit',{text,...consent,replace_requirement_ids:replace_requirement_ids.length?replace_requirement_ids:undefined},
-        feedback,'补充或修改已登记。',draft);
+      const submit=(consent={})=>perform(row,'submit',{text,...consent,...(row.ticket_team?{intent:'change'}:{}),
+        replace_requirement_ids:replace_requirement_ids.length?replace_requirement_ids:undefined},
+        feedback,row.ticket_team?'变更请求已登记。':'补充或修改已登记。',draft);
       const replacement=replace_requirement_ids.length ? '替换选中的 '+replace_requirement_ids.length+' 项要求，并重新核对契约。' : '';
-      if (formalModelInputConsent) {
+      if (requiresModelConsent(row)) {
         askModelInputConsent('你填写的要求将发送给 Codex 模型，用于重新整理本单的目标和验收条件。',
           '同意并提交',submit,replacement);
       } else if(replacement)approveAction('确认替换原要求',replacement,'确认替换',submit);
@@ -1460,12 +1586,14 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const backButton=button('← 返回工单',back,'quiet'); backButton.id='goal-back';
     if (!row) {
       openDirection=null; main.replaceChildren(backButton);
-      main.append(el('h2',receipt?.choices?.length?'这条需求属于哪张工单？':eventId?'需求已收到，正在建立工单':'正在核对原单'));
+      const selecting=pendingTicketSelection(receipt);
+      main.append(el('h2',selecting?'这条需求属于哪张工单？':eventId?'需求已收到，正在建立工单':'正在核对原单'));
       if (eventId) main.append(el('p','收件号 '+eventId,'goal-muted'));
-      if (receipt?.choices?.length && !supportsExperiments) {
+      if (selecting && !supportsExperiments && !receipt.router_selection) {
         main.append(el('p','请从工单簿打开已有工单，再提交补充要求。','goal-muted'));
-      } else if (receipt?.choices?.length) {
-        for (const item of [...receipt.choices,{id:null,summary:'新建工单'}]) {
+      } else if (selecting) {
+        const choices=el('div',null,'goal-actions');
+        for (const item of [...(receipt.choices || []),{id:null,summary:'新建工单'}]) {
           const choice=button(item.summary || item.id,async()=>{
             if (commandInFlight || !connected) return;
             commandInFlight=true; choice.disabled=true;
@@ -1479,8 +1607,9 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
             } catch (error) { notice.textContent=error.message; }
             finally { commandInFlight=false; choice.disabled=false; await refresh(); }
           });
-          main.append(choice);
+          choices.append(choice);
         }
+        main.append(choices);
       }
       return;
     }
@@ -1494,6 +1623,12 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     },'quiet');
     copyId.id='goal-copy-id'; copyId.title=row.id;
     identity.append(copyId); header.append(heading,identity);
+    if (row.ticket_team && row.status!=='STOPPED' && canSendText(row)) {
+      identity.append(button('补充到原单',()=>{
+        panel='decisions'; section='feedback'; focusNext=true;
+        writeRoute({id:row.id,anchor:section}); drawDetail(row);
+      },'quiet'));
+    }
     const workflow=workflowSteps(row,model);
     if (workflow) header.append(workflow);
     const view=row.journey || {};
@@ -1525,6 +1660,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         openDirection=direction;
         preferenceForm(row,pref,now,direction);
       } else if (pref && !['PAUSED','STOPPED'].includes(row.status)) preferenceForm(row,pref,now);
+      else if (needsModelConsent(row)) authorizeIntake(row,now);
       else if (canSendText(row) && currentClarification(row)) clarificationForm(row,now);
       else if (view.approve && row.approval_terms) approval(row,now);
       else if (row.execution && canExtendBudget(row)) budgetDecision(row,now);
@@ -1589,11 +1725,12 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         const receipt=await call('event',{event_id:eventId});
         if (pass!==loadVersion) return;
         if (receipt.ticket_id) { focusNext ||= !focused; focused=receipt.ticket_id; }
-        if (['DONE','REJECTED','NEEDS_ATTENTION','CANCELLED'].includes(receipt.state) && !receipt.choices?.length) {
+        const selecting=pendingTicketSelection(receipt);
+        if (['DONE','REJECTED','NEEDS_ATTENTION','CANCELLED'].includes(receipt.state) && !selecting) {
           if (receipt.error || receipt.state!=='DONE') notice.textContent=receipt.error || '请核对这次收件的状态。';
           eventId=''; writeRoute({id:focused,anchor:section,replace:true});
         }
-        if (!focused || receipt.choices?.length) { drawList(); drawDetail(undefined,receipt); return; }
+        if (!focused || selecting) { drawList(); drawDetail(undefined,receipt); return; }
       }
       drawList();
       const row=focused ? await call('get',{ticket_id:focused}) : undefined;
