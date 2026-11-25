@@ -1,4 +1,6 @@
-# 一张工单，两层分工
+# 一张工单，两层分工 · 历史版本
+
+本页保存上一版的实现。当前工作台通过 Router 分派整单，在本单团队内选择直接制作或比较方案。[当前版本分工与验收](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/8ef5fa5bddd2ab31fba8459317d804eb93c1c49b/docs/product/router-ticket-teams.md)
 
 你希望几件事同时推进，又不想在两个 AI 之间搬运方案和修改意见。Autoloop 用一张原工单保存目标、批准、文件版本和验收结果。外层负责整单的授权、调度、跨阶段返工和交付。内层的 Codex 团队只接手当前派工，把来回讨论变成带版本的方案、修改清单和回执。
 
