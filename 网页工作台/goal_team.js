@@ -1623,12 +1623,24 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       target.focus({preventScroll:true});
     });
   }
+  function detailNavigation() {
+    const nav=el('nav',null,'goal-nav-links');
+    nav.setAttribute('aria-label','工单返回入口');
+    const backButton=button(formalModelInputConsent?'← 返回团队工单簿':'← 返回工单',back,'quiet');
+    backButton.id='goal-back';
+    nav.append(backButton);
+    if (formalModelInputConsent) {
+      const home=el('a','返回工单工作台','goal-button quiet');
+      home.id='goal-home-return'; home.href='/#tasks'; nav.append(home);
+    }
+    return nav;
+  }
   function drawDetail(row, receipt) {
     root.classList.toggle('has-ticket',Boolean(focused || eventId));
     if (activeRegular) {
       const key='regular/'+activeRegular;
       if (detailKey!==key) {
-        detailKey=key; openDirection=null; main.replaceChildren(button('← 返回工单',back));
+        detailKey=key; openDirection=null; main.replaceChildren(detailNavigation());
       }
       main.hidden=false; return;
     }
@@ -1641,9 +1653,9 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const saved=position(main);
     selectedSnapshot=row;
     detailKey=key;
-    const backButton=button('← 返回工单',back,'quiet'); backButton.id='goal-back';
+    const navigation=detailNavigation();
     if (!row) {
-      openDirection=null; main.replaceChildren(backButton);
+      openDirection=null; main.replaceChildren(navigation);
       const selecting=pendingTicketSelection(receipt);
       main.append(el('h2',selecting?'这条需求属于哪张工单？':eventId?'需求已收到，正在建立工单':'正在核对原单'));
       if (eventId) main.append(el('p','收件号 '+eventId,'goal-muted'));
@@ -1751,13 +1763,13 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     else if (panel==='artifacts') displayArtifacts(row,content);
     else displayDecisions(row,content);
     if (keepDirection) {
-      main.firstChild.replaceWith(backButton);
+      main.firstChild.replaceWith(navigation);
       now.previousSibling.replaceWith(header);
       now.nextSibling.replaceWith(nav);
       main.lastChild.replaceWith(content);
     } else {
       if (!directionKey) openDirection=null;
-      main.replaceChildren(backButton,header,now,nav,content);
+      main.replaceChildren(navigation,header,now,nav,content);
     }
     restorePosition(main,saved); focusSection();
   }
@@ -1806,6 +1818,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   queueHead.append(search,filterBar,connection);
   sidebar.append(queueHead,queueBox);
   root.classList.add('goal-team');
+  if (formalModelInputConsent) root.classList.add('goal-formal');
   root.replaceChildren(notice,sidebar,main,confirmBox);
   root.hidden=false;
   window.addEventListener('popstate',syncRoute);

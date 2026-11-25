@@ -24,15 +24,25 @@ HOME_QUEUE_CSS = """
 #formal-home-decisions .goal-card { border-inline-start:3px solid var(--goal-primary); }
 #formal-home-decisions .goal-chip { background:var(--goal-wait);color:var(--goal-wait-ink); }
 #formal-home-decisions .goal-card p { white-space:pre-line; overflow-wrap:anywhere; }
-#task-form-status:empty { display:none; }
-#outer-team-options { display:block; margin:14px 0; padding:0; }
-#outer-team-options label.outer-team-check {
+#view-tasks .formal-ordinary-summary {
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr));gap:8px;
+  grid-auto-flow:row;grid-auto-columns:auto;position:static;max-height:none;overflow:visible;padding:0;
+}
+#view-tasks .formal-ordinary-summary > button { min-width:0;max-width:none;overflow-wrap:anywhere; }
+#view-tasks .formal-ordinary-detail > button { margin-block:0 12px; }
+#view-tasks .goal-home { margin-block-end:16px; }
+#view-tasks .goal-home .goal-card { min-width:0; overflow-wrap:anywhere; }
+#formal-home-decisions .goal-count { background:var(--goal-wait);color:var(--goal-wait-ink); }
+#formal-goal-home .goal-flight .goal-count { background:var(--goal-run);color:var(--goal-run-ink); }
+#formal-goal-home .goal-card h4 { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+#draft-form [hidden], #outer-intake-status:empty, #task-form-status:empty,
+#draft-form:not(:has(.create-options[open])) #outer-sample-orders { display:none !important; }
+#outer-team-settings { margin-block:12px; }
+#draft-form label.outer-team-check {
   display:flex; align-items:flex-start; gap:9px; padding:8px 0; margin:0; min-height:40px; font-size:.875rem !important;
 }
-#outer-team-options input[type="checkbox"] { inline-size:1.1rem; block-size:1.1rem; flex:none; margin:2px 0 0; padding:0; }
-#outer-team-settings > p { font-size:.875rem; margin:0 0 6px; }
-#outer-team-settings > details { margin-block:4px; }
-#outer-team-settings > details summary { cursor:pointer; padding-block:5px; }
+#draft-form .outer-team-check input { inline-size:1.1rem; block-size:1.1rem; flex:none; margin:2px 0 0; padding:0; accent-color:var(--red); }
+#outer-intake-status { color:var(--ux-red); }
 """
 
 
@@ -74,7 +84,7 @@ def frontend(formal, front):
     server = replace_once(server, "        self.respond(file.read_bytes(), types[file.suffix])", """
         body = file.read_bytes()
         if route in ('/', '/index.html') and not getattr(self.server, 'outer_canary', None):
-            for region in (b'OUTER-CANARY', b'OUTER-TEAM-OPTIONS', b'OUTER-HOME-ASSETS', b'OUTER-HOME-QUEUE', b'OUTER-HOME-APPROVALS'):
+            for region in (b'OUTER-CANARY', b'OUTER-TEAM-OPTIONS', b'OUTER-INTAKE-ADVANCED', b'OUTER-HOME-ASSETS', b'OUTER-HOME-QUEUE', b'OUTER-HOME-APPROVALS'):
                 body = body.replace(b'<!--' + region + b'-BEGIN-->', b'<template>', 1)
                 body = body.replace(b'<!--' + region + b'-END-->', b'</template>', 1)
         self.respond(body, types[file.suffix])""".lstrip("\n"))
@@ -119,26 +129,26 @@ def frontend(formal, front):
                         '写下你想得到的结果，以及怎样算完成。')
     dialog = '</span></button></form></dialog>'
     # 插在旧提交按钮后，保留表单的默认回车操作。
-    html = replace_once(html, dialog, '''</span></button><!--OUTER-CANARY-BEGIN--><details class="model-fields"><summary>合成试单</summary><div class="wb-actions">
+    html = replace_once(html, dialog, '''</span></button><!--OUTER-CANARY-BEGIN--><details id="outer-sample-orders" class="model-fields"><summary>合成试单</summary><div class="wb-actions">
 <button id="outer-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成索引试单</button>
 <button id="outer-team-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成简报试单</button>
 </div></details><!--OUTER-CANARY-END--></form></dialog>''')
-    html = replace_once(html, '<p class="draft-warning" id="task-form-status">',
-                        '''<!--OUTER-TEAM-OPTIONS-BEGIN--><fieldset id="outer-team-options" class="model-fields">
-<legend>执行方式</legend>
-<label class="outer-team-check"><input type="checkbox" id="outer-goal-team" checked><span>由 Router 分派独立团队</span></label>
-<div id="outer-team-settings" hidden>
-<p>提交后整理目标与验收条件，批准后开始执行。补充和结果都留在原单。</p>
-<details><summary>审稿设置</summary>
-<label for="outer-team-review-mode">团队审稿</label>
+    html = replace_once(html, '</textarea><fieldset class="model-fields"><legend>角色与模型</legend><div class="wb-actions">',
+                        '''</textarea><!--OUTER-INTAKE-ADVANCED-BEGIN-->
+<label class="outer-team-check"><input type="checkbox" id="outer-goal-team" checked><span>交给工单团队处理</span></label>
+<div id="outer-team-options" hidden>
+<label for="outer-team-review-mode">方案比较</label>
 <select id="outer-team-review-mode">
 <option value="">简单直接做，复杂再比较</option>
 <option value="review">主动比较双方案，由团队判断</option>
 <option value="review_and_decide">分步交付，第 2 步请我定方向</option>
 </select>
-<p class="draft-warning" id="outer-team-review-hint" hidden>请写明至少两步可以分别验收的成果。</p></details>
+<p class="draft-warning" id="outer-team-review-hint" hidden>请写明至少两步可以分别验收的成果。</p>
+</div><!--OUTER-INTAKE-ADVANCED-END--><fieldset class="model-fields"><legend>角色与模型</legend><div class="wb-actions">''')
+    html = replace_once(html, '<p class="draft-warning" id="task-form-status">',
+                        '''<!--OUTER-TEAM-OPTIONS-BEGIN--><div id="outer-team-settings" hidden>
 <label class="outer-team-check"><input type="checkbox" id="outer-team-consent"><span>允许把本单填写的名称、目标和完成标准发送给 Codex</span></label>
-</div></fieldset><!--OUTER-TEAM-OPTIONS-END--><p class="draft-warning" id="task-form-status">''')
+</div><p class="draft-warning" id="outer-intake-status" role="status"></p><!--OUTER-TEAM-OPTIONS-END--><p class="draft-warning" id="task-form-status">''')
     tasks = replace_once((formal / "tasks.js").read_text(), """    if (working) return;
     working = true;
     const button = form.querySelector('[type=submit]');""", """    if (working) return;
@@ -147,11 +157,12 @@ def frontend(formal, front):
     if (team || synthetic) {
       const consent = node('#outer-team-consent');
       if (!synthetic && !consent.checked) {
-        node('#task-form-status').textContent = '登记前请确认是否同意将本单填写的内容发送给 Codex。';
+        intakeStatus.textContent = '请先勾选发送许可，再提交团队工单。';
         consent.focus();
         return;
       }
       working = true;
+      intakeStatus.textContent = '正在提交工单…';
       const submitter = event.submitter || form.querySelector('[type=submit]');
       submitter.disabled = true;
       try {
@@ -175,7 +186,7 @@ def frontend(formal, front):
         else target.searchParams.set('outer_event', result.event_id);
         location.assign(target);
       } catch (error) {
-        node('#task-form-status').textContent = error.message;
+        intakeStatus.textContent = error.message;
       } finally {
         working = false;
         submitter.disabled = false;
@@ -187,11 +198,15 @@ def frontend(formal, front):
     tasks = replace_once(tasks, "  const modeInput=node('#task-mode'), timeInput=node('#task-budget');",
                          """  const teamMode=node('#outer-goal-team');
   const teamConsent=node('#outer-team-consent');
+  const intakeStatus=node('#outer-intake-status');
   const teamModelFields=form.querySelector('fieldset.model-fields');
   const syncTeamMode=()=>{
     const enabled=Boolean(teamMode?.checked);
     if (!teamMode) return;
     node('#outer-team-settings').hidden=!enabled;
+    node('#outer-team-options').hidden=!enabled;
+    node('#task-form-status').hidden=enabled;
+    form.querySelector('.create-options > .draft-warning:last-child').hidden=enabled;
     node('#outer-team-review-hint').hidden=node('#outer-team-review-mode').value!=='review_and_decide';
     if (!enabled) teamConsent.checked=false;
     teamModelFields.hidden=enabled;
@@ -203,16 +218,17 @@ def frontend(formal, front):
     if (!button.dataset.defaultText) button.dataset.defaultText=button.textContent;
     button.textContent=enabled?'提交工单':button.dataset.defaultText;
   };
-  teamMode?.addEventListener('change',syncTeamMode);
+  teamMode?.addEventListener('change',()=>{intakeStatus.textContent='';syncTeamMode();});
   node('#outer-team-review-mode')?.addEventListener('change',syncTeamMode);
   teamConsent?.addEventListener('change',()=>{
-    const status=node('#task-form-status');
-    if (teamConsent.checked && status.textContent.startsWith('登记前请确认')) status.textContent='';
+    if (teamConsent.checked && intakeStatus.textContent.startsWith('请先勾选')) intakeStatus.textContent='';
   });
   for (const name of ['name','goal','acceptance']) {
     form.elements[name].addEventListener('input',()=>{if(teamConsent)teamConsent.checked=false;});
   }
-  node('#task-dialog').addEventListener('close',()=>{if(teamConsent)teamConsent.checked=false;});
+  node('#task-dialog').addEventListener('close',()=>{
+    if (teamConsent) {teamConsent.checked=false;intakeStatus.textContent='';}
+  });
   form.addEventListener('reset',()=>setTimeout(syncTeamMode,0));
   syncTeamMode();
   const modeInput=node('#task-mode'), timeInput=node('#task-budget');""")
@@ -232,8 +248,52 @@ def frontend(formal, front):
     tasks = replace_once(tasks, '<div class="next-action">', '<div class="next-action" id="section-actions" tabindex="-1">')
     tasks = replace_once(tasks, '<form class="mission-section" data-research-follow=',
                          '<form class="mission-section" id="section-research-follow" tabindex="-1" data-research-follow=')
-    tasks = replace_once(tasks, "    if (!tasks.some(task => task.id === selected)", """    homeQueue?.setOrdinary(fresh ? projectFormalOrdinaryDecisions(tasks, queueFor, canAnswerApproval, nextAction) : null);
+    tasks = replace_once(tasks, '    target.innerHTML=markup;\n    if(keep)target.querySelectorAll', """    const previousQuestion=keep ? target.querySelector('#research-question') : null;
+    target.innerHTML=markup;
+    const currentQuestion=previousQuestion && target.querySelector('#research-question');
+    if(currentQuestion){
+      currentQuestion.value=previousQuestion.value;
+      currentQuestion.setSelectionRange(previousQuestion.selectionStart,previousQuestion.selectionEnd,previousQuestion.selectionDirection);
+    }
+    if(keep)target.querySelectorAll""")
+    tasks = replace_once(tasks, "    if (!tasks.some(task => task.id === selected)", """    const homepageDecisions = homeQueue && fresh ? projectFormalOrdinaryDecisions(tasks, queueFor, canAnswerApproval, nextAction) : [];
+    homeQueue?.setOrdinary(fresh ? homepageDecisions : null);
     if (!tasks.some(task => task.id === selected)""")
+    tasks = replace_once(tasks, "    const list=visible.map(task=>", """    const summaryTasks=homeQueue ? ordinaryHomeList(visible, homepageDecisions) : visible;
+    const list=summaryTasks.map(task=>""")
+    tasks = replace_once(tasks, 'aria-pressed="${task.id===selected}"',
+                         'aria-pressed="${task.id===selected&&(!homeQueue||selected===linkedTask)}"')
+    tasks = replace_once(tasks, "    const showDetail=current && (queue==='all'||visible.some(t=>t.id===selected));",
+                         "    const showDetail=current && (!homeQueue||selected===linkedTask) && (queue==='all'||visible.some(t=>t.id===selected));")
+    tasks = replace_once(tasks, '${list?`<div class="wb-grid"><div class="wb-list">${list}</div>${selectedDetail}</div>`',
+                         """${homeQueue && showDetail ? `<div class="formal-ordinary-detail" id="section-ordinary-detail" tabindex="-1"><button class="secondary-button" data-close-ordinary>收起工单详情</button>${selectedDetail}</div>` :
+      homeQueue && list ? `<div class="wb-list formal-ordinary-summary">${list}</div>` :
+      homeQueue && visible.length ? empty('本组工单均在上方「待我决定」。') :
+      list?`<div class="wb-grid"><div class="wb-list">${list}</div>${selectedDetail}</div>`""")
+    tasks = replace_once(tasks, "    if(button.hasAttribute('data-reset-focus')){",
+                         """    if(button.hasAttribute('data-close-ordinary')){
+      const previous = selected;
+      clearTaskFocus();
+      start();render();
+      const action = [...document.querySelectorAll('[data-home-key],[data-wb-select]')]
+        .find(item=>!item.closest('[hidden]') &&
+          (item.dataset.homeKey==='ordinary:'+previous || item.closest('#live-tasks') && item.dataset.wbSelect===previous));
+      (action || node('#live-tasks [data-queue="all"]'))?.focus();
+      return;
+    }
+    if(button.hasAttribute('data-reset-focus')){""")
+    tasks = replace_once(tasks, "      if(visible.length&&!visible.some(t=>t.id===selected)){",
+                         "      if(!homeQueue&&visible.length&&!visible.some(t=>t.id===selected)){")
+    tasks = replace_once(tasks, "    if (button.dataset.wbSelect) {",
+                         """    if (button.dataset.wbSelect) {
+      const openingSummary=homeQueue && button.closest('.formal-ordinary-summary');""")
+    tasks = replace_once(tasks, "      syncTaskURL();\n      render();\n      return;\n    }\n    const action = button.dataset.wbAnswer",
+                         """      syncTaskURL();
+      render();
+      if(openingSummary)focusSection('ordinary-detail');
+      return;
+    }
+    const action = button.dataset.wbAnswer""")
     tasks = replace_once(tasks, "  start();\n})();", """  const homeQueue = mountFormalGoalQueue(node('#formal-home-decisions'),node('#formal-goal-home'),session,
     openSection);
   start();

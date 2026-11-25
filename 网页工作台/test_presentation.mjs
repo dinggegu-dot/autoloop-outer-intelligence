@@ -340,6 +340,15 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   const fill=(id,value)=>{const field=control(id);field.value=value;field.oninput();};
   return {root,team,events,dialog,cancel,confirm,control,fill};
  }
+ await t.test('正式团队工单可回原工作台或团队工单簿',async t=>{
+  const ui=await mount(t,{...ticket,ticket_team:{id:ticket.id}});
+  const nav=ui.root.querySelector('.goal-nav-links');
+  assert.ok(nav);
+  assert.equal(ui.control('back').textContent,'← 返回团队工单簿');
+  assert.equal(nav.querySelector('a').href,'/#tasks');
+  assert.equal(nav.querySelector('a').textContent,'返回工单工作台');
+  assert.equal(ui.events.length,0);
+ });
  await t.test('只选方向直接提交，空白不作为外发意见',async t=>{
   const ui=await mount(t,{...ticket,pending_preference:question});
   ui.control('option-edit').onchange();

@@ -1,47 +1,22 @@
 .goal-team, .goal-confirm {
-  color-scheme: light dark;
+  color-scheme: light;
   --goal-surface: #fff;
-  --goal-soft: #f6f9f7;
-  --goal-ink: #20332e;
-  --goal-muted: #4c635a;
-  --goal-line: #d8e3dc;
-  --goal-strong-line: #a4bcb0;
-  --goal-primary: #225a45;
+  --goal-soft: #f5f7fa;
+  --goal-ink: #18323f;
+  --goal-muted: #526875;
+  --goal-line: #dce4eb;
+  --goal-strong-line: #788fa1;
+  --goal-primary: #b9382d;
   --goal-primary-ink: #fff;
-  --goal-green: #e6f2e9;
-  --goal-green-ink: #275744;
-  --goal-wait: #f9efd9;
-  --goal-wait-ink: #664818;
-  --goal-run: #e8f0f7;
-  --goal-run-ink: #294d66;
-  --goal-focus: #2466a1;
+  --goal-green: #e8f4ee;
+  --goal-green-ink: #24634e;
+  --goal-wait: #fff0eb;
+  --goal-wait-ink: #8c342a;
+  --goal-run: #e9f3f9;
+  --goal-run-ink: #245878;
+  --goal-focus: #2c73a0;
+  --goal-selected: #edf3f8;
   color: var(--goal-ink);
-}
-@media (prefers-color-scheme: dark) {
-  .goal-team, .goal-confirm {
-    --goal-surface: #202c26;
-    --goal-soft: #26342d;
-    --goal-ink: #eef5f0;
-    --goal-muted: #c1d2c8;
-    --goal-line: #40564a;
-    --goal-strong-line: #607f6e;
-    --goal-primary: #b5e1c9;
-    --goal-primary-ink: #183e31;
-    --goal-green: #304b3d;
-    --goal-green-ink: #d0eddc;
-    --goal-wait: #493b25;
-    --goal-wait-ink: #fbe4b8;
-    --goal-run: #294150;
-    --goal-run-ink: #d7eaf8;
-    --goal-focus: #9acfff;
-  }
-  /* 正式首页和工单簿的外壳保留浅色，深色文字组件需要自己的底色。 */
-  .goal-team {
-    background: var(--goal-surface);
-    border: 1px solid var(--goal-line);
-    border-radius: 14px;
-    padding: clamp(12px, 2vw, 20px);
-  }
 }
 .goal-team {
   display: grid;
@@ -127,8 +102,10 @@
   font-weight: 680;
   cursor: pointer;
 }
-.goal-button:hover, .goal-button[aria-pressed=true] { background: var(--goal-green); }
+.goal-button:hover, .goal-button[aria-pressed=true] { background: var(--goal-selected); }
+.goal-button[aria-pressed=true] { color: var(--goal-run-ink); border-color: var(--goal-focus); }
 .goal-button.primary { background: var(--goal-primary); color: var(--goal-primary-ink); border-color: var(--goal-primary); }
+.goal-button.primary:hover:not(:disabled) { background: #9d2f26; }
 .goal-button.quiet { border-color: transparent; background: transparent; }
 .goal-button:disabled { opacity: .6; cursor: default; }
 .goal-toolbar input, .goal-team textarea, .goal-team select {
@@ -235,7 +212,7 @@
 .goal-direction-scope li + li { margin-block-start: 6px; }
 .goal-tabs { display: flex; flex-wrap: wrap; gap: 5px; border-bottom: 1px solid var(--goal-line); }
 .goal-tabs .goal-button { border: 0; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; }
-.goal-tabs .goal-button[aria-current=page] { background: var(--goal-green); border-bottom-color: var(--goal-primary); }
+.goal-tabs .goal-button[aria-current=page] { background: var(--goal-selected); border-bottom-color: var(--goal-focus); }
 .goal-confirm {
   background: var(--goal-surface);
   border: 1px solid var(--goal-line);
@@ -310,3 +287,39 @@
 
 .goal-router-feedback { border-block-start: 1px solid var(--goal-line); padding-block: 8px; }
 .goal-router-feedback p { margin: 4px 0 0; overflow-wrap: anywhere; }
+
+/* 独立团队工单页沿用主工作台的白卡、蓝灰底和低饱和状态色。 */
+body:has(.goal-formal) {
+  color: #18323f;
+  background: #f5f7fa;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+body:has(.goal-formal) > .mast { gap: 12px 20px; flex-wrap: wrap; border-color: #dce4eb; }
+body:has(.goal-formal) > .mast .brand { letter-spacing: -.03em; }
+body:has(.goal-formal) > .mast .brand i {
+  width: 39px;
+  height: 35px;
+  color: transparent;
+  background: transparent url('/assets/odyssey/red-cappy.png') center / contain no-repeat;
+}
+body:has(.goal-formal.has-ticket) > .mast #map-link { display: none; }
+body:has(.goal-formal) > .mast nav a { padding: 7px 11px; border-radius: 8px; }
+body:has(.goal-formal) > .mast nav a[href="/workbench"] { background: #edf3f8; }
+.goal-team.goal-formal .goal-ticket { border-radius: 18px; }
+.goal-team.goal-formal .goal-now { border-color: transparent; }
+.goal-team.goal-formal .goal-nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.goal-team.goal-formal .goal-nav-links .goal-button { color: var(--goal-run-ink); }
+.goal-team.goal-formal .goal-nav-links .goal-button:hover { background: var(--goal-selected); }
+@media (min-width: 960px) {
+  .goal-team.goal-formal.has-ticket { grid-template-columns: minmax(215px,.72fr) minmax(0,2.28fr); }
+  .goal-team.goal-formal .goal-sidebar .goal-card { padding: 12px; }
+}
+@media (max-width: 480px) {
+  body:has(.goal-formal) > .mast nav { gap: 3px; margin-left: 0; }
+  body:has(.goal-formal) > .mast nav a { padding: 6px 8px; }
+}

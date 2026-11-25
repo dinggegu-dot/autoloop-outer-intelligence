@@ -1,3 +1,13 @@
+export function ordinaryHomeList(tasks, decisions) {
+  const inDecisions = new Set(decisions.map(row => row.id));
+  return tasks.filter(task => !inDecisions.has(task.id));
+}
+
+function summaryText(value) {
+  const characters = Array.from(String(value || '').replace(/\s+/g,' ').trim());
+  return characters.length > 140 ? characters.slice(0,140).join('')+'…' : characters.join('');
+}
+
 export function projectFormalOrdinaryDecisions(tasks, queueFor, canAnswerApproval, nextAction) {
   const reasons = {
     created: ['待开始','工单已保存，尚未开始规划。'],
@@ -48,6 +58,7 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
     ['flight', '正在推进', '当前没有正在推进的团队工单。'],
     ['delivery', '已交付', '交付成果会显示在这里。'],
   ];
+  const previewLimit = 3;
   const create = (tag, text, className) => {
     const element = document.createElement(tag);
     if (text) element.textContent = text;
@@ -61,14 +72,15 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
 
   function card(row) {
     const item = create('li', '', 'goal-card');
-    item.append(create('h4', row.title), create('span', row.label, 'goal-chip'));
+    const title = create('h4', row.title);
+    title.title = row.title;
+    item.append(title, create('span', row.label, 'goal-chip'));
     const ordinary = Boolean(row.key);
     const ref = ordinary ? row.id.slice(0,11) : row.id.slice(-8);
-    const scope = ordinary ? '普通工单' : row.routerTeam ? 'Router 团队' : '历史团队工单';
+    const scope = ordinary ? '普通工单' : row.routerTeam ? '团队工单' : '历史团队工单';
     item.append(create('small', scope+' '+ref, 'goal-muted'));
     if (row.station === 'decision') {
-      const reason = row.reason || row.next;
-      if (reason) item.append(create('p', reason, 'goal-muted'));
+      if (row.reason) item.append(create('p', row.reason, 'goal-muted'));
     }
     const action = create(ordinary ? 'button' : 'a', row.action, 'goal-button');
     if (ordinary) {
@@ -93,8 +105,8 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
   function drawDecisions() {
     const active = document.activeElement;
     const preserve = decisions.contains(active);
-    const rows = [...ordinaryRows,...codexRows];
-    const key = JSON.stringify(rows.map(row=>[row.key,row.id,row.routerTeam,row.title,row.label,row.reason,row.next,row.panel,row.anchor,row.action]));
+    const rows = [...ordinaryRows,...codexRows].map(row=>({...row,reason:summaryText(row.reason || row.next)}));
+    const key = JSON.stringify(rows.map(row=>[row.key,row.id,row.routerTeam,row.title,row.label,row.reason,row.panel,row.anchor,row.action]));
     if (key !== decisionKey) {
       decisionKey = key;
       decisionList.replaceChildren(...rows.map(card));
@@ -125,8 +137,14 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
         group.append(header);
         if (rows.length) {
           const list = create('ul', '', 'goal-home-list');
-          list.append(...rows.map(card));
+          list.append(...rows.slice(0,previewLimit).map(card));
           group.append(list);
+          if (rows.length > previewLimit) {
+            const more = create('a', '查看全部'+rows.length+'张'+label+'工单', 'goal-button');
+            more.href = '/workbench?station='+station;
+            more.dataset.homeKey = 'station:'+station;
+            group.append(more);
+          }
         } else group.append(create('p', empty, 'goal-empty'));
         return group;
       }));
