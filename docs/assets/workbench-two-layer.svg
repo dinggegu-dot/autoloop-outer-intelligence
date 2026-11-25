@@ -1,0 +1,280 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1400" viewBox="0 0 1200 1400"
+     role="img" aria-labelledby="title description" xml:lang="zh-CN">
+  <title id="title">一张工单，两层分工</title>
+  <desc id="description">正式桌面工作台上的 Codex 工单流程。外层接收原话并设计验收，经本人批准后登记派工。内层中，负责人与只读顾问分别提案，负责人对比方案并做初稿，顾问读取该稿，负责人登记修改与保留项。分步交付的第 2 步，此后回原单请本人定方向。沿用现稿时负责人直接复验，需改动时执行者制作候选。负责人发现本步的问题时交执行者返修，再读修改后的实际版本。外层收回回执，独立核验实际文件，通过后按授权直接交付或等待签收。核验发现跨阶段回归时，外层协调并另派。工单等待本人决定时释放执行名额。</desc>
+  <defs>
+    <style>
+      svg { font-family: system-ui, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; text-rendering: optimizeLegibility; }
+      text { fill: #19313f; }
+      .headline { font-size: 48px; font-weight: 760; letter-spacing: .6px; }
+      .intro { font-size: 23px; fill: #385464; }
+      .badge { font-size: 18px; font-weight: 690; fill: #294c60; }
+      .panel { fill: #fff; stroke: #dce6eb; stroke-width: 1.5; }
+      .panel-inner { fill: #fff; stroke: #d9e9e2; stroke-width: 1.5; }
+      .bar-outer { fill: #e9f1f6; }
+      .bar-inner { fill: #e6f2ee; }
+      .bar-title { font-size: 28px; font-weight: 740; }
+      .bar-note { font-size: 20px; fill: #385464; }
+      .lane-title { font-size: 24px; font-weight: 740; }
+      .lane-note { font-size: 17px; fill: #425c69; }
+      .lane-owner { fill: #f3f7fd; }
+      .lane-lead { fill: #f1f8f5; }
+      .lane-advisor { fill: #fcf7ef; }
+      .lane-executor { fill: #f7f4fb; }
+      .owner-color { fill: #2557a0; }
+      .lead-color { fill: #126454; }
+      .advisor-color { fill: #834818; }
+      .executor-color { fill: #624d88; }
+      .node rect.box { fill: #fff; stroke: #96acb8; stroke-width: 1.7; }
+      .node text { dominant-baseline: auto; }
+      .node .node-id { font-size: 16px; font-weight: 750; fill: #455f6e; }
+      .node .node-name { font-size: 23px; font-weight: 730; }
+      .node .compact { font-size: 22px; }
+      .node .node-note { font-size: 18px; fill: #385464; }
+      .node.owner rect.box { fill: #e8f1fe; stroke: #7ca4db; }
+      .node.owner .node-name, .node.owner .node-id { fill: #2557a0; }
+      .node.lead rect.box { fill: #e9f5ef; stroke: #85b4a3; }
+      .node.lead .node-name, .node.lead .node-id { fill: #126454; }
+      .node.advisor rect.box { fill: #fbefe1; stroke: #c09668; }
+      .node.advisor .node-name, .node.advisor .node-id { fill: #834818; }
+      .node.executor rect.box { fill: #f1eaf9; stroke: #b098cb; }
+      .node.executor .node-name, .node.executor .node-id { fill: #624d88; }
+      .node.repair rect.box { fill: #fcf0e9; stroke: #c37c63; }
+      .node.repair .node-name, .node.repair .node-id { fill: #9a4028; }
+      .node.done rect.box { fill: #146454; stroke: #146454; }
+      .node.done .node-id, .node.done .node-name { fill: #fff; }
+      .node.done .node-note { fill: #e4f3ed; }
+      .edge { fill: none; stroke: #4a6878; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .edge-choice { stroke: #285eab; marker-end: url(#arrow-choice); }
+      .edge-pass { stroke: #176b59; marker-end: url(#arrow-pass); }
+      .edge-repair { stroke: #a44c33; stroke-dasharray: 7 5; marker-end: url(#arrow-repair); }
+      .edge-label { font-size: 17px; font-weight: 650; fill: #385464; }
+      .label-choice { fill: #2557a0; }
+      .label-pass { fill: #126454; }
+      .label-repair { fill: #9a4028; }
+      .note-id { font-size: 17px; font-weight: 750; }
+      .note-title { font-size: 22px; font-weight: 730; }
+      .note-detail { font-size: 19px; fill: #385464; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path fill="#4a6878" d="M0 0 10 5 0 10z"/>
+    </marker>
+    <marker id="arrow-choice" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path fill="#285eab" d="M0 0 10 5 0 10z"/>
+    </marker>
+    <marker id="arrow-pass" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path fill="#176b59" d="M0 0 10 5 0 10z"/>
+    </marker>
+    <marker id="arrow-repair" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path fill="#a44c33" d="M0 0 10 5 0 10z"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="1400" fill="#fbfcfd"/>
+  <text class="headline" x="38" y="65">一张工单，两层分工</text>
+  <text class="intro" x="40" y="102">Autoloop 管整单授权和交付，Codex 团队推进当前派工。</text>
+  <rect x="918" y="38" width="248" height="37" rx="18.5" fill="#eaf2f7" stroke="#cedce5"/>
+  <text class="badge" x="1042" y="63" text-anchor="middle">正式桌面工作台 · 8765</text>
+
+  <g id="intake" aria-label="外层，接单与批准">
+    <rect class="panel" x="32" y="126" width="1136" height="181" rx="15"/>
+    <path class="bar-outer" d="M47 126H1153a15 15 0 0 1 15 15v37H32v-37a15 15 0 0 1 15-15z"/>
+    <text class="bar-title" x="54" y="160">外层 · 接单与批准</text>
+    <text class="bar-note" x="386" y="159">在工作台提交，澄清和批准回到同一张工单</text>
+    <path class="edge" d="M288 243H338"/>
+    <path class="edge" d="M574 243H624"/>
+    <path class="edge" d="M860 243H910"/>
+    <g class="node owner" id="A1" transform="translate(54 200)">
+      <rect class="box" width="234" height="86" rx="11"/>
+      <text class="node-id" x="15" y="36">A1</text>
+      <text class="node-name" x="47" y="37">原单提交</text>
+      <text class="node-note" x="15" y="65">保留你的原话</text>
+    </g>
+    <g class="node" id="A2" transform="translate(340 200)">
+      <rect class="box" width="234" height="86" rx="11"/>
+      <text class="node-id" x="15" y="36">A2</text>
+      <text class="node-name" x="47" y="37">研判与验收设计</text>
+      <text class="node-note" x="15" y="65">缺关键条件才请你澄清</text>
+    </g>
+    <g class="node owner" id="A3" transform="translate(626 200)">
+      <rect class="box" width="234" height="86" rx="11"/>
+      <text class="node-id" x="15" y="36">A3</text>
+      <text class="node-name" x="47" y="37">批准本版</text>
+      <text class="node-note" x="15" y="65">目标、验收、范围、预算</text>
+    </g>
+    <g class="node" id="A4" transform="translate(912 200)">
+      <rect class="box" width="234" height="86" rx="11"/>
+      <text class="node-id" x="15" y="36">A4</text>
+      <text class="node-name" x="47" y="37">引擎登记派工</text>
+      <text class="node-note" x="15" y="65">绑定授权版本和工作区</text>
+    </g>
+  </g>
+
+  <g id="team" aria-label="内层，在四条泳道内完成当前派工">
+    <rect class="panel-inner" x="32" y="321" width="1136" height="714" rx="15"/>
+    <path class="bar-inner" d="M47 321H1153a15 15 0 0 1 15 15v37H32v-37a15 15 0 0 1 15-15z"/>
+    <text class="bar-title" x="54" y="355">内层 · 完成当前派工</text>
+    <text class="bar-note" x="386" y="354">图示为审稿路线。角色只读取本次派工所需资料</text>
+    <rect class="lane-owner" x="54" y="385" width="250" height="641" rx="10"/>
+    <rect class="lane-lead" x="316" y="385" width="276" height="641" rx="10"/>
+    <rect class="lane-advisor" x="604" y="385" width="276" height="641" rx="10"/>
+    <rect class="lane-executor" x="892" y="385" width="254" height="641" rx="10"/>
+    <g text-anchor="middle">
+      <text class="lane-title owner-color" x="179" y="411">你</text>
+      <text class="lane-note" x="179" y="434">在原单做决定</text>
+      <text class="lane-title lead-color" x="454" y="411">负责人</text>
+      <text class="lane-note" x="454" y="434">比较方案并复验</text>
+      <text class="lane-title advisor-color" x="742" y="411">只读顾问</text>
+      <text class="lane-note" x="742" y="434">独立提案与审稿</text>
+      <text class="lane-title executor-color" x="1019" y="411">执行者</text>
+      <text class="lane-note" x="1019" y="434">制作候选与返修</text>
+    </g>
+    <path class="edge" d="M455 511V529"/>
+    <path class="edge" d="M580 480H741V529"/>
+    <path class="edge" d="M455 592V611"/>
+    <path class="edge" d="M741 592V644H582"/>
+    <path class="edge" d="M455 676V693"/>
+    <path class="edge" d="M580 726H621"/>
+    <path class="edge" d="M741 757V772H522V784"/>
+    <path class="edge edge-choice" d="M330 817H310V775H182V784"/>
+    <text class="edge-label label-choice" x="194" y="767">需你定方向</text>
+    <path class="edge" d="M547 853V862H1019V867"/>
+    <text class="edge-label" x="683" y="854">无需本人决定</text>
+    <path class="edge edge-choice" d="M296 836H309V901H903"/>
+    <text class="edge-label label-choice" x="683" y="893">选择修改</text>
+    <path class="edge edge-choice" d="M143 856V980H328"/>
+    <text class="edge-label label-choice" x="177" y="972">沿用现稿</text>
+    <path class="edge" d="M1019 931V939H455V947"/>
+    <text class="edge-label" x="683" y="932">候选与自测</text>
+    <path class="edge edge-repair" d="M580 980H903"/>
+    <path class="edge edge-repair" d="M1019 1014V1029H455V1016"/>
+    <text class="edge-label label-repair" x="683" y="972">发现本步问题</text>
+    <text class="edge-label label-repair" x="683" y="1023">新版回来再验</text>
+    <g class="node lead" id="B1" transform="translate(330 451)">
+      <rect class="box" width="250" height="60" rx="10"/>
+      <text class="node-id" x="15" y="25">B1</text>
+      <text class="node-name" x="49" y="27">领取本次派工</text>
+      <text class="node-note" x="15" y="48">接 A4，核对版本与验收项</text>
+    </g>
+    <g class="node lead" id="B2a" transform="translate(330 531)">
+      <rect class="box" width="250" height="61" rx="10"/>
+      <text class="node-id" x="15" y="25">B2a</text>
+      <text class="node-name" x="54" y="27">提出方案</text>
+      <text class="node-note" x="15" y="49">列出依据与取舍</text>
+    </g>
+    <g class="node advisor" id="B2b" transform="translate(623 531)">
+      <rect class="box" width="236" height="61" rx="10"/>
+      <text class="node-id" x="15" y="25">B2b</text>
+      <text class="node-name" x="54" y="27">独立提出方案</text>
+      <text class="node-note" x="15" y="49">读取原话和必要背景</text>
+    </g>
+    <g class="node lead" id="B3" transform="translate(330 613)">
+      <rect class="box" width="250" height="63" rx="10"/>
+      <text class="node-id" x="15" y="26">B3</text>
+      <text class="node-name" x="49" y="28">对比并给建议</text>
+      <text class="node-note" x="15" y="50">说明采纳与舍弃的理由</text>
+    </g>
+    <g class="node lead" id="B4" transform="translate(330 695)">
+      <rect class="box" width="250" height="62" rx="10"/>
+      <text class="node-id" x="15" y="26">B4</text>
+      <text class="node-name" x="49" y="28">做初稿或样例</text>
+      <text class="node-note" x="15" y="50">保存可核对的实际稿件</text>
+    </g>
+    <g class="node advisor" id="B5" transform="translate(623 695)">
+      <rect class="box" width="236" height="62" rx="10"/>
+      <text class="node-id" x="15" y="26">B5</text>
+      <text class="node-name" x="49" y="28">看稿并指出问题</text>
+      <text class="node-note" x="15" y="50">只读这一版实际文件</text>
+    </g>
+    <g class="node lead" id="B7" transform="translate(330 786)">
+      <rect class="box" width="250" height="67" rx="10"/>
+      <text class="node-id" x="15" y="28">B7</text>
+      <text class="node-name" x="49" y="29">登记修改与保留项</text>
+      <text class="node-note" x="15" y="53">先登记各方向的清单</text>
+    </g>
+    <g class="node owner" id="B6" transform="translate(68 786)">
+      <rect class="box" width="228" height="70" rx="10"/>
+      <text class="node-id" x="15" y="29">B6</text>
+      <text class="node-name" x="47" y="30">在原单定方向</text>
+      <text class="node-note" x="15" y="55">第 2 步看稿后决定</text>
+    </g>
+    <g class="node executor" id="B8" transform="translate(905 869)">
+      <rect class="box" width="226" height="62" rx="10"/>
+      <text class="node-id" x="15" y="25">B8</text>
+      <text class="node-name" x="49" y="27">制作候选</text>
+      <text class="node-note" x="15" y="49">改指定部分并自测</text>
+    </g>
+    <g class="node lead" id="B9" transform="translate(330 949)">
+      <rect class="box" width="250" height="65" rx="10"/>
+      <text class="node-id" x="15" y="28">B9</text>
+      <text class="node-name" x="49" y="29">读取实际版本复验</text>
+      <text class="node-note" x="15" y="53">通过后交给外层 C1</text>
+    </g>
+    <g class="node repair" id="B10" transform="translate(905 949)">
+      <rect class="box" width="226" height="65" rx="10"/>
+      <text class="node-id" x="15" y="28">B10</text>
+      <text class="node-name" x="54" y="29">本步返修</text>
+      <text class="node-note" x="15" y="53">封存新版再交负责人</text>
+    </g>
+  </g>
+
+  <g id="delivery" aria-label="外层，验收与交付">
+    <rect class="panel" x="32" y="1049" width="1136" height="182" rx="15"/>
+    <path class="bar-outer" d="M47 1049H1153a15 15 0 0 1 15 15v37H32v-37a15 15 0 0 1 15-15z"/>
+    <text class="bar-title" x="54" y="1083">外层 · 验收与交付</text>
+    <text class="bar-note" x="386" y="1082">核对回执和封存文件，按本版约定完成交付</text>
+    <path class="edge edge-pass" d="M288 1181H338"/>
+    <path class="edge edge-pass" d="M574 1181H624"/>
+    <path class="edge edge-pass" d="M860 1181H910"/>
+    <path class="edge edge-pass" d="M457 1143V1126H1029V1141"/>
+    <text class="edge-label label-pass" x="743" y="1119" text-anchor="middle">通过且无需签收</text>
+    <text class="edge-label label-pass" x="600" y="1169" text-anchor="middle">需签收</text>
+    <text class="edge-label label-pass" x="886" y="1169" text-anchor="middle">签收</text>
+    <path class="edge edge-repair" d="M457 1219V1240H76V1252"/>
+    <text class="edge-label label-repair" x="474" y="1245">发现前序回归</text>
+    <g class="node" id="C1" transform="translate(54 1143)">
+      <rect class="box" width="234" height="76" rx="11"/>
+      <text class="node-id" x="15" y="31">C1</text>
+      <text class="node-name" x="47" y="32">收回派工回执</text>
+      <text class="node-note" x="15" y="59">校验版本、暂停和预算</text>
+    </g>
+    <g class="node" id="C2" transform="translate(340 1143)">
+      <rect class="box" width="234" height="76" rx="11"/>
+      <text class="node-id" x="15" y="31">C2</text>
+      <text class="node-name compact" x="47" y="32">独立核验实际文件</text>
+      <text class="node-note" x="15" y="59">复跑已批准的验收项</text>
+    </g>
+    <g class="node owner" id="C3" transform="translate(626 1143)">
+      <rect class="box" width="234" height="76" rx="11"/>
+      <text class="node-id" x="15" y="31">C3</text>
+      <text class="node-name" x="47" y="32">签收或退回</text>
+      <text class="node-note" x="15" y="59">按版签收，退回后再派工</text>
+    </g>
+    <g class="node done" id="C4" transform="translate(912 1143)">
+      <rect class="box" width="234" height="76" rx="11"/>
+      <text class="node-id" x="15" y="31">C4</text>
+      <text class="node-name" x="47" y="32">原单下载已验版</text>
+      <text class="node-note" x="15" y="59">归档原件可回查</text>
+    </g>
+  </g>
+
+  <g id="notes" aria-label="跨阶段回归、多单调度和运行方式">
+    <rect x="32" y="1254" width="1136" height="128" rx="13" fill="#fff" stroke="#dde6ea" stroke-width="1.5"/>
+    <path d="M54 1296H1146M54 1338H1146" fill="none" stroke="#e4ecf0" stroke-width="1"/>
+    <g id="D1">
+      <text class="note-id label-repair" x="56" y="1280">D1</text>
+      <text class="note-title label-repair" x="105" y="1281">跨阶段回归</text>
+      <text class="note-detail" x="300" y="1280">外层核验查出前序回归后，协调员读证据并提出修法。引擎核对后另派。</text>
+    </g>
+    <g id="D2">
+      <text class="note-id lead-color" x="56" y="1322">D2</text>
+      <text class="note-title lead-color" x="105" y="1323">多单与名额</text>
+      <text class="note-detail" x="300" y="1322">一单等待本人决定时释放执行名额。已获授权且有空位的其他工单继续。</text>
+    </g>
+    <g id="D3">
+      <text class="note-id owner-color" x="56" y="1364">D3</text>
+      <text class="note-title owner-color" x="105" y="1365">运行方式</text>
+      <text class="note-detail" x="300" y="1364">工作台供你处理原单，Autoloop 管授权和派工，Codex 运行各角色会话。</text>
+    </g>
+  </g>
+</svg>
