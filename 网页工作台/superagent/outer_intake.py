@@ -12,10 +12,14 @@ from workbench import Problem, TASK_RE, now, is_blind_goal, omit_call_payloads
 
 from .goal_checks import _SECRET
 from .goal_team_records import (
-    PROFILE, observation_stale, profile, project, public_coordination_decision, public_preference,
-    public_progress, role_limit,
+    ADAPTIVE_REVIEW, PREFERENCE_REVIEW_MODES, PROFILE, observation_stale, profile, project,
+    public_coordination_decision, public_preference, public_progress, role_limit,
 )
-from .outer_model import ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, CodexOuterModel, ModelFailure, role_invoke
+from .outer_model import (
+    ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, CodexOuterModel, CodexTicketTeamModel, ModelFailure, role_invoke,
+)
+from .outer_verification import ROUTER_TEAM
+from .team_profiles import new_team_profile
 
 
 operator_kind = ContextVar('outer_operator_kind', default='owner')
@@ -74,6 +78,13 @@ _LAST_REQUEST_ERROR = """SELECT CASE WHEN e.state IN ('NEEDS_ATTENTION','REJECTE
     THEN COALESCE(json_extract(e.result,'$.error'),'需要人工核对') END
     FROM outer_events e WHERE e.ticket=d.id AND json_extract(e.body,'$.type')='message'
     ORDER BY e.received_at DESC,e.rowid DESC LIMIT 1"""
+
+# 识别早期 Router 把已预分配工单自身误当成选单候选的回执。
+_MISROUTED_SELF_SELECTION = """e.role='intake_assessor' AND e.state='DONE'
+    AND json_extract(e.body,'$.force_new')=1
+    AND json_extract(e.result,'$.action')='REQUEST_TICKET_SELECTION'
+    AND json_array_length(e.result,'$.choices')=1
+    AND json_extract(e.result,'$.choices[0].id')=e.ticket"""
 
 
 def _json(value):
@@ -138,10 +149,11 @@ def _draft_file(path, data, *, include_content=False):
 
 
 class OuterIntake:
-    def __init__(self, workbench, model=None, registry=None):
+    def __init__(self, workbench, model=None, registry=None, *, team_model=None):
         self.workbench = workbench
         self.store = workbench.store
         self.model = model if model is not None else CodexOuterModel()
+        self.team_model = team_model if team_model is not None else CodexTicketTeamModel()
         self.registry = registry
         with self.store.connect() as db:
             db.executescript(_SCHEMA)
@@ -256,10 +268,15 @@ class OuterIntake:
 
     def submit(self, *, source, source_event_id, actor_id, text, source_thread_id=None, tenant='default',
                ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None,
-               workbench_request=None, goal_team=False, allow_model_input=False):
+               workbench_request=None, goal_team=False, allow_model_input=False,
+               route_team=False, change_request=False):
         identity = self._source(source, source_event_id, actor_id, tenant, source_thread_id)
         _string(text, '原始需求', 6000)
         _, _, actor, tenant, thread = identity
+        allow_model_input = source == 'web' and allow_model_input is True
+        if route_team and (source not in ('web', 'dsh') or not goal_team or workbench_request is None
+                           or (source == 'web' and workbench_request.get('allow_model_input') is not True)):
+            raise Problem('团队工单须在网页确认本单资料范围后登记', 409)
         if question_id is not None:
             question_id = _string(question_id, '澄清问题编号', _MAX_SOURCE_ID)
         if replace_requirement_ids is not None:
@@ -282,6 +299,7 @@ class OuterIntake:
                 'type': 'message', 'text': text, 'ticket_id': requested,
                 'expected_ticket_revision': expected_ticket_revision, 'question_id': question_id,
                 'replace_requirement_ids': replace_requirement_ids,
+                **({'change_request': True} if change_request is True else {}),
                 **({'allow_model_input': True} if allow_model_input is True else {}),
                 **({'force_new': True, 'workbench_request': workbench_request} if workbench_request is not None else {}),
                 **({'goal_team': True} if workbench_request is not None and goal_team else {}),
@@ -292,8 +310,42 @@ class OuterIntake:
                 raise Problem('会话与指定工单不一致', 409)
             if (question_id or replace_requirement_ids) and not ticket_id:
                 raise Problem('澄清或替换要求必须关联有效工单', 409)
-            if ticket_id is not None:
+            if route_team:
+                ticket = self._new_ticket(db, row, routed=True)
+                self._thread(db, 'web', tenant, ticket['id'], ticket['id'])
+                if source == 'web':
+                    db.execute('UPDATE outer_events SET ticket=?,result=? WHERE id=?',
+                               (ticket['id'], _json({'binding': {'revision': ticket['revision']}}), row['id']))
+                else:
+                    self._hold_for_model_consent(db, row, ticket)
+            elif not ticket_id and workbench_request is None and getattr(self.workbench, 'outer_goal_team', False):
+                # 未绑定自然语言只在本机登记。用户选定归属之后才可能进入本单团队。
+                choices = self._router_choices(db, actor, tenant)
+                db.execute('UPDATE outer_events SET role=NULL WHERE id=?', (row['id'],))
+                self._finish(db, row, 'DONE', {'action':'REQUEST_TICKET_SELECTION',
+                                                'choices':choices, 'router_selection':True})
+            elif ticket_id is not None:
                 ticket = self._ticket(db, ticket_id, actor, tenant)
+                question = ticket.get('question')
+                card = self._card(db, source, tenant, thread) if linked else None
+                card_question = card['question_id'] if card else None
+                explicit_decision = question_id or card_question or replace_requirement_ids or change_request
+                team = ticket.get('ticket_team')
+                if team:
+                    if source != 'web' and not linked:
+                        raise Problem('消息需要绑定原工单会话', 409)
+                    if explicit_decision and allow_model_input is not True:
+                        raise Problem('请在工作台确认将这条澄清或修改发送给 Codex', 409)
+                    if explicit_decision and ticket.get('needs_model_consent'):
+                        raise Problem('请先核对并授权发送这张工单的原话', 409)
+                if team and not explicit_decision:
+                    if expected_ticket_revision is not None:
+                        _revision(expected_ticket_revision, '工单版本')
+                        if expected_ticket_revision > ticket['revision']:
+                            raise Problem('工单版本已变化，请重新查看', 409)
+                    self._attach_subscription(db, row, ticket)
+                    return self._event_view(db.execute('SELECT * FROM outer_events WHERE id=?',
+                                                       (row['id'],)).fetchone())
                 if expected_ticket_revision is not None:
                     self._compare(ticket, expected_ticket_revision)
                 if replace_requirement_ids:
@@ -303,9 +355,6 @@ class OuterIntake:
                         raise Problem('被替换要求已更新或不存在', 409)
                 if ticket['status'] in ('PAUSED', 'STOPPED'):
                     raise Problem('工单已暂停或停止', 409)
-                question = ticket.get('question')
-                card = self._card(db, source, tenant, thread) if linked else None
-                card_question = card['question_id'] if card else None
                 if question_id and card_question and question_id != card_question:
                     raise Problem('卡片与指定澄清问题不一致', 409)
                 selected_question = question_id or card_question
@@ -320,6 +369,34 @@ class OuterIntake:
             row = db.execute('SELECT * FROM outer_events WHERE id=?', (row['id'],)).fetchone()
             return self._event_view(row)
 
+    def _attach_subscription(self, db, event, ticket):
+        message = json.loads(event['body'])
+        # 原始消息保存在事件账本。可供执行读取的备注保持现有脱敏及来源格式。
+        db.execute('INSERT INTO inbox_notes VALUES(?,?,?,?)',
+                   (('web-' if event['source'] == 'web' else '') + event['id'], ticket['id'],
+                    _model_text(message['text']), event['received_at']))
+        db.execute('UPDATE outer_events SET role=NULL WHERE id=?', (event['id'],))
+        self._finish(db, event, 'DONE', {'action': 'ATTACH_TO_TICKET'}, ticket, deliver=False)
+
+    @staticmethod
+    def _router_choices(db, actor, tenant):
+        rows = db.execute("""SELECT body FROM outer_tickets WHERE actor=? AND tenant=?
+            AND json_extract(body,'$.ticket_team.workflow_profile')=?
+            AND json_extract(body,'$.status') NOT IN ('PAUSED','STOPPED')
+            ORDER BY updated_at DESC,id LIMIT ?""", (actor, tenant, ROUTER_TEAM, _TICKET_LIMIT))
+        tickets = [json.loads(body) for (body,) in rows]
+        return [{'id':ticket['id'], 'summary':ticket.get('workbench_name')
+                 or (ticket.get('goal_contract') or {}).get('goal_statement')
+                 or '待授权工单 ' + ticket['id'][-8:], 'revision':ticket['revision']}
+                for ticket in tickets]
+
+    def _hold_for_model_consent(self, db, event, ticket):
+        ticket['needs_model_consent'] = True
+        ticket['router_draft_event'] = event['id']
+        self._save(db, ticket)
+        db.execute('UPDATE outer_events SET role=NULL WHERE id=?', (event['id'],))
+        self._finish(db, event, 'DONE', {'action':'AWAITING_MODEL_AUTHORIZATION'}, ticket)
+
     def select_ticket(self, event_id, ticket_id, *, actor_id, source, source_event_id, tenant='default'):
         identity = self._source(source, source_event_id, actor_id, tenant, None)
         with self._transaction() as db:
@@ -330,15 +407,29 @@ class OuterIntake:
             selection = json.loads(original['result'] or '{}')
             if selection.get('action') != 'REQUEST_TICKET_SELECTION':
                 raise Problem('原始事件无需选择工单', 409)
+            router = selection.get('router_selection') is True
+            if router and identity[0] not in (original['source'], 'web'):
+                raise Problem('请从原消息来源或网页工作台选择归属', 409)
             row, duplicate = self._insert(db, identity, ticket_id, {
                 'type': 'selection', 'selected_from': event_id, 'ticket_id': ticket_id,
                 'force_new': ticket_id is None, 'text': json.loads(original['body'])['text'],
+                **({'original_source': original['source']} if router else {}),
             }, role='intake_assessor')
             if duplicate:
                 return self._event_view(row, True)
             if selection.get('selected_by'):
                 raise Problem('已经处理此工单选择', 409)
-            if ticket_id is not None:
+            if router and ticket_id is None:
+                ticket = self._new_ticket(db, row, routed=True)
+                ticket['correlation_id'] = original['id']
+                ticket['original_request_refs'] = [original['id']]
+                ticket['relevant_thread_refs'] = [original['id'], row['id']]
+                self._thread(db, 'web', identity[3], ticket['id'], ticket['id'])
+                self._thread(db, original['source'], identity[3], json.loads(original['body']).get('source_thread_id'),
+                             ticket['id'])
+                self._hold_for_model_consent(db, row, ticket)
+                db.execute('UPDATE outer_events SET ticket=? WHERE id=?', (ticket['id'], original['id']))
+            elif ticket_id is not None:
                 choice = next((item for item in selection['choices'] if item['id'] == ticket_id), None)
                 if choice is None:
                     raise Problem('工单不在当前选项中', 409)
@@ -347,7 +438,12 @@ class OuterIntake:
                 if ticket['status'] in ('PAUSED', 'STOPPED'):
                     raise Problem('工单已暂停或停止', 409)
                 question = ticket['question']
-                if question:
+                if ticket.get('ticket_team'):
+                    if router:
+                        self._thread(db, original['source'], identity[3], json.loads(original['body']).get('source_thread_id'),
+                                     ticket_id)
+                    self._attach_subscription(db, row, ticket)
+                elif question:
                     self._finish(db, row, 'DONE', {'action': 'CLARIFY', 'question': question,
                                                   'ticket_revision': ticket['revision']}, ticket)
                 else:
@@ -356,6 +452,37 @@ class OuterIntake:
             selection['selected_by'] = row['id']
             db.execute('UPDATE outer_events SET result=? WHERE id=?', (_json(selection), event_id))
             return self._event_view(db.execute('SELECT * FROM outer_events WHERE id=?', (row['id'],)).fetchone())
+
+    def authorize_model_input(self, ticket_id, revision, request_id, *, actor_id, source='web', tenant='default'):
+        if source != 'web':
+            raise Problem('请在网页原单核对并授权发送原话', 409)
+        identity = self._source(source, request_id, actor_id, tenant, None)
+        with self._transaction() as db:
+            ticket = self._ticket(db, ticket_id, identity[2], identity[3])
+            event, duplicate = self._insert(db, identity, ticket_id, {
+                'type':'model_input_authorization', 'ticket_id':ticket_id,
+                'expected_ticket_revision':revision, 'allow_model_input':True,
+            })
+            if duplicate:
+                return self._event_view(event, True)
+            self._compare(ticket, revision)
+            if (not ticket.get('ticket_team') or not ticket.get('needs_model_consent')
+                    or ticket['status'] != 'DRAFT'):
+                raise Problem('当前工单没有待确认的原话发送授权', 409)
+            source_event = db.execute("""SELECT * FROM outer_events WHERE id=? AND ticket=? AND state='DONE'
+                AND json_extract(result,'$.action')='AWAITING_MODEL_AUTHORIZATION'""",
+                                      (ticket.get('router_draft_event'), ticket_id)).fetchone()
+            if source_event is None:
+                raise Problem('本单原话记录已变化，请重新查看', 409)
+            ticket.update(needs_model_consent=False, allow_model_input=True, model_input_authorization=event['id'],
+                          revision=ticket['revision'] + 1)
+            self._save(db, ticket)
+            db.execute("""UPDATE outer_events SET state='PENDING',role='intake_assessor',result=?
+                          WHERE id=?""", (_json({'binding': {'revision':ticket['revision']},
+                                                 'model_input_authorization':event['id']}), source_event['id']))
+            self._finish(db, event, 'DONE', {'action':'MODEL_INPUT_AUTHORIZED',
+                                            'intake_event_id':source_event['id']}, ticket, deliver=False)
+            return self._event_view(db.execute('SELECT * FROM outer_events WHERE id=?', (event['id'],)).fetchone())
 
     def event(self, event_id, actor_id, *, tenant='default'):
         actor, tenant = self._owner(actor_id, tenant)
@@ -367,9 +494,12 @@ class OuterIntake:
             return self._event_view(row)
 
     def get(self, ticket_id, actor_id, *, tenant='default', request_feedback=False):
+        from .development_delivery import release_view
+
         actor, tenant = self._owner(actor_id, tenant)
         task = {}
         with self.store.connect() as db:
+            db.execute('BEGIN')
             ticket = self._ticket(db, ticket_id, actor, tenant)
             if request_feedback:
                 ticket['last_request_error'] = db.execute(
@@ -381,11 +511,15 @@ class OuterIntake:
                 request = message.get('workbench_request')
                 if request:
                     ticket['original_request'] = {key: request[key] for key in ('goal','acceptance')}
+                elif ticket.get('ticket_team'):
+                    ticket['original_request'] = {'text':message['text']}
             if ticket['task_id']:
                 raw_task = db.execute('SELECT body FROM tasks WHERE id=?', (ticket['task_id'],)).fetchone()
                 if raw_task is None:
                     raise Problem('工单执行记录暂不可用', 409)
                 task = json.loads(raw_task[0])
+                if release := release_view(db, task):
+                    ticket['development_delivery'] = release
                 previous = []
                 for gen,reviews,delivery in db.execute("""SELECT revision,json_extract(body,'$.goal_execution.artifact_reviews'),
                         json_extract(body,'$.goal_delivery') FROM outer_revisions WHERE ticket=? AND kind='execution_archive'
@@ -396,6 +530,8 @@ class OuterIntake:
                     previous.extend(dict(mandate_revision=gen,**{k:r.get(k) for k in (
                         'sequence','state','assignment','artifact_sha256','files','reason')}) for r in records)
                 if previous: ticket['prior_deliveries']=previous
+            if ticket.get('ticket_team'):
+                ticket['subscription'] = self._subscription(db, ticket_id, tenant, task)
             self._project_action_state(db, ticket, task)
         if is_blind_goal(task):
             ticket['blind_review'] = self.workbench.blind_review().get(ticket_id,actor_id=actor,tenant=tenant)
@@ -403,6 +539,44 @@ class OuterIntake:
         if task:
             ticket['execution'] = project(omit_call_payloads(task), blind_review=ticket.get('blind_review'))
         return ticket
+
+    @staticmethod
+    def _subscription(db, ticket_id, tenant, task):
+        bindings = [{'source': source, 'thread_id': thread} for source, thread in db.execute(
+            'SELECT source,thread FROM outer_threads WHERE tenant=? AND ticket=? ORDER BY source,thread',
+            (tenant, ticket_id))]
+        execution = task.get('goal_execution') or {}
+        handed_to_team = {
+            ref['event_id'] for assignment in execution.get('assignments', ())
+            for call in assignment.get('role_calls', ()) if call.get('status') == 'completed'
+            for ref in call.get('material_refs', ())
+        }
+        artifact_reviews = execution.get('artifact_reviews') or []
+        delivery = task.get('goal_delivery') or (artifact_reviews[-1] if artifact_reviews else {})
+        candidate_refs = {ref['event_id'] for ref in delivery.get('material_refs', ())}
+        sealed = (bool(delivery.get('artifact_sha256'))
+                  and task.get('status') in ('awaiting_artifact_review', 'completed', 'rejected'))
+        handoff = execution.get('team_pending_handoff') or {}
+        draft_sealed = task.get('status') == 'awaiting_preference' and bool(handoff.get('base_sha256'))
+        draft_refs = {
+            ref['event_id'] for assignment in execution.get('assignments', ())
+            if assignment['id'] == handoff.get('source_assignment')
+            for call in assignment.get('role_calls', ()) if call.get('status') == 'completed'
+            for ref in call.get('material_refs', ())
+        }
+        entries = []
+        for row in db.execute("""SELECT id,source,body,received_at FROM outer_events
+                WHERE ticket=? AND tenant=? AND state='DONE' AND json_extract(result,'$.action')='ATTACH_TO_TICKET'
+                ORDER BY received_at DESC,rowid DESC LIMIT 30""", (ticket_id, tenant)):
+            message = json.loads(row['body'])
+            allowed = message.get('allow_model_input') is True
+            entries.append(dict(event_id=row['id'], source=message.get('original_source', row['source']),
+                                received_at=row['received_at'],
+                                text=_model_text(message['text']), allow_model_input=allowed,
+                                handed_to_team=row['id'] in handed_to_team,
+                                candidate_unaffected=allowed and sealed and row['id'] not in candidate_refs,
+                                draft_unaffected=allowed and draft_sealed and row['id'] not in draft_refs))
+        return dict(bindings=bindings, entries=entries)
 
     def _project_action_state(self, db, ticket, task):
         state = task.get('goal_execution') or {}
@@ -431,6 +605,7 @@ class OuterIntake:
         handoff = state.get('team_pending_handoff') or {}
         review = handoff.get('handoff') or {}
         step = task.get('step', 0)
+        mode = handoff.get('mode')
         key = handoff.get('source_assignment', '')
         current = tuple(question.get(field) for field in ('id','revision','candidate_digest','draft_sha256'))
         if (ticket['status'] != 'AUTHORIZED' or ticket.get('task_id') != ticket_id
@@ -439,12 +614,14 @@ class OuterIntake:
                 or not profile(state) or is_blind_goal(task) or outer.get('ticket_id') != ticket_id
                 or outer.get('mandate_revision') != ticket.get('mandate_revision')
                 or current != expected or question.get('answer') is not None or question.get('requires_option') is not True
-                or type(step) is not int or step <= 0 or question.get('step') != step or handoff.get('step') != step
+                or type(step) is not int or step < (0 if mode == ADAPTIVE_REVIEW else 1)
+                or question.get('step') != step or handoff.get('step') != step
                 or question.get('plan_revision') != task.get('version') or handoff.get('version') != task.get('version')
                 or question.get('stop_generation') != state.get('stop_generation')
                 or question.get('mandate_digest') != digest(state.get('mandate'))
                 or question.get('phase') != 'execute' or handoff.get('phase') != 'execute'
-                or handoff.get('mode') != 'review_and_decide' or handoff.get('decision_required') is not True
+                or mode not in PREFERENCE_REVIEW_MODES or handoff.get('decision_required') is not True
+                or (mode == ADAPTIVE_REVIEW and (outer.get('mandate') or {}).get('workflow_profile') != ROUTER_TEAM)
                 or question.get('assignment') != key or not isinstance(key, str) or not re.fullmatch(r'[a-f0-9]{32}', key)
                 or handoff.get('base_sha256') != expected[3] or not handoff.get('files')
                 or review.get('draft_sha256') != expected[3]
@@ -505,6 +682,7 @@ class OuterIntake:
                 task = json.loads(row[1] or '{}')
                 state = task.get('goal_execution') or {}
                 draft = json.loads(row[0])
+                draft.pop('router_draft_event', None)
                 draft.update(execution_status=task.get('status'), outcome=state.get('outcome'),
                              last_request_error=row[2],
                              last_business_at=max(draft['updated_at'],
@@ -572,7 +750,7 @@ class OuterIntake:
                     "AND tenant=? AND actor=? LIMIT 1", (ticket_id,event['tenant'],event['actor'])).fetchone():
                 self._delivery(db, {**dict(event),'source':'feishu'}, ticket_id, result)
 
-    def _new_ticket(self, db, event):
+    def _new_ticket(self, db, event, *, routed=False):
         ticket_id = _id('wb-')
         ticket = dict(id=ticket_id, correlation_id=event['id'], status='DRAFT', revision=1,
                       goal_revision=0, acceptance_revision=0, mandate_revision=0, goal_contract=None,
@@ -584,13 +762,20 @@ class OuterIntake:
                                       'execution_model': 'gpt-6.2-sol'})
         message = json.loads(event['body'])
         request = message.get('workbench_request')
+        if routed:
+            frozen = new_team_profile()
+            ticket['ticket_team'] = {'id': ticket_id, 'workflow_profile': ROUTER_TEAM}
+            ticket['coordinator_profile'] = 'scoped-v1'
+            ticket['approval_terms'].update(execution_profile=frozen, execution_model=frozen['roles']['lead'],
+                                            workflow_profile=ROUTER_TEAM, team_review_mode=ADAPTIVE_REVIEW)
         if request is not None:
             ticket['coordinator_profile'] = 'scoped-v1'
             ticket['workbench_name'] = request['name']
             if request.get('allow_model_input') is True:
                 ticket['allow_model_input'] = True
             if message.get('goal_team') is True:
-                ticket['approval_terms']['execution_profile'] = PROFILE
+                if not routed:
+                    ticket['approval_terms']['execution_profile'] = PROFILE
                 if request.get('team_review_mode'):
                     ticket['approval_terms']['team_review_mode'] = request['team_review_mode']
         db.execute('INSERT INTO outer_tickets VALUES(?,?,?,?,?)',
@@ -630,6 +815,15 @@ class OuterIntake:
                             'prior_messages': {row['id']: _model_text(json.loads(row['body']).get('text', ''), 1000)
                                                for row in rows if row['id'] != event['id']}},
         )
+        if ticket and (team := ticket.get('ticket_team')):
+            context.update(ticket_team=team, workflow_profile=ROUTER_TEAM,
+                           team_review_mode=ticket['approval_terms'].get('team_review_mode'))
+            if ticket.get('question'):
+                context['available_actions'] = ['ANSWER_CLARIFICATION', 'ESCALATE']
+            elif message.get('change_request') or message.get('replace_requirement_ids'):
+                context['available_actions'] = ['PROPOSE_CHANGE', 'ESCALATE']
+            elif message.get('force_new'):
+                context['available_actions'] = ['CREATE_DRAFT', 'ESCALATE']
         for row in rows:
             request = json.loads(row['body']).get('workbench_request')
             if request:
@@ -654,7 +848,7 @@ class OuterIntake:
                  'status': candidate['status'], 'revision': candidate['revision']}
                 for (raw,) in db.execute('SELECT body FROM outer_tickets WHERE actor=? AND tenant=? ORDER BY updated_at DESC LIMIT ?',
                                          (event['actor'], event['tenant'], _TICKET_LIMIT))
-                if (candidate := json.loads(raw))['status'] != 'STOPPED'
+                if (candidate := json.loads(raw))['status'] != 'STOPPED' and not candidate.get('ticket_team')
             ]
         return context
 
@@ -715,17 +909,50 @@ class OuterIntake:
             keys.add(('unrouted', event['tenant'], event['actor']))
         return keys, linked
 
-    def _claim(self):
+    def pending_team_tickets(self):
+        """仅列出需要本单团队消费的已绑定票，读接口不会唤醒历史队列。"""
+        with self.store.connect() as db:
+            return [row[0] for row in db.execute(f"""
+                SELECT t.id FROM outer_tickets t JOIN outer_events e ON e.ticket=t.id
+                WHERE json_extract(t.body,'$.ticket_team.workflow_profile')=?
+                    AND json_extract(t.body,'$.status') NOT IN ('PAUSED','STOPPED')
+                    AND (e.role IS NOT NULL AND e.state IN ('PENDING','RUNNING')
+                         OR json_extract(t.body,'$.status')='DRAFT'
+                         AND e.id=json_extract(t.body,'$.original_request_refs[0]') AND ({_MISROUTED_SELF_SELECTION}))
+                GROUP BY t.id HAVING SUM(e.state='RUNNING' AND e.lease_until>?)=0
+                ORDER BY MIN(e.rowid)
+                """, (ROUTER_TEAM, time.time()))]
+
+    def _claim(self, ticket_id=None):
         with self._transaction() as db:
+            if ticket_id:
+                ticket = self._ticket(db, ticket_id)
+                if (ticket.get('ticket_team') or {}).get('workflow_profile') != ROUTER_TEAM:
+                    return None
+                if ticket['status'] == 'DRAFT':
+                    # 旧调用与原话保留，原事件重新入队。不会创建工单或触发实施。
+                    db.execute(f"""UPDATE outer_events SET state='PENDING',attempt=0,result=?
+                        WHERE id=(SELECT e.id FROM outer_events e WHERE e.ticket=? AND e.id=?
+                                  AND ({_MISROUTED_SELF_SELECTION}))""",
+                               (_json({'binding': {'revision':ticket['revision']}}),
+                                ticket_id, ticket['original_request_refs'][0]))
+                scope = 'ticket=?'
+                params = (ticket_id,)
+            else:
+                scope = """NOT EXISTS (SELECT 1 FROM outer_tickets t WHERE t.id=outer_events.ticket
+                            AND json_extract(t.body,'$.ticket_team.workflow_profile')=?)"""
+                params = (ROUTER_TEAM,)
             # 过期的领取者保留审计；只有新租约可以提交新的正式决定。
-            for expired in db.execute("SELECT * FROM outer_events WHERE state='RUNNING' AND lease_until<=?",
-                                      (time.time(),)).fetchall():
+            for expired in db.execute(f"""SELECT * FROM outer_events
+                    WHERE state='RUNNING' AND lease_until<=? AND {scope}""",
+                                      (time.time(), *params)).fetchall():
                 self._expire_claim(db, expired)
-            running = db.execute("SELECT * FROM outer_events WHERE state='RUNNING'").fetchall()
-            if len(running) >= OUTER_WORKERS:
+            running = db.execute(f"SELECT * FROM outer_events WHERE state='RUNNING' AND {scope}", params).fetchall()
+            if len(running) >= (1 if ticket_id else OUTER_WORKERS):
                 return None
             blocked = set().union(*(self._queue_keys(db, event)[0] for event in running))
-            for event in db.execute("SELECT * FROM outer_events WHERE state='PENDING' ORDER BY received_at,rowid").fetchall():
+            for event in db.execute(f"""SELECT * FROM outer_events WHERE state='PENDING' AND role IS NOT NULL
+                    AND {scope} ORDER BY received_at,rowid""", params).fetchall():
                 ticket = self._ticket(db, event['ticket']) if event['ticket'] else None
                 keys, linked = self._queue_keys(db, event)
                 if blocked & keys or ticket and ticket['status'] == 'PAUSED':
@@ -748,7 +975,7 @@ class OuterIntake:
                     self._needs_attention(db, event, ticket, '验收目录无法读取')
                     continue
                 if not all(snapshot['remaining_budget'].values()):
-                    self._needs_attention(db, event, ticket, '已达到外层模型预算')
+                    self._needs_attention(db, event, ticket, '已达到团队研判预算' if ticket_id else '已达到外层模型预算')
                     continue
                 lease = _id('call-')
                 db.execute("""
@@ -760,16 +987,24 @@ class OuterIntake:
         return None
 
     def drain(self, limit=10):
-        """从持久队列消费，不在 SQLite 写事务内调用模型。"""
+        """消费历史入口的外层队列。"""
+        return self._drain(limit)
+
+    def drain_ticket(self, ticket_id, limit=1):
+        """消费指定团队工单，不领取其他工单或无绑定消息。"""
+        return self._drain(limit, ticket_id=ticket_id)
+
+    def _drain(self, limit, *, ticket_id=None):
+        """模型执行在 SQLite 写事务之外，回执由原领取租约结算。"""
         settled = 0
         for _ in range(min(50, max(1, int(limit)))):
-            claim = self._claim()
+            claim = self._claim(ticket_id)
             if claim is None:
                 break
             event, lease, snapshot = claim
             role = event['role']
             try:
-                response = role_invoke(self.model, role, snapshot,
+                response = role_invoke(self.team_model if ticket_id else self.model, role, snapshot,
                                        INTAKE_SCHEMA if role == 'intake_assessor' else ACCEPTANCE_SCHEMA)
             except ModelFailure as error:
                 response = error.receipt()
@@ -849,6 +1084,8 @@ class OuterIntake:
         replacements = set(json.loads(event['body']).get('replace_requirement_ids') or ())
         goal = dict(ticket_id=ticket['id'], goal_statement=statement, revision=ticket['goal_revision'] + 1,
                     source_refs=sorted(source_keys), created_at=now(), created_by='intake_assessor', status='DRAFT')
+        if ticket.get('ticket_team'):
+            goal['workflow_profile'] = ROUTER_TEAM
         for field in _FIELDS:
             requirements = raw[field] + (result['assumptions'] if field == 'assumptions' else [])
             if len(requirements) > 12:
@@ -914,7 +1151,7 @@ class OuterIntake:
             state = 'NEEDS_ATTENTION' if action == 'ESCALATE' else 'DONE'
             self._finish(db, event, state, {'action': action}, ticket, deliver=action != 'IGNORE')
             return
-        if action == 'REQUEST_TICKET_SELECTION' or (action == 'CREATE_DRAFT' and candidates):
+        if action == 'REQUEST_TICKET_SELECTION' or (not ticket and action == 'CREATE_DRAFT' and candidates):
             choices = [visible[key] for key in candidates]
             if not choices:
                 raise ValueError('没有可以选择的工单')
@@ -1000,6 +1237,10 @@ class OuterIntake:
             raise ValueError('验收注册表状态不合法')
         if compiled['status'] == 'READY_FOR_APPROVAL':
             self._validate_ready_contract(compiled)
+            if (ticket.get('ticket_team') and ticket['approval_terms'].get('team_review_mode') == 'review_and_decide'
+                    and sum(row.get('required') is True for row in compiled['criteria']) < 2):
+                compiled = {**compiled, 'status': 'VERIFICATION_GAP',
+                            'verification_gaps': ['第 2 步定方向需要至少两项可分阶段执行的必需验收。请补充可单独验收的阶段成果。']}
         revision = ticket['acceptance_revision'] + 1
         contract = {**compiled, 'ticket_id': ticket['id'], 'goal_revision': goal['revision'],
                     'revision': revision, 'created_at': now()}
@@ -1076,7 +1317,7 @@ class OuterIntake:
             mode = mandate.get('team_review_mode')
             if mode:
                 from superagent.goal_team_blind import required_blind
-                if required_blind(acceptance):
+                if required_blind(acceptance) and mode != ADAPTIVE_REVIEW:
                     raise Problem('匿名评测使用已批准的盲评流程，不能叠加方案审稿', 409)
                 if mode == 'review_and_decide' and sum(
                         criterion.get('required') is True for criterion in acceptance.get('criteria', ())) < 2:
@@ -1143,6 +1384,8 @@ class OuterIntake:
             event, duplicate = self._insert(db, identity, ticket_id, data)
             if duplicate:
                 return self._event_view(event, True)
+            if text and ticket.get('ticket_team') and allow_model_input is not True:
+                raise Problem('请在工作台确认将补充意见发送给 Codex', 409)
             self._compare(ticket, revision)
             row = db.execute('SELECT body FROM tasks WHERE id=?', (ticket_id,)).fetchone()
             task = json.loads(row[0]) if row else {}
@@ -1252,6 +1495,8 @@ class OuterIntake:
             event,duplicate = self._insert(db,identity,ticket_id,data)
             if duplicate:
                 return dict(json.loads(event['result']),duplicate=True)
+            if reason and ticket.get('ticket_team') and allow_model_input is not True:
+                raise Problem('请在工作台确认将这条退回意见发送给 Codex', 409)
             self._compare(ticket,expected_revision)
             if source=='feishu':
                 card = self._card(db,source,tenant,identity[4]) or {}

@@ -149,7 +149,7 @@ def prepare_approval(pilot):
                                'note 固定为 recovery-fixture-42。',
                         'acceptance':'选择乙后，result.json 的对象恰为 '
                                      + json.dumps(EXPECTED,ensure_ascii=False)
-                                     + '。合成样例的选择和报告的人工签收由试验操作者分别确认。'})
+                                     + '。合成样例的选择和报告的人工签收由试验操作者分别确认。'}, legacy_fixture=True)
     outer = wb.outer()
     outer.drain()
     row = outer.event(event['event_id'],'owner')

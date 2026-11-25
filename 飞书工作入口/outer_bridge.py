@@ -44,7 +44,7 @@ def mirror_notifications(bridge):
                 binding=card['binding']
                 card={'title':'本次请求需要处理','body':f"本次请求未完成。{reason}\n工单 {binding['ticket_id']} · 当前目标 v{binding['goal_revision']} · 验收 v{binding['acceptance_revision']}。请打开现行工单卡，核对后重新提交。",
                       'binding':binding,'actions':[['outer_status','打开现行工单卡']]}
-        elif delivery.get('choices'):
+        elif delivery.get('router_selection') or delivery.get('choices'):
             choices=delivery['choices']
             card={'body':'请选择这条需求对应的工单。','binding':{'event_id':delivery['event_id']},
                   'actions':[['outer_pick_'+str(i),str(v.get('summary') or v['id'])[:60]] for i,v in enumerate(choices)]}

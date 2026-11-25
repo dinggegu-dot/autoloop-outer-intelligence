@@ -80,7 +80,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/outer/'):
                 from outer_channels import dispatch
                 cmd = path.removeprefix('/api/outer/')
-                if cmd not in ('submit','select','get','calls','call','event','approve','pause','resume','stop','accept_artifact','return_artifact','answer_preference','extend_team_budget','lock_blind_ballot'):
+                if cmd not in ('submit','authorize_model_input','select','get','calls','call','event','approve','pause','resume','stop','accept_artifact','return_artifact','answer_preference','extend_team_budget','lock_blind_ballot'):
                     raise Problem('接口不存在',404)
                 if not workbench.outer_enabled:
                     raise Problem('当前实例未启用智能接单',404)
@@ -88,7 +88,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/tasks':
                 from outer_workbench import create_task
                 with self.server.task_actions:
-                    result = create_task(workbench, body)
+                    legacy_fixture = bool(provided and body.get('allow_model_input') is not True)
+                    result = create_task(workbench, body, legacy_fixture=legacy_fixture)
                 return self.json_response(result, 201)
             match = re.fullmatch(r'/api/tasks/(wb-[a-f0-9]{32})/(answer|pause|resume|revise|reviewer|handoff|note|move-note)', path)
             if not match:
@@ -410,15 +411,24 @@ if __name__ == '__main__':
             from superagent.outer_intake import OUTER_WORKERS
 
             outer = server.workbench.outer()
-            def outer_loop():
+            from superagent.ticket_dispatcher import TeamDispatcher
+
+            def legacy_intake_loop():
                 while True:
                     try:
                         outer.drain(limit=1)
                     except Exception as error:
-                        print('智能判断待核对',type(error).__name__,flush=True)
+                        print('历史接单事件待核对', type(error).__name__, flush=True)
                     time.sleep(1)
+
             for _ in range(OUTER_WORKERS):
-                threading.Thread(target=outer_loop,daemon=True).start()
+                threading.Thread(target=legacy_intake_loop, daemon=True).start()
+            if args.outer_goal_team:
+                if args.outer_model_timeout is not None:
+                    from superagent.outer_model import CodexTicketTeamModel
+                    outer.team_model = CodexTicketTeamModel(timeout=args.outer_model_timeout)
+                dispatcher = TeamDispatcher(outer)
+                threading.Thread(target=dispatcher.serve, daemon=True, name='ticket-router').start()
         def reconcile_loop():
             while True:
                 try:
