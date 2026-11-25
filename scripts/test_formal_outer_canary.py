@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from formal_outer_canary import FIXTURE, OuterCanary, SYNTHETIC_ORDER, valid_command
+from formal_outer_canary import FIXTURE, OuterCanary, SYNTHETIC_ORDER, TEAM_FIXTURE, TEAM_ORDER, valid_command
 from formal_outer_canary_wire import client_ticket, request_nonce, response_proof
 
 
@@ -13,6 +13,9 @@ class FormalOuterCanaryTests(unittest.TestCase):
             gateway.post(None, "/api/tasks", FIXTURE)
             forward.assert_called_once_with(None, "/api/tasks", SYNTHETIC_ORDER)
             forward.reset_mock()
+            gateway.post(None, "/api/tasks", TEAM_FIXTURE)
+            forward.assert_called_once_with(None, "/api/tasks", TEAM_ORDER)
+            forward.reset_mock()
             gateway.post(Response(), "/api/tasks", {**FIXTURE, "goal": "private data"})
             forward.assert_not_called()
 
@@ -22,7 +25,11 @@ class FormalOuterCanaryTests(unittest.TestCase):
         approval = dict(ticket_id=ticket_id, request_id=request_id, revision=1,
                         goal_revision=1, acceptance_revision=1)
         self.assertTrue(valid_command("approve", approval))
-        self.assertFalse(valid_command("approve", {**approval, "require_signoff": True}))
+        self.assertTrue(valid_command("approve", {**approval, "require_signoff": True}))
+        self.assertFalse(valid_command("approve", {**approval, "require_signoff": "true"}))
+        direction = {**approval, "question_id": "b"*32, "question_revision": 1, "candidate_digest": "c"*64}
+        self.assertTrue(valid_command("answer_preference", {**direction, "answer": {"option_id": "keep-draft", "text": ""}}))
+        self.assertFalse(valid_command("answer_preference", {**direction, "answer": {"option_id": "keep-draft", "text": "free input"}}))
         self.assertFalse(valid_command("submit", {"ticket_id": ticket_id, "text": "free input"}))
         self.assertFalse(valid_command("return_artifact", {"ticket_id": ticket_id, "reason": "free input"}))
         self.assertFalse(valid_command("get", {"ticket_id": "../another-order"}))

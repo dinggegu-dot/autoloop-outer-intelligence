@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "result": "PASS",
+  "synthetic": true,
+  "reviewed_at_utc": "2026-11-24T13:21:40.506+00:00",
+  "entry": {
+    "surface": "普通新单的本机鉴权工单 API",
+    "source": "web",
+    "operator_kind": "acceptance_test",
+    "create_http_status": 201,
+    "wrong_approval_version_http_status": 409,
+    "approval_http_status": 200,
+    "formal_chrome_validated": false,
+    "dsh_validated": false
+  },
+  "ticket_ref_sha256": "fedea7cd2f9ab95ec916d3af501ed143361e4c0b939ffa47b55acca66053f447",
+  "approval": {
+    "count": 1,
+    "mandate_revision": 1,
+    "acceptance_revision": 1
+  },
+  "runtime": {
+    "worker": "实际隔离 Worker",
+    "hub_wal_verified_commits": 24,
+    "intake_models": {
+      "intake_assessor": "gpt-6.2-sol",
+      "acceptance_designer": "gpt-6.2-sol"
+    },
+    "roles_transport": "Codex App Server",
+    "coordinator_transport": "Codex CLI JSON 事件与本机受限 MCP",
+    "runs": [
+      {
+        "run": 1,
+        "phase": "plan",
+        "stage": 1,
+        "assignment_sha256": "57b0f2bc6d2c7ea2bbc992ac71256dae6b306c58591c28ed79254785819a4953",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 2,
+        "phase": "execute",
+        "stage": 1,
+        "assignment_sha256": "dec0efba3b33c6204d98995557576c2a19e4322a941f58e9350ae06309de2c6b",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 3,
+        "phase": "review",
+        "stage": 1,
+        "assignment_sha256": "d59f13e60275f77348bca9a19df3c94af84c53abec015d6eb2d378c3b8284c73",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 4,
+        "phase": "execute",
+        "stage": 2,
+        "assignment_sha256": "20ff107d31b03259455d62eff65f449f03a5dae0f137299eda76acd1e7a5d789",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 5,
+        "phase": "review",
+        "stage": 2,
+        "assignment_sha256": "758300f1e3a0be6222652f94efeb2be9351155d9301351d9388aef60bd4e5e47",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 6,
+        "phase": "coordinate",
+        "stage": 2,
+        "assignment_sha256": "07be82fce06f13924cad17bea04fcfbfdd6b0c952843df2cb61b81de1cbf3273",
+        "transport": "cancelled",
+        "workbench": "settled",
+        "report_on_disk": true
+      }
+    ],
+    "role_calls": [
+      {
+        "run": 2,
+        "role": "lead",
+        "protocol_model": "gpt-6.2-sol",
+        "effort": "medium",
+        "sandbox": "workspace-write",
+        "status": "completed",
+        "session_sha256": "c778907970b3eac62f37ac66256de23735cdc29000bb3bc49e53e4e0d0de72a0",
+        "turn_sha256": "3d5ad75d0be6968b80c4d94ee2f24d600a2b560e13846f3d4056bce9671f8374",
+        "process_state": "stopped",
+        "tool_terminal_counts": {
+          "completed": 6,
+          "failed": 2
+        },
+        "usage_source": "thread/tokenUsage/updated"
+      },
+      {
+        "run": 4,
+        "role": "lead",
+        "protocol_model": "gpt-6.2-sol",
+        "effort": "medium",
+        "sandbox": "workspace-write",
+        "status": "completed",
+        "session_sha256": "3965646a98e68d158883aa83620058c67700bb8dc3b9afa8b979919118881f40",
+        "turn_sha256": "835a3f0039f271833b1fdc292da64d5612be5434293af29c53993af812665c40",
+        "process_state": "stopped",
+        "tool_terminal_counts": {
+          "completed": 4,
+          "failed": 3
+        },
+        "usage_source": "thread/tokenUsage/updated"
+      }
+    ]
+  },
+  "stage_one": {
+    "artifact_sha256": "0d83b30cc87deb896c5962334ee75b26a50378a7e50febe3d446fb9977d92af6",
+    "archive_files": {
+      "search.py": {
+        "sha256": "2109d43d323abc998f7aa373c87abe56f6db9827dfebb6cddcac23b85a6a2d8a",
+        "bytes": 439
+      }
+    },
+    "checks": {
+      "search-example-alpha": "PASS",
+      "search-prefix-and-sort": "PASS",
+      "search-example-no-match": "PASS",
+      "search-z-match": "PASS"
+    },
+    "verifier_evidence_hashes_recomputed": true
+  },
+  "regressed_candidate": {
+    "artifact_sha256": "94bc70777e3c55068f0342820637507e089daf495617f4b4595c8e0e44bcd4c5",
+    "search_before_sha256": "2109d43d323abc998f7aa373c87abe56f6db9827dfebb6cddcac23b85a6a2d8a",
+    "search_after_sha256": "a171f0672def348bb01c63e16b5d35e209a1743d570c738f42405664f1d739e9",
+    "update_sha256": "107cf763b5da0ab6255debeb4b10f9a14605955f6134d445f64563bf6f9f79f7",
+    "checks": {
+      "search-example-alpha": "FAIL",
+      "search-prefix-and-sort": "FAIL",
+      "search-example-no-match": "FAIL",
+      "search-z-match": "FAIL",
+      "update-example-add-and-remove": "PASS",
+      "update-multiple-removals": "PASS",
+      "update-example-existing-addition": "PASS",
+      "update-existing-addition-and-sort": "PASS",
+      "update-remove-overlapping-new-name": "PASS",
+      "update-remove-overlapping-existing-name": "PASS"
+    },
+    "verifier_evidence_hashes_recomputed": true,
+    "download_http_status": {
+      "default": 404,
+      "failed_candidate": 404
+    }
+  },
+  "coordinator": {
+    "run": 6,
+    "model": "gpt-6.2-sol",
+    "session_sha256": "a9b00207e1afe64e4d94201d4c4d65de20e1f2a366703cd01f88c64e00bc05f7",
+    "input_snapshot_revision": "07535b42fb88a847790581328779cecebad9e4e7bd959e9f050b0c943dcaa0a1",
+    "duration_ms": 27261,
+    "reported_usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 28928,
+      "input_tokens": 46661,
+      "output_tokens": 952,
+      "reasoning_output_tokens": 134
+    },
+    "proposal": "REPAIR",
+    "disposition": "stale",
+    "tools": [
+      {
+        "evidence_sha256": "7179019c6e53365ffeae92b528e367ccf16d52af7dcc780d1f3e7a8c9403f157",
+        "name": "read_verified_artifacts",
+        "status": "completed",
+        "matches_bound_snapshot": true
+      },
+      {
+        "evidence_sha256": "fa53403bc217d932c6196fa4e56fd169fcfc3a5137b5cf6752f7c27b7f7a23e0",
+        "name": "read_plan_versions",
+        "status": "completed",
+        "matches_bound_snapshot": true
+      },
+      {
+        "evidence_sha256": "0ff8e1439a6059361330718fc4b08a3d2ce34506247e12f87eec101478577766",
+        "name": "read_remaining_budget",
+        "status": "completed",
+        "matches_bound_snapshot": true
+      },
+      {
+        "evidence_sha256": "2d8c18130084c2caf5172bb4ed06dff31ab54ffc7916711e61c71f2392832bec",
+        "name": "read_failure_evidence",
+        "status": "completed",
+        "matches_bound_snapshot": true
+      }
+    ],
+    "owner_call_index_and_detail_http_status": 200
+  },
+  "source_evidence_sha256": {
+    "acceptance_manifest": "e6d43788366f601428d89aee9967a61d46ab10ecf00f015fdd6ebce6882a90f3",
+    "workbench_database": "e411884f0e2dcacce68aa0ff3009a4a0f20ee634da6f6bc4abdc3b09f3b02f22",
+    "hub_wal": "92a6ad04d076c193781e81c94a4317d41d71306fbf04852f18f71418897e3a19",
+    "worker_log": "c225550fd8892808aab2f652cd1d7831d3535c30d38143427b755020b4932b12",
+    "http_access_log": "ec2ba5addb2ed034e83c854e3b77593430b44eb67c80bdac42872ea926f1be3b",
+    "coordinator_receipt": "acaae629778f6fe57ddbf5d3e174e4cbdc31936185de4fa9e2c5abf313152971"
+  },
+  "case": "F6-pause-stale-api-independent-review",
+  "pause": {
+    "http_status": 200,
+    "count": 1,
+    "stop_generation": 1,
+    "applied_at_utc": "2026-11-24T13:11:22.891+00:00",
+    "model_completed_at_utc": "2026-11-24T13:11:22.765+00:00",
+    "worker_saved_delayed_report_at_utc": "2026-11-24T13:11:23.276+00:00",
+    "stale_record_at_utc": "2026-11-24T13:11:23.726+00:00",
+    "same_proposal_as_barrier": true,
+    "hub_transport_terminal": "cancelled",
+    "reason": "工单已暂停",
+    "repair_or_replan_count": 0
+  },
+  "delivery": {
+    "workbench_status": "paused",
+    "final_delivery_recorded": false,
+    "prior_stage_delivery_kept": true,
+    "successful_download_observed": false
+  },
+  "limits": [
+    "真实模型完成后，隔离夹具屏障延迟业务回执。暂停通过普通工单 API 生效，迟到提案留档但不派修。",
+    "本用例未另投暂停前的人工旧卡。初次批准前的错误版本 409 单独记录。",
+    "本次复核只读账本和归档，未重发回执、恢复工单或操作正式 Chrome 与 DSH。"
+  ]
+}

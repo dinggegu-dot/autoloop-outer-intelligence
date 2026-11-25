@@ -68,6 +68,8 @@ PROMPTS = {
         '每个明确输入输出示例独立列为一个验收项。每项的重复执行次数由系统完成。'
         'expected_result_json 填预期 JSON。每个运行验收适用的输入组都绑定同一对应 requirement_id。'
         'html-document 的 test_spec_json 只有 path 字段，填工单实际交付的相对 .html 或 .htm 路径。预期恰含 title、headings、element_ids，后两项为数组。'
+        'blind-projection 的 test_spec_json 只有 path，预期只有 case_ids（已批准的例号顺序）。'
+        '它仅核对匿名样例的结构、顺序与来源标记；贴切程度和本人盲评必须保留人工验收。'
     ),
     'goal_coordinator': (
         '只从 available_actions 选择 action。evidence_refs 从快照同名字段逐字复制至少一个完整失败证据键，'

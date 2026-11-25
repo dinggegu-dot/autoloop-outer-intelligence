@@ -1,6 +1,8 @@
 'use strict';
 const byId=id=>document.getElementById(id);
+const scriptURL=document.currentScript.src;
 const form=byId('new'), selector=byId('tasks'), detail=byId('detail');
+let goalTeam, syncTeamReview, outerMounted=false;
 let selected=new URLSearchParams(location.search).get('task')||'', csrf='', creation='', busy=false;
 const node=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
 const notice=text=>{byId('notice').textContent=text;};
@@ -82,7 +84,8 @@ async function refresh(){
     if(!selected&&state.tasks.length)selected=state.tasks[0].id;
     selector.replaceChildren(...state.tasks.map(task=>new Option(task.name+' · '+task.status_label,task.id)));
     selector.value=selected;render(state.tasks.find(task=>task.id===selected),state.tasks);
-  }catch(error){if(current===selected){byId('connection').textContent='状态待核对：'+error.message;detail.replaceChildren();}}
+    syncRegular(state,true);
+  }catch(error){if(current===selected){byId('connection').textContent='状态待核对：'+error.message;detail.replaceChildren();syncRegular(null,false);}}
 }
 selector.onchange=()=>{
   selected=selector.value;
@@ -95,9 +98,15 @@ form.onsubmit=async event=>{
   event.preventDefault();if(busy)return;busy=true;
   try{
     const body=Object.fromEntries(new FormData(form));
+    if(body.workflow!=='outer' || !body.team_review_mode)delete body.team_review_mode;
+    body.name=body.name.trim() || Array.from(body.goal.trim()).slice(0,80).join('');
     body.request_id=creation||=crypto.randomUUID();
-    body.role_models={plan:'gpt-6-astra',execute:'gpt-6-astra',review:'gpt-6-astra'};
+    if(body.workflow!=='outer')body.role_models={plan:'gpt-6-astra',execute:'gpt-6-astra',review:'gpt-6-astra'};
     const result=await request('/api/tasks',body);
+    if(result.workflow==='outer' && goalTeam){
+      creation='';form.reset();syncGoalMode();form.hidden=true;goalTeam.register(result);
+      return;
+    }
     if(result.workflow==='outer'){
       const target=new URL('/workbench',location.origin);
       if(result.ticket_id)target.searchParams.set('goal',result.ticket_id);
@@ -110,16 +119,57 @@ form.onsubmit=async event=>{
     notice(result.dispatch_error||'已登记。');await refresh();
   }catch(error){notice(error.message);}finally{busy=false;}
 };
-let outerMounted=false;
-async function start(){try{csrf=(await request('/api/session')).csrf;
+let currentRegular=[];
+function syncRegular(data,fresh){
+  if(!goalTeam)return;
+  if(data)currentRegular=data.tasks;
+  const projected=currentRegular.map(task=>{
+    const card=task.cards?.find(item=>item.state==='open');
+    const station=!fresh || task.observation_stale || task.runs?.some(row=>row.state==='unknown')?'unknown':
+      task.paused || ['paused','rejected'].includes(task.status)?'dock':
+      card?'decision':task.status==='completed'?'delivery':
+      ['created','queued','planning','executing','reviewing','stopping'].includes(task.status)?'flight':'unknown';
+    return {...task,station,reason:card?.title || task.error};
+  });
+  goalTeam.setRegular(projected,fresh);
+}
+function syncGoalMode(){
+  if(!goalTeam)return;
+  const marked=form.elements.workflow.checked && !form.elements.workflow.disabled;
+  syncTeamReview?.(marked);
+  byId('goal-entry-message').hidden=!marked;
+  byId('create-task-submit').textContent=marked?'登记目标':'登记任务';
+}
+form.elements.workflow.addEventListener('change',syncGoalMode);
+async function renewSession(){csrf=(await request('/api/session')).csrf;}
+async function start(){try{await renewSession();
   const outer=outerMounted ? null : await request('/api/outer');
-  if(outer?.enabled){
+  if(outer?.enabled && (outer.goal_team_enabled || outer.drafts?.some(row=>row.approval_terms?.execution_profile))){
+    const [{mountGoalTeam,mountTeamReviewControl},{callHistory}]=await Promise.all([import('./goal_team.js'),import('./outer.js')]);
+    const sheet=node('link','');sheet.rel='stylesheet';sheet.href=new URL('goal_team.css',scriptURL);document.head.append(sheet);
+    goalTeam=mountGoalTeam(byId('goal-team'),{
+      request,renewSession,initial:outer,callHistory,
+      regularOpen:async id=>{selected=id;await refresh();detail.scrollIntoView({block:'start'});},
+      regularVisibility:visible=>{byId('execution').hidden=!visible;byId('execution').open=visible;},
+    });
+    const launch=byId('launch');launch.hidden=false;launch.textContent='＋ 新建工单';
+    launch.onclick=()=>{form.hidden=false;form.elements.goal.focus();};
+    form.hidden=true;
+    byId('execution').hidden=true;
+    const enabled=outer.workbench_entry;
+    byId('outer-opt-in').hidden=!enabled;form.elements.workflow.disabled=!enabled;
+    byId('outer-opt-in-label').textContent=outer.goal_team_enabled?'目标模式':'目标模式（默认 V2）';
+    if(outer.goal_team_enabled)syncTeamReview=mountTeamReviewControl(byId('outer-opt-in'));
+    syncGoalMode();
+    if(new URLSearchParams(location.search).has('new'))launch.click();
+    outerMounted=true;
+  }else if(outer?.enabled){
     const {mountOuter}=await import('./outer.js');
     form.hidden=!outer.workbench_entry;
     byId('outer-opt-in').hidden=!outer.workbench_entry;
     mountOuter(request,notice,async id=>{selected=id;byId('execution').open=true;await refresh();detail.scrollIntoView();});outerMounted=true;
   }
-  if(!outerMounted&&new URLSearchParams(location.search).has("new")){form.elements.name.focus();}
+  if(!outerMounted&&new URLSearchParams(location.search).has("new")){form.elements.goal.focus();}
   await refresh();}catch(error){notice(error.message);}}
 byId('refresh').onclick=start;start();
 setInterval(()=>{if(!busy&&!document.hidden&&csrf)refresh();},5000);

@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-24",
+  "check": "正式 Chrome 界面连接",
+  "browser_inventory": {
+    "matching_bundle_count": 2,
+    "connected_chrome_extension": false,
+    "same_bundle_id": "com.google.Chrome"
+  },
+  "native_control": {
+    "request_by_bundle_id": "ambiguous",
+    "request_by_applications_path": "timeoutReached",
+    "running_instance": "桌面目录中的安装",
+    "running_with_isolated_profile_flags": false,
+    "running_headless": false,
+    "strict_signature_check_passed_for_either_copy": false
+  },
+  "formal_chrome_ui_verified": false,
+  "installation_configuration_or_user_profile_changed": false,
+  "basis": "CUA 真实应用清单及原生连接、本机只读进程核对和 codesign --verify --strict 结果"
+}

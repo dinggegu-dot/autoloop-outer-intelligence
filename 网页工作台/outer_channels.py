@@ -14,7 +14,7 @@ STATUS = {
 EXECUTION_STATUS = {'created':'已创建','planning':'正在规划','queued':'等待派工','executing':'正在执行',
                     'reviewing':'正在验收','stopping':'正在停办','blocked':'受阻','budget_exhausted':'预算已用完',
                     'paused':'已暂停','completed':'已完成','rejected':'已拒绝',
-                    'awaiting_artifact_review':'待人工签收'}
+                    'awaiting_artifact_review':'待人工签收', 'awaiting_preference':'待选样例'}
 
 def dispatch(service, source, command, body):
     """身份来自本机 session 或已经验证的桥签名，调用方不能指定 actor。"""
@@ -36,6 +36,10 @@ def dispatch(service, source, command, body):
         raise Problem('工单编号无效')
     if command == 'get':
         draft=service.get(ticket, OWNER,request_feedback=True)
+        if body.get('experiment_id') is not None:
+            if source not in ('web','dsh'):
+                raise Problem('当前渠道不支持查看盲评历史', 403)
+            draft['blind_review'] = service.workbench.blind_review().get(ticket,body['experiment_id'],actor_id=OWNER)
         return dict(draft,journey=journey(draft))
     if source == 'web' and command == 'calls':
         return service.calls(ticket, OWNER)
@@ -43,6 +47,18 @@ def dispatch(service, source, command, body):
         if not isinstance(body.get('call_id'), str) or not 0 < len(body['call_id']) <= 100:
             raise Problem('调用编号无效')
         return service.calls(ticket, OWNER, call_id=body['call_id'])
+    if command == 'answer_preference':
+        return service.answer_preference(ticket, body['revision'], body['question_id'], body['question_revision'],
+                                         body['candidate_digest'], body['answer'], body['request_id'],
+                                         actor_id=OWNER, source=source)
+    if command == 'lock_blind_ballot':
+        return service.workbench.blind_review().lock_ballot(
+            ticket, body['revision'], body['experiment_id'], body['manifest_digest'], body['judgments'],
+            body['request_id'], actor_id=OWNER, source=source)
+    if command == 'extend_team_budget':
+        return service.extend_team_budget(ticket, body['revision'], body['mandate_revision'],
+                                          body['additional_minutes'], body['additional_roles'],
+                                          body['request_id'], actor_id=OWNER, source=source)
     if command == 'approve':
         signoff = body.get('require_signoff', False)
         if type(signoff) is not bool:
@@ -87,8 +103,14 @@ def journey(draft):
         station,instruction = 'dock','核对当前目标后可继续此单。'
     elif state == 'AUTHORIZED':
         label = EXECUTION_STATUS.get(phase, label)
-        if phase == 'awaiting_artifact_review':
+        if phase == 'awaiting_preference':
+            question = execution.get('pending_preference') or draft.get('pending_preference') or {}
+            station,instruction = 'decision',question.get('prompt', '查看原单选择样例')
+        elif phase == 'awaiting_artifact_review':
             station,instruction = 'decision','请核对交付候选、机器验收结果和人工验收条款，再签收或退回。'
+            blind_status = (draft.get('blind_review') or {}).get('status') or draft.get('blind_status')
+            if blind_status == 'awaiting_ballot':
+                label,instruction = '待盲评','请逐例比较匿名回应，锁定评价后再决定是否签收。'
         elif phase == 'completed':
             station,instruction = 'delivery','已完成独立验收，可查看归档交付。'
         elif phase in ('blocked','budget_exhausted') or outcome == 'AWAITING_REVIEW':

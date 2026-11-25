@@ -273,7 +273,7 @@ class Supervisor:
         self.wait_ready(lambda: request(self.hub_port, '/v1/state', {'Authorization': f'Bearer {owner}'}) is True,
                         'worker')
         board_log = self.start('board', [sys.executable, '-B', str(self.board), '--goal-pilot',
-                               '--outer-intelligence', '--outer-workbench-entry', '--outer-model-timeout', '120',
+                               '--outer-intelligence', '--outer-goal-team', '--outer-workbench-entry', '--outer-model-timeout', '120',
                                '--runtime', str(self.runtime / 'workbench'), '--hub-home', str(self.runtime / 'hub'),
                                '--port', str(self.board_port)], dict(self.env, AUTOLOOP_CANARY_GATEWAY_KEY=self.gateway_key))
         self.wait_ready(lambda: board_log(f'Local: http://127.0.0.1:{self.board_port}')

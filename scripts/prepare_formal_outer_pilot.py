@@ -33,7 +33,7 @@ def resolve_server(match):
     formal, pilot = match.groups()
     if "path in ('/api/library/search'" in formal and "path.startswith('/api/outer/')" in pilot:
         marker = '            workbench = self.server.workbench\n'
-        return pilot[:pilot.index(marker)] + formal + pilot[pilot.index(marker) + len(marker):]
+        return formal + pilot.replace(marker, '', 1)
     if "action=='research-followup'" in formal and "get('outer')" in pilot:
         return pilot + formal
     if "'/api/library/archives'" in formal and "if route == '/api/outer'" in pilot:
@@ -45,7 +45,12 @@ def resolve_server(match):
         if getattr(getattr(self.server, 'workbench', None), 'outer_enabled', False):
             files.update({'/workbench':'outer-ui/index.html', '/outer-ui/app.js':'outer-ui/app.js',
                           '/outer-ui/style.css':'outer-ui/style.css', '/outer-ui/outer.js':'outer-ui/outer.js',
-                          '/outer-ui/intake_dialog.js':'intake_dialog.js'})
+                          '/outer-ui/intake_dialog.js':'intake_dialog.js',
+                          '/outer-ui/task_presentation.js':'outer-ui/task_presentation.js',
+                          '/outer-ui/goal_team.js':'outer-ui/goal_team.js',
+                          '/outer-ui/goal_team.css':'outer-ui/goal_team.css'})
+            if getattr(self.server.workbench, 'outer_goal_team', False):
+                files['/workbench'] = 'index.html'
 """
         return replace_once(formal, anchor, entries + anchor)
     if 'server.research_canvas_vault' in formal and 'outer_enabled=args.outer_intelligence' in pilot:
@@ -129,7 +134,22 @@ def prepare(formal, target):
     if args.snapshot:
         if not LEGACY_BOARD:''')
         html = replace_once((formal / 'index.html').read_text(), '<p class="draft-warning" id="task-form-status">',
-                            '<label id="outer-opt-in" hidden><input type="checkbox" name="workflow" value="outer">使用智能工单试点</label><p class="draft-warning" id="task-form-status">')
+                            '<label id="outer-opt-in" hidden><input type="checkbox" name="workflow" value="outer"><span id="outer-opt-in-label">使用智能工单试点</span></label><p class="draft-warning" id="task-form-status" role="status">')
+        html = replace_once(html, '<div id="live-tasks">', '<div id="goal-team" hidden></div><div id="live-tasks">')
+        html = replace_once(html, '<link rel="stylesheet" href="tasks.css">', '<link rel="stylesheet" href="tasks.css"><link rel="stylesheet" href="/outer-ui/goal_team.css">')
+        app = replace_once((formal / 'app.js').read_text(), "const initialView = location.hash.slice(1);",
+                           """const originalAnchor = location.hash.slice(1);
+if (['mission','decision','scope','criteria','budget','progress','checks','artifacts','revisions','outer-history','timeline'].includes(originalAnchor)) {
+  const url = new URL(location.href); url.searchParams.set('goal_panel', originalAnchor);
+  url.hash = 'tasks'; history.replaceState(history.state, '', url);
+}
+const initialView = location.hash.slice(1);""")
+        research = replace_once((formal / 'research.js').read_text(),
+                                "if (view()==='tasks' && (param('task')||selected)) {",
+                                "if (view()==='tasks' && !param('goal') && !param('outer_event') && (param('task')||selected)) {")
+        research = replace_once(research, "    if (url.href===location.href) return;",
+                                """    if (values.task) for (const key of ['goal','outer_event','goal_panel']) url.searchParams.delete(key);
+    if (url.href===location.href) return;""")
         tasks = (formal / 'tasks.js').read_text()
         tasks = replace_once(tasks, "    if(task.workflow==='research')return researchDetail(task);",
                              """    if(task.goal_execution?.outer){
@@ -140,7 +160,16 @@ def prepare(formal, target):
         tasks = replace_once(tasks, "      if (state?.capability?.goal_enabled) body.workflow='goal';",
                              """      if(!body.workflow && state?.capability?.goal_enabled && !state.capability.outer_enabled) body.workflow='goal';""")
         tasks = replace_once(tasks, "      const result = await post('/api/tasks', body);",
-                             """      const result = await post('/api/tasks', body);
+                             """      if(body.workflow==='outer'&&cachedTeamReview&&!syncTeamReview)
+        throw Error('团队审稿设置正在读取。请稍后提交。');
+      if(body.workflow==='outer')try{sessionStorage.setItem(requestKey,JSON.stringify({id:requestId,fields:body}));}catch{}
+      const result = await post('/api/tasks', body);
+      if(result.workflow==='outer' && goalDesk){
+        node('#task-dialog').close();form.reset();requestId=null;
+        clearTaskFocus();
+        goalDesk.register(result);
+        return;
+      }
       if(result.workflow==='outer'){
         const url=new URL('/workbench',location.origin);
         if(result.ticket_id)url.searchParams.set('goal',result.ticket_id);
@@ -149,7 +178,8 @@ def prepare(formal, target):
         return;
       }""")
         tasks = replace_once(tasks, "    body.role_models={plan:body.model_plan,execute:body.model_execute,review:body.model_review};",
-                             """    if(body.workflow==='outer'){
+                             """    if(body.workflow!=='outer' || !body.team_review_mode)delete body.team_review_mode;
+    if(body.workflow==='outer'){
       for(const key of ['model_plan','model_execute','model_review','execution_mode','budget_minutes'])delete body[key];
     } else {
       body.role_models={plan:body.model_plan,execute:body.model_execute,review:body.model_review};""")
@@ -161,13 +191,20 @@ def prepare(formal, target):
         tasks = replace_once(tasks, legacy_status, '')
         tasks = replace_once(tasks, "  const modeInput=node('#task-mode')",
                              """  const outerToggle=node('#outer-opt-in');
+  let syncTeamReview, cachedTeamReview='';
   const approvalSettings=form.querySelector('.model-fields');
   const createDescription=node('#task-dialog .dialog-description');
   const syncPilot=()=>{
     const capability=state?.capability;
     const enabled=Boolean(capability?.outer_workbench_entry);
     outerToggle.hidden=!enabled;
+    form.elements.workflow.disabled=!enabled;
     const pilot=enabled&&form.elements.workflow.checked;
+    syncTeamReview?.(pilot);
+    node('#outer-opt-in-label').textContent=goalDesk
+      ? (goalEntryEnabled?'目标模式':'目标模式（默认 V2）')
+      : '使用智能工单试点';
+    form.querySelector('[type=submit]').textContent=pilot&&goalDesk?'登记目标':'提交任务并开始规划 →';
     createDescription.hidden=pilot;
     approvalSettings.hidden=pilot;
     for(const id of ['task-mode','task-budget']){
@@ -176,7 +213,8 @@ def prepare(formal, target):
     }
     form.querySelector('.create-options .draft-warning').hidden=pilot;
     if(pilot){
-      node('#task-form-status').textContent='提交后，Codex 会梳理目标并拟定验收契约。你在原工单确认契约并批准后，才会开始执行。';
+      const status=node('#task-form-status');
+      if(!status.dataset.error)status.textContent='先整理目标和验收。你批准后，系统开始执行。';
       return;
     }
 """ + legacy_status + """
@@ -184,11 +222,78 @@ def prepare(formal, target):
   form.elements.workflow.addEventListener('change',syncPilot);
   form.addEventListener('reset',()=>setTimeout(syncPilot,0));
   const modeInput=node('#task-mode')""")
-        tasks = replace_once(tasks, "  function render() {", "  function render() {\n    syncPilot();")
+        goal_desk = """  let goalDesk, goalDeskLoad, goalEntryEnabled=false;
+  if(new URLSearchParams(location.search).has('new'))showModal('#task-dialog');
+  async function readGoalDesk(path,body){
+    if(body)return post(path,body);
+    if(!csrf)await session();
+    const res=await fetch(path,{cache:'no-store'});
+    if(res.status===403)csrf=null;
+    const data=await res.json();
+    if(!res.ok)throw Error(data.error||'工单暂不可读取');
+    return data;
+  }
+  function updateGoalDesk(tasks,fresh){
+    goalDesk?.setRegular(tasks.map(task=>{
+      const group=queueFor(task,task.workflow==='research'?connected:fresh);
+      const station=['paused','rejected'].includes(task.status)&&group!=='unknown'?'dock':
+        ({attention:'decision',running:'flight',delivered:'delivery',all:'dock'})[group]||'unknown';
+      return {...task,station,reason:nextAction(task)};
+    }),fresh);
+  }
+  function startGoalDesk(){
+    if(goalDeskLoad)return goalDeskLoad;
+    goalDeskLoad=(async()=>{
+      const data=await readGoalDesk('/api/outer');
+      goalEntryEnabled=Boolean(data.goal_team_enabled);
+      if(!data.enabled||(!goalEntryEnabled&&!data.drafts?.some(row=>row.approval_terms?.execution_profile)))return;
+      const [{mountGoalTeam,mountTeamReviewControl},{callHistory}]=await Promise.all([import('/outer-ui/goal_team.js'),import('/outer-ui/outer.js')]);
+      goalDesk=mountGoalTeam(node('#goal-team'),{
+        request:readGoalDesk,initial:data,callHistory,
+        regularOpen:(id,anchor)=>openSection(id,anchor==='approval'?'plan':anchor==='artifacts'?'results':'overview',anchor==='progress'?'goal':anchor),
+        regularVisibility:visible=>{
+          node('#live-tasks').hidden=!visible;
+          if(!visible&&linkedTask){linkedTask=null;selected=null;queue='all';panel='overview';artifactVersion=null;start();}
+        },
+        viewChanged:()=>navigate('tasks'),
+      });
+      if(goalEntryEnabled)syncTeamReview=mountTeamReviewControl(outerToggle,cachedTeamReview);
+      syncPilot();render();
+    })().catch(()=>{goalDeskLoad=null;});
+    return goalDeskLoad;
+  }
+"""
+        tasks = replace_once(tasks, "  function render() {", goal_desk + "  function render() {\n    syncPilot();")
+        tasks = replace_once(tasks, "    const tasks=[...records].sort", "    updateGoalDesk(records,fresh);\n    if(state&&!goalDeskLoad)startGoalDesk();\n    const tasks=[...records].sort")
+        tasks = replace_once(tasks, "  function openSection(taskId,targetPanel='overview',anchor){", """  function openSection(taskId,targetPanel='overview',anchor){
+    if(goalDesk?.hasTicket(taskId)){goalDesk.open(taskId,anchor||'progress');return;}
+    goalDesk?.showRegular(taskId);""")
+        tasks = replace_once(tasks, "  form.addEventListener('input', () => { requestId = null; });", """  const requestKey='autoloop-goal-creation';
+  try{
+    const cached=JSON.parse(sessionStorage.getItem(requestKey));
+    if(cached){
+      requestId=cached.id;
+      for(const name of ['goal','name','acceptance'])form.elements[name].value=cached.fields[name]||'';
+      form.elements.workflow.checked=cached.fields.workflow==='outer';
+      cachedTeamReview=cached.fields.team_review_mode||'';
+    }
+  }catch{}
+  form.addEventListener('input', () => {
+    requestId=null;delete node('#task-form-status').dataset.error;
+    try{sessionStorage.removeItem(requestKey);}catch{}
+  });""")
+        tasks = replace_once(tasks, "      selected = result.task.id;queue='all';panel='overview';artifactVersion=null;syncTaskURL();",
+                             "      selected = result.task.id;queue='all';panel='overview';artifactVersion=null;syncTaskURL();goalDesk?.showRegular(selected);")
+        tasks = replace_once(tasks, "      if(result.workflow==='outer' && goalDesk){", """      if(result.workflow==='outer')try{sessionStorage.removeItem(requestKey);}catch{}
+      if(result.workflow==='outer' && goalDesk){""")
+        tasks = replace_once(tasks, "      node('#task-form-status').textContent = error.message;", """      const status=node('#task-form-status');status.dataset.error='true';status.textContent = error.message;""")
+        tasks = replace_once(tasks, "  form.addEventListener('reset',()=>setTimeout(syncPilot,0));", """  form.addEventListener('reset',()=>{
+    cachedTeamReview='';delete node('#task-form-status').dataset.error;setTimeout(syncPilot,0);
+  });""")
         for name, content in [('server.py', server), ('workbench.py', workbench)]:
             compile(content, name, 'exec')
         shutil.copytree(formal, target, ignore=source_only(formal))
-        for name, content in [('server.py', server), ('workbench.py', workbench), ('index.html', html), ('tasks.js', tasks)]:
+        for name, content in [('server.py', server), ('workbench.py', workbench), ('index.html', html), ('tasks.js', tasks), ('app.js', app), ('research.js', research)]:
             (target / name).write_text(content)
         for name in ('outer_channels.py', 'outer_workbench.py', 'afr_panel.py', 'afr.html', 'afr.js'):
             shutil.copy2(BOARD / name, target / name)
@@ -201,9 +306,12 @@ def prepare(formal, target):
         (target / verifier_dir).mkdir(parents=True)
         for name in ('verifier.py', 'input.csv'):
             shutil.copy2(BOARD / verifier_dir / name, target / verifier_dir / name)
+        blind_data = Path('验收样例/匿名评测')
+        (target / blind_data).mkdir(parents=True)
+        shutil.copy2(BOARD / blind_data / '留出输入.json', target / blind_data / '留出输入.json')
         ui = target / 'outer-ui'
         ui.mkdir()
-        for name in ('app.js', 'style.css', 'outer.js'):
+        for name in ('app.js', 'style.css', 'outer.js', 'goal_team.js', 'goal_team.css', 'task_presentation.js'):
             shutil.copy2(BOARD / name, ui / name)
         outer_page = (BOARD / 'index.html').read_text().replace('href="/style.css"', 'href="/outer-ui/style.css"').replace('src="/app.js"', 'src="/outer-ui/app.js"')
         (ui / 'index.html').write_text(outer_page)

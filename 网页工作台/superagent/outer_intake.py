@@ -1,16 +1,23 @@
 """V2 接单、澄清、验收提案和授权。外层草案与正式执行共用 SQLite。"""
+import base64
 from contextlib import contextmanager
+from contextvars import ContextVar
 import json
+from pathlib import PurePosixPath
 import re
 import time
 import uuid
 
-from workbench import Problem, TASK_RE, now, omit_call_payloads
+from workbench import Problem, TASK_RE, now, is_blind_goal, omit_call_payloads
 
 from .goal_checks import _SECRET
+from .goal_team_records import PROFILE, observation_stale, profile, project, public_preference, role_limit
 from .outer_model import ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, CodexOuterModel, ModelFailure, role_invoke
 
 
+operator_kind = ContextVar('outer_operator_kind', default='owner')
+
+OUTER_WORKERS = 2
 _MAX_ATTEMPTS = 2
 _MAX_CALLS = 16
 _MAX_QUESTIONS = 4
@@ -99,6 +106,34 @@ def _revision(number, name):
         raise Problem(f'缺少有效{name}')
 
 
+def _draft_file(path, data, *, include_content=False):
+    extension = PurePosixPath(path).suffix.lower()
+    images = {'.png': ('png', b'\x89PNG\r\n\x1a\n'), '.jpg': ('jpeg', b'\xff\xd8\xff'),
+              '.jpeg': ('jpeg', b'\xff\xd8\xff'), '.gif': ('gif', b'GIF8')}
+    image = images.get(extension)
+    mime = image[0] if image and data.startswith(image[1]) else None
+    if extension == '.webp' and data.startswith(b'RIFF') and data[8:12] == b'WEBP':
+        mime = 'webp'
+    try:
+        content = data.decode('utf-8') if not mime and b'\0' not in data else None
+    except UnicodeDecodeError:
+        content = None
+    if mime:
+        kind = 'image'
+    elif content is None:
+        kind = 'binary'
+    else:
+        kind = {'.html':'html', '.htm':'html', '.md':'markdown', '.markdown':'markdown'}.get(extension, 'text')
+    result = {'path':path, 'kind':kind}
+    if include_content:
+        if content is None:
+            content = base64.b64encode(data).decode('ascii')
+            if mime:
+                content = 'data:image/' + mime + ';base64,' + content
+        result['content'] = content
+    return result
+
+
 class OuterIntake:
     def __init__(self, workbench, model=None, registry=None):
         self.workbench = workbench
@@ -119,7 +154,7 @@ class OuterIntake:
         return _string(actor_id, '身份', _MAX_SOURCE_ID), _string(tenant, '实例', _MAX_SOURCE_ID)
 
     def _source(self, source, source_event_id, actor_id, tenant, source_thread_id):
-        if source not in ('web', 'feishu'):
+        if source not in ('web', 'feishu', 'dsh'):
             raise Problem('来源无效', 403)
         actor_id, tenant = self._owner(actor_id, tenant)
         return (source, _string(source_event_id, '来源事件编号', _MAX_SOURCE_ID), actor_id, tenant,
@@ -158,6 +193,8 @@ class OuterIntake:
     def _insert(self, db, identity, ticket, body, *, role=None):
         source, external_id, actor, tenant, thread = identity
         body = {**body, 'schema_version': 1, 'source_thread_id': thread, 'actor_type': 'human'}
+        if operator_kind.get() != 'owner':
+            body['operator_kind'] = operator_kind.get()
         previous = db.execute('SELECT * FROM outer_events WHERE source=? AND tenant=? AND source_event_id=?',
                               (source, tenant, external_id)).fetchone()
         if previous is not None:
@@ -215,7 +252,7 @@ class OuterIntake:
                 raise Problem('已发卡片不能绑定新版工单', 409)
 
     def submit(self, *, source, source_event_id, actor_id, text, source_thread_id=None, tenant='default',
-               ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None, workbench_request=None):
+               ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None, workbench_request=None, goal_team=False):
         identity = self._source(source, source_event_id, actor_id, tenant, source_thread_id)
         _string(text, '原始需求', 6000)
         _, _, actor, tenant, thread = identity
@@ -232,7 +269,7 @@ class OuterIntake:
             requested = ticket_id
             ticket_id = ticket_id or linked
             if workbench_request is not None:
-                if source != 'web' or ticket_id or thread or question_id or replace_requirement_ids is not None:
+                if source not in ('web', 'dsh') or ticket_id or thread or question_id or replace_requirement_ids is not None:
                     raise Problem('工作台试点入口仅用于新建工单', 409)
                 if db.execute('SELECT 1 FROM tasks WHERE request_id=?', (source_event_id,)).fetchone():
                     raise Problem('同一个请求编号不能切换执行路线', 409)
@@ -242,6 +279,7 @@ class OuterIntake:
                 'expected_ticket_revision': expected_ticket_revision, 'question_id': question_id,
                 'replace_requirement_ids': replace_requirement_ids,
                 **({'force_new': True, 'workbench_request': workbench_request} if workbench_request is not None else {}),
+                **({'goal_team': True} if workbench_request is not None and goal_team else {}),
             }, role='intake_assessor')
             if duplicate:
                 return self._event_view(row, True)
@@ -330,8 +368,18 @@ class OuterIntake:
             if request_feedback:
                 ticket['last_request_error'] = db.execute(
                     f'SELECT ({_LAST_REQUEST_ERROR}) FROM outer_tickets d WHERE d.id=?',(ticket_id,)).fetchone()[0]
+            original = db.execute('SELECT body FROM outer_events WHERE id=? AND ticket=?',
+                                  (ticket['original_request_refs'][0], ticket_id)).fetchone()
+            if original:
+                message = json.loads(original[0])
+                request = message.get('workbench_request')
+                if request:
+                    ticket['original_request'] = {key: request[key] for key in ('goal','acceptance')}
             if ticket['task_id']:
-                ticket['execution'] = omit_call_payloads(self.store.get(ticket['task_id']))
+                raw_task = db.execute('SELECT body FROM tasks WHERE id=?', (ticket['task_id'],)).fetchone()
+                if raw_task is None:
+                    raise Problem('工单执行记录暂不可用', 409)
+                ticket['execution'] = project(omit_call_payloads(json.loads(raw_task[0])))
                 previous = []
                 for gen,reviews,delivery in db.execute("""SELECT revision,json_extract(body,'$.goal_execution.artifact_reviews'),
                         json_extract(body,'$.goal_delivery') FROM outer_revisions WHERE ticket=? AND kind='execution_archive'
@@ -342,23 +390,126 @@ class OuterIntake:
                     previous.extend(dict(mandate_revision=gen,**{k:r.get(k) for k in (
                         'sequence','state','assignment','artifact_sha256','files','reason')}) for r in records)
                 if previous: ticket['prior_deliveries']=previous
-            return ticket
+        if ticket.get('execution') and is_blind_goal(ticket['execution']):
+            ticket['blind_review'] = self.workbench.blind_review().get(ticket_id,actor_id=actor,tenant=tenant)
+            ticket['blind_history'] = self.workbench.blind_review().history(ticket_id,actor_id=actor,tenant=tenant)
+        return ticket
+
+    def _draft_preview_handoff(self, ticket_id, actor, tenant, expected):
+        from .goal_engine import digest
+
+        # 状态和工单授权来自同一数据库快照，文件路径仅取已登记的派工。
+        with self.store.connect() as db:
+            db.execute('BEGIN')
+            ticket = self._ticket(db, ticket_id, actor, tenant)
+            row = db.execute('SELECT body FROM tasks WHERE id=?', (ticket_id,)).fetchone()
+        task = json.loads(row[0]) if row else {}
+        state = task.get('goal_execution') or {}
+        outer = state.get('outer') or {}
+        question = state.get('pending_preference') or {}
+        handoff = state.get('team_pending_handoff') or {}
+        review = handoff.get('handoff') or {}
+        step = task.get('step', 0)
+        key = handoff.get('source_assignment', '')
+        current = tuple(question.get(field) for field in ('id','revision','candidate_digest','draft_sha256'))
+        if (ticket['status'] != 'AUTHORIZED' or ticket.get('task_id') != ticket_id
+                or task.get('workflow') != 'goal' or task.get('status') != 'awaiting_preference'
+                or state.get('stage') != 'awaiting_preference' or task.get('paused') or state.get('stop_requested')
+                or not profile(state) or is_blind_goal(task) or outer.get('ticket_id') != ticket_id
+                or outer.get('mandate_revision') != ticket.get('mandate_revision')
+                or current != expected or question.get('answer') is not None or question.get('requires_option') is not True
+                or type(step) is not int or step <= 0 or question.get('step') != step or handoff.get('step') != step
+                or question.get('plan_revision') != task.get('version') or handoff.get('version') != task.get('version')
+                or question.get('stop_generation') != state.get('stop_generation')
+                or question.get('mandate_digest') != digest(state.get('mandate'))
+                or question.get('phase') != 'execute' or handoff.get('phase') != 'execute'
+                or handoff.get('mode') != 'review_and_decide' or handoff.get('decision_required') is not True
+                or question.get('assignment') != key or not isinstance(key, str) or not re.fullmatch(r'[a-f0-9]{32}', key)
+                or handoff.get('base_sha256') != expected[3] or not handoff.get('files')
+                or review.get('draft_sha256') != expected[3]
+                or handoff.get('goal_digest') != digest(outer.get('goal_contract'))
+                or handoff.get('contract_digest') != digest(outer.get('acceptance_contract'))):
+            raise Problem('问题或初稿已更新，请重新打开原单', 409)
+        return question, handoff
+
+    def draft_preview(self, ticket_id, question_id, question_revision, candidate_digest, draft_sha256,
+                      *, relative=None, actor_id, tenant='default'):
+        from .goal_engine import digest
+        from .goal_runtime import attempt_file
+        from .outer_verification import capture
+
+        _revision(question_revision, '问题版本')
+        if any(not isinstance(value, str) or not re.fullmatch(pattern, value) for value, pattern in (
+                (question_id, r'[a-f0-9]{32}'), (candidate_digest, r'[a-f0-9]{64}'), (draft_sha256, r'[a-f0-9]{64}'))):
+            raise Problem('缺少有效问题与初稿版本')
+        actor, tenant = self._owner(actor_id, tenant)
+        expected = (question_id, question_revision, candidate_digest, draft_sha256)
+        question, handoff = self._draft_preview_handoff(ticket_id, actor, tenant, expected)
+        if relative is not None and (not isinstance(relative, str) or relative not in handoff['files']):
+            raise Problem('初稿中没有该文件', 404)
+        sealed = attempt_file(self.store.root, ticket_id, handoff['source_assignment'], 'sealed')
+        try:
+            checkpoint, files, occupied = capture(sealed)
+        except (OSError, ValueError):
+            raise Problem('封存初稿无法核对，请刷新原单', 409) from None
+        preference = {'prompt':question['prompt'], 'options':question['options']}
+        if (checkpoint['digest'] != draft_sha256 or checkpoint['files'] != handoff['files']
+                or any(not directory and path not in files for path, directory in occupied.items())
+                or digest({'samples': preference, 'checkpoint': checkpoint}) != candidate_digest):
+            raise Problem('封存初稿与当前问题的登记内容不一致', 409)
+        if self._draft_preview_handoff(ticket_id, actor, tenant, expected) != (question, handoff):
+            raise Problem('问题或初稿已更新，请重新打开原单', 409)
+        if relative is not None:
+            return _draft_file(relative, files[relative], include_content=True)
+
+        review = handoff['handoff'].get('draft_review') or {}
+        instruction = handoff['handoff'].get('instruction') or {}
+        variants = (instruction.get('handoff_scope') or {}).get('variants', [])
+        return {
+            'files': [_draft_file(path, files[path]) for path in checkpoint['artifacts']],
+            'directions': [{key:variant[key] for key in ('option_id','mode','changes','retained','removed_paths')
+                            if key in variant} for variant in variants],
+            'advisor': {'summary':review['summary'], 'observations':review['observations']} if review else None,
+        }
 
     def list(self, actor_id, *, tenant='default'):
         actor, tenant = self._owner(actor_id, tenant)
         with self.store.connect() as db:
             rows = db.execute(
-                f"SELECT d.body, json_extract(t.body,'$.status'),json_extract(t.body,'$.goal_execution.outcome'),({_LAST_REQUEST_ERROR}) FROM outer_tickets d "
+                f"SELECT d.body, t.body, ({_LAST_REQUEST_ERROR}) FROM outer_tickets d "
                 "LEFT JOIN tasks t ON t.id=d.id WHERE d.actor=? AND d.tenant=? "
-                "ORDER BY d.updated_at DESC LIMIT 100", (actor,tenant)).fetchall()
-        return [dict(json.loads(row[0]),execution_status=row[1],outcome=row[2],last_request_error=row[3]) for row in rows]
+                "ORDER BY d.updated_at DESC, d.id", (actor,tenant))
+            result = []
+            for row in rows:
+                task = json.loads(row[1] or '{}')
+                state = task.get('goal_execution') or {}
+                draft = json.loads(row[0])
+                draft.update(execution_status=task.get('status'), outcome=state.get('outcome'),
+                             last_request_error=row[2],
+                             last_business_at=max(draft['updated_at'],
+                                                  (state.get('decisions') or [{}])[-1].get('at', '')),
+                             observation_stale=observation_stale(state),
+                             pending_preference=public_preference(state, task.get('status'), brief=True))
+                if is_blind_goal(task):
+                    draft['blind_status'] = self.workbench.blind_review().brief(db,draft,task)
+                if task.get('status') == 'completed' and task.get('goal_delivery'):
+                    delivery = task['goal_delivery']
+                    settled = next((attempt.get('settled_at') for attempt in state['assignments']
+                                    if attempt['id'] == delivery['assignment']), None)
+                    signed = next((item for item in state.get('artifact_reviews', [])
+                                   if item['state'] == 'accepted' and item['assignment'] == delivery['assignment']), {})
+                    draft.update(delivery_at=signed.get('decided_at') or settled, delivery_sequence=signed.get('sequence'))
+                result.append(draft)
+        return result
 
     def calls(self, ticket_id, actor_id, *, tenant='default', call_id=None):
         from .outer_history import ticket_calls
         actor, tenant = self._owner(actor_id, tenant)
         with self.store.connect() as db:
             db.execute('BEGIN')
-            self._ticket(db, ticket_id, actor, tenant)
+            document = self._ticket(db, ticket_id, actor, tenant)
+            if document.get('task_id'):
+                self.workbench.require_public_artifact(ticket_id)
             return ticket_calls(db, self.store.root, ticket_id, actor, tenant, call_id)
 
     @staticmethod
@@ -410,10 +561,15 @@ class OuterIntake:
                       approval_terms={'workspace': str(self.store.workspace(ticket_id)), 'scope': _SCOPE,
                                      'forbidden_operations': _FORBIDDEN, 'budget_seconds': 3600,
                                       'execution_model': 'gpt-6.2-sol'})
-        request = json.loads(event['body']).get('workbench_request')
+        message = json.loads(event['body'])
+        request = message.get('workbench_request')
         if request is not None:
             ticket['coordinator_profile'] = 'scoped-v1'
             ticket['workbench_name'] = request['name']
+            if message.get('goal_team') is True:
+                ticket['approval_terms']['execution_profile'] = PROFILE
+                if request.get('team_review_mode'):
+                    ticket['approval_terms']['team_review_mode'] = request['team_review_mode']
         db.execute('INSERT INTO outer_tickets VALUES(?,?,?,?,?)',
                    (ticket_id, event['tenant'], event['actor'], _json(ticket), ticket['updated_at']))
         return ticket
@@ -512,24 +668,46 @@ class OuterIntake:
             self._save(db, ticket)
         self._finish(db, event, 'NEEDS_ATTENTION', {'error': reason}, ticket)
 
+    def _expire_claim(self, db, event):
+        db.execute("UPDATE outer_invocations SET state='lease_expired',result=? WHERE id=? AND state='running'",
+                   (_json({'error': 'lease_expired'}), event['lease']))
+        if event['attempt'] >= _MAX_ATTEMPTS:
+            ticket = self._ticket(db, event['ticket']) if event['ticket'] else None
+            self._needs_attention(db, event, ticket, '模型领取已过期，达到重试上限')
+        else:
+            db.execute("UPDATE outer_events SET state='PENDING',lease=NULL,lease_until=NULL WHERE id=?",
+                       (event['id'],))
+
+    def _queue_keys(self, db, event):
+        message = json.loads(event['body'])
+        thread = message.get('source_thread_id')
+        keys = set()
+        if thread:
+            keys.add(('thread', event['source'], event['tenant'], thread))
+        linked = self._thread(db, event['source'], event['tenant'], thread)
+        for ticket in (event['ticket'], linked):
+            if ticket:
+                keys.add(('ticket', ticket))
+        if not keys and not message.get('force_new'):
+            keys.add(('unrouted', event['tenant'], event['actor']))
+        return keys, linked
+
     def _claim(self):
         with self._transaction() as db:
             # 过期的领取者保留审计；只有新租约可以提交新的正式决定。
             for expired in db.execute("SELECT * FROM outer_events WHERE state='RUNNING' AND lease_until<=?",
                                       (time.time(),)).fetchall():
-                db.execute("UPDATE outer_invocations SET state='lease_expired',result=? WHERE id=? AND state='running'",
-                           (_json({'error': 'lease_expired'}), expired['lease']))
-                if expired['attempt'] >= _MAX_ATTEMPTS:
-                    ticket = self._ticket(db, expired['ticket']) if expired['ticket'] else None
-                    self._needs_attention(db, expired, ticket, '模型领取已过期，达到重试上限')
-                else:
-                    db.execute("UPDATE outer_events SET state='PENDING',lease=NULL,lease_until=NULL WHERE id=?",
-                               (expired['id'],))
-            if db.execute("SELECT 1 FROM outer_events WHERE state='RUNNING' LIMIT 1").fetchone():
+                self._expire_claim(db, expired)
+            running = db.execute("SELECT * FROM outer_events WHERE state='RUNNING'").fetchall()
+            if len(running) >= OUTER_WORKERS:
                 return None
+            blocked = set().union(*(self._queue_keys(db, event)[0] for event in running))
             for event in db.execute("SELECT * FROM outer_events WHERE state='PENDING' ORDER BY received_at,rowid").fetchall():
                 ticket = self._ticket(db, event['ticket']) if event['ticket'] else None
-                if ticket and ticket['status'] == 'PAUSED':
+                keys, linked = self._queue_keys(db, event)
+                if blocked & keys or ticket and ticket['status'] == 'PAUSED':
+                    # 先到的工单/会话保留其顺序，其他独立事项仍可领取。
+                    blocked.update(keys)
                     continue
                 if ticket and ticket['status'] == 'STOPPED':
                     self._finish(db, event, 'CANCELLED', {'error': '工单已停止'}, ticket)
@@ -538,11 +716,9 @@ class OuterIntake:
                 if ticket and bound.get('revision') != ticket['revision']:
                     self._finish(db, event, 'REJECTED', {'error': '工单版本已变化，请重新提交'}, ticket)
                     continue
-                if not ticket and event['role'] == 'intake_assessor':
-                    thread = json.loads(event['body']).get('source_thread_id')
-                    if self._thread(db, event['source'], event['tenant'], thread):
-                        self._finish(db, event, 'REJECTED', {'error': '会话已关联工单，请按当前工单继续'})
-                        continue
+                if not ticket and event['role'] == 'intake_assessor' and linked:
+                    self._finish(db, event, 'REJECTED', {'error': '会话已关联工单，请按当前工单继续'})
+                    continue
                 try:
                     snapshot = self._context(db, event, ticket)
                 except (ImportError, AttributeError, TypeError, ValueError):
@@ -581,9 +757,13 @@ class OuterIntake:
     def _settle(self, event_id, lease, snapshot, response):
         with self._transaction() as db:
             event = db.execute('SELECT * FROM outer_events WHERE id=?', (event_id,)).fetchone()
-            if event['lease'] != lease:
+            expired = event['lease'] == lease and event['lease_until'] <= time.time()
+            if expired:
+                self._expire_claim(db, event)
+            if expired or event['lease'] != lease:
                 # 迟到的回执归入原调用，保留停办或租约过期的决定。
-                db.execute("""UPDATE outer_invocations SET result=json_set(?, '$.settlement_reason',json_extract(result,'$.error'))
+                db.execute("""UPDATE outer_invocations SET result=json_set(?, '$.settlement_reason',
+                              COALESCE(json_extract(result,'$.settlement_reason'),json_extract(result,'$.error')))
                               WHERE id=? AND event=? AND state IN ('cancelled','lease_expired')""",
                            (_json(response), lease, event_id))
                 return
@@ -866,8 +1046,18 @@ class OuterIntake:
             mandate = dict(ticket_id=ticket_id, revision=ticket['mandate_revision']+1, goal_revision=goal_revision,
                            acceptance_revision=acceptance_revision, **ticket['approval_terms'],
                            actor_id=actor_id, approval_event_id=event['id'], source=source, approved_at=now())
+            if operator_kind.get() != 'owner':
+                mandate['operator_kind'] = operator_kind.get()
             goal = {**ticket['goal_contract'], 'status': 'APPROVED'}
             acceptance = {**ticket['acceptance_contract'], 'status': 'APPROVED'}
+            mode = mandate.get('team_review_mode')
+            if mode:
+                from superagent.goal_team_blind import required_blind
+                if required_blind(acceptance):
+                    raise Problem('匿名评测使用已批准的盲评流程，不能叠加方案审稿', 409)
+                if mode == 'review_and_decide' and sum(
+                        criterion.get('required') is True for criterion in acceptance.get('criteria', ())) < 2:
+                    raise Problem('后续阶段定方向需要至少两项可分阶段执行的必需验收', 409)
             if require_signoff:
                 acceptance['require_signoff'] = True
             outer = dict(ticket_id=ticket_id, goal_revision=goal_revision, acceptance_revision=acceptance_revision,
@@ -904,6 +1094,123 @@ class OuterIntake:
             self._finish(db, event, 'DONE', {'action': 'AUTHORIZED', 'mandate_revision': mandate['revision']}, ticket)
             return ticket
 
+    def answer_preference(self, ticket_id, revision, question_id, question_revision, candidate_digest,
+                          answer, request_id, *, actor_id, source='web', tenant='default'):
+        from .goal_engine import decision, digest
+
+        identity = self._source(source, request_id, actor_id, tenant, None)
+        if not isinstance(answer, dict) or set(answer) - {'option_id', 'text'}:
+            raise Problem('答复格式无效')
+        option = _string(answer.get('option_id') or None, '选项', 40, optional=True)
+        text = answer.get('text')
+        if isinstance(text, str) and len(text) <= 2000 and not text.strip():
+            text = None
+        _string(text, '意见', 2000, optional=True)
+        if not option and not text:
+            raise Problem('请选择样例或写下你的意见')
+        if type(question_revision) is not int:
+            raise Problem('问题版本无效')
+        data = {'type':'execution_preference', 'ticket_id':ticket_id, 'revision':revision,
+                'question_id':question_id, 'question_revision':question_revision,
+                'candidate_digest':candidate_digest, 'option_id':option, 'text':text}
+        with self._transaction() as db:
+            ticket = self._ticket(db, ticket_id, identity[2], identity[3])
+            event, duplicate = self._insert(db, identity, ticket_id, data)
+            if duplicate:
+                return self._event_view(event, True)
+            self._compare(ticket, revision)
+            row = db.execute('SELECT body FROM tasks WHERE id=?', (ticket_id,)).fetchone()
+            task = json.loads(row[0]) if row else {}
+            state = task.get('goal_execution') or {}
+            question = state.get('pending_preference') or {}
+            handoff = state.get('team_pending_handoff') or {}
+            current = (question.get('id'), question.get('revision'), question.get('candidate_digest'))
+            if (not question or ticket['status'] != 'AUTHORIZED' or task.get('status') != 'awaiting_preference'
+                    or current != (question_id, question_revision, candidate_digest) or question.get('answer')
+                    or question.get('stop_generation') != state.get('stop_generation')
+                    or question.get('plan_revision') != task.get('version')
+                    or question.get('step', task.get('step')) != task.get('step')
+                    or question.get('mandate_digest') != digest(state.get('mandate'))):
+                raise Problem('问题或候选已更新，请重新打开原单', 409)
+            if question.get('requires_option'):
+                if (question['assignment'] != handoff.get('source_assignment')
+                        or question['draft_sha256'] != handoff.get('base_sha256')):
+                    raise Problem('草稿已更新，请重新打开原单', 409)
+                if not option:
+                    raise Problem('请先选择后续方向，也可以补充意见')
+            selected = next((row for row in question['options'] if row['id'] == option), None)
+            if option and selected is None:
+                raise Problem('请选择当前工单的有效选项')
+            if question.get('requires_option') and text:
+                instruction = handoff.get('handoff', {}).get('instruction', {})
+                variants = (instruction.get('handoff_scope') or {}).get('variants', [])
+                if any(variant['option_id'] == option and variant['mode'] == 'keep' for variant in variants):
+                    raise Problem('沿用现稿请清空意见。有补充意见时请选择可修改的方向。', 409)
+            answer = dict(option_id=option, option=selected, text=text, event=event['id'], source=source,
+                          operator_kind=operator_kind.get())
+            question['answer'] = answer
+            state['stage'] = question['phase']
+            task.update(status='queued', phase=question['phase'], error='', updated_at=now())
+            decision(task, 'preference_answered', question=question_id, candidate=candidate_digest,
+                     step=question.get('step'), **answer)
+            db.execute('UPDATE tasks SET body=?,updated_at=? WHERE id=?',
+                       (_json(task), task['updated_at'], ticket_id))
+            ticket['revision'] += 1
+            self._save(db, ticket)
+            self._finish(db, event, 'DONE', {'action':'PREFERENCE_RECORDED'}, ticket)
+            return self._event_view(db.execute('SELECT * FROM outer_events WHERE id=?', (event['id'],)).fetchone())
+
+    def extend_team_budget(self, ticket_id, revision, mandate_revision, minutes, roles, request_id, *,
+                           actor_id, source='web', tenant='default'):
+        from .goal_engine import active_assignments, decision, validate_outer_authorization
+
+        identity = self._source(source, request_id, actor_id, tenant, None)
+        _revision(mandate_revision, '授权版本')
+        if (type(minutes) is not int or minutes not in (0,15,30,60)
+                or type(roles) is not int or roles not in (0,5,10) or not (minutes or roles)):
+            raise Problem('请选择具体的追加时间或角色轮次')
+        data = dict(type='execution_budget', ticket_id=ticket_id, revision=revision,
+                    mandate_revision=mandate_revision, minutes=minutes, roles=roles)
+        with self._transaction() as db:
+            ticket = self._ticket(db, ticket_id, identity[2], identity[3])
+            event, duplicate = self._insert(db, identity, ticket_id, data)
+            if duplicate:
+                return self._event_view(event, True)
+            self._compare(ticket, revision)
+            row = db.execute('SELECT body FROM tasks WHERE id=?', (ticket_id,)).fetchone()
+            task = json.loads(row[0]) if row else {}
+            state = task.get('goal_execution') or {}
+            if (not profile(state) or task.get('status') != 'budget_exhausted' or task.get('paused')
+                    or ticket['status'] != 'AUTHORIZED' or mandate_revision != ticket['mandate_revision']
+                    or active_assignments(task) or state['stop_requested']):
+                raise Problem('当前授权或工单状态已变化，不可追加资源', 409)
+            old = ticket['mandate']
+            new = {**old, 'revision':old['revision']+1, 'actor_id':actor_id,
+                   'approval_event_id':event['id'], 'source':source, 'approved_at':now(),
+                   'budget_seconds':old['budget_seconds']+minutes*60,
+                   'team_role_limit':role_limit(state)+roles}
+            operator = operator_kind.get()
+            if operator == 'owner':
+                new.pop('operator_kind',None)
+            else:
+                new['operator_kind'] = operator
+            outer = {**state['outer'], 'mandate':new, 'mandate_revision':new['revision'],
+                     'approval_event_id':event['id'], 'actor_id':actor_id}
+            validate_outer_authorization(outer, ticket_id=ticket_id, workspace=self.store.workspace(ticket_id),
+                                         budget_seconds=new['budget_seconds'])
+            state.update(outer=outer, mandate=None)
+            task.update(status='queued', time_budget_seconds=new['budget_seconds'], error='', updated_at=now())
+            decision(task,'budget_extended', approval=event['id'], old_mandate=old['revision'],
+                     mandate=new['revision'], seconds=minutes*60, roles=roles, source=source, operator_kind=operator)
+            db.execute('UPDATE tasks SET body=?,updated_at=? WHERE id=?',
+                       (_json(task), task['updated_at'], ticket_id))
+            ticket.update(mandate=new, mandate_revision=new['revision'], revision=ticket['revision']+1)
+            self._save(db, ticket)
+            self._record_revision(db,ticket_id,'mandate',new['revision'],new)
+            self._record_revision(db,ticket_id,'approval_snapshot',new['revision'],ticket)
+            self._finish(db,event,'DONE',{'action':'BUDGET_EXTENDED','mandate_revision':new['revision']},ticket)
+            return self._event_view(db.execute('SELECT * FROM outer_events WHERE id=?', (event['id'],)).fetchone())
+
     def decide_artifact(self,ticket_id,operation,expected_revision,candidate,artifact_sha256,reason,request_id,
                         *,actor_id,source='web',tenant='default',source_thread_id=None):
         from .goal_engine import decision
@@ -936,19 +1243,25 @@ class OuterIntake:
                 raise Problem('此作品已处理或版本已变化，请刷新',409)
             approved = operation=='accept'
             if approved:
+                self.workbench.blind_review().require_locked_ballot(db, ticket, task, candidate)
                 for relative in review['files']:
                     self.workbench.artifact_bytes(ticket_id,relative,candidate=candidate)
             review.update(state='accepted' if approved else 'returned',reason=reason,actor=actor_id,source=source,
                           event=event['id'],decided_at=now())
+            operator = operator_kind.get()
+            if operator != 'owner':
+                review['operator_kind'] = operator
             decision(task,'artifact_'+review['state'],assignment=candidate,digest=artifact_sha256,
-                     sequence=review['sequence'],reason=reason,actor=actor_id,source=source,event=event['id'])
+                     sequence=review['sequence'],reason=reason,actor=actor_id,source=source,event=event['id'],
+                     operator_kind=operator)
             if approved:
                 task['plan']['steps'][task['step']]['state']='completed'
                 task['step']+=1
                 state.update(stage='verified_complete',outcome='VERIFIED_COMPLETE')
                 delivery={k:review[k] for k in ('assignment','artifact_sha256','files','level')}
+                accepted_by = '本人' if operator == 'owner' else '试验操作员'
                 task.update(status='completed',phase='review',artifacts=list(review['files']),goal_delivery=delivery,
-                            review={'passed':True,'findings':['本人已签收作品第 '+str(review['sequence'])+' 版']})
+                            review={'passed':True,'findings':[f"{accepted_by}已签收作品第 {review['sequence']} 版"]})
                 decision(task,'delivered',assignment=candidate,digest=artifact_sha256,outcome=state['outcome'],
                          correlation_id=ticket['correlation_id'])
             else:
@@ -1000,7 +1313,9 @@ class OuterIntake:
                 'type': operation, 'ticket_id': ticket_id, 'expected_ticket_revision': expected_ticket_revision,
             })
             if duplicate:
-                return {**ticket, 'duplicate': True}
+                record = db.execute('SELECT body FROM outer_revisions WHERE ticket=? AND kind=? AND revision=?',
+                                    (ticket_id, 'control_snapshot', expected_ticket_revision + 1)).fetchone()
+                return {**(json.loads(record[0]) if record else ticket), 'duplicate': True}
             if identity[4]:
                 card = self._card(db, source, identity[3], identity[4])
                 if not card or (card['ticket_id'], card['ticket_revision']) != (ticket_id, expected_ticket_revision):
@@ -1023,6 +1338,7 @@ class OuterIntake:
                 ticket['status'] = 'STOPPED'
             ticket['revision'] += 1
             self._save(db, ticket)
+            self._record_revision(db, ticket_id, 'control_snapshot', ticket['revision'], ticket)
             for queued in db.execute("SELECT * FROM outer_events WHERE ticket=? AND state IN ('PENDING','RUNNING') AND role IS NOT NULL",
                                      (ticket_id,)).fetchall():
                 if operation == 'stop':
@@ -1050,8 +1366,11 @@ class OuterIntake:
                     or ticket['goal_revision'] != state['outer']['goal_revision']):
                 raise Problem('旧任务仍在停止或范围已有改动', 409)
             state['stop_requested'] = False
-            waiting = state['stage']=='awaiting_artifact_review'
-            task.update(paused=False, status='awaiting_artifact_review' if waiting else 'queued', error='')
+            waiting = state['stage'] in ('awaiting_artifact_review', 'awaiting_preference')
+            if state['stage'] == 'awaiting_preference':
+                question = state['pending_preference']
+                question.update(revision=question['revision']+1, stop_generation=state['stop_generation'])
+            task.update(paused=False, status=state['stage'] if waiting else 'queued', error='')
         else:
             state['stop_generation'] += 1
             state['stop_requested'] = True

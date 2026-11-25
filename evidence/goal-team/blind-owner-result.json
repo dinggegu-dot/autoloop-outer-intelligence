@@ -1,0 +1,37 @@
+{
+  "case": "real-owner-heldout-blind-comparison",
+  "synthetic_input": true,
+  "owner_votes": true,
+  "authority_basis": "试验操作员准备已批准的独立合成对照，用户本人逐例评价并锁票和签收",
+  "approval_count": 1,
+  "owner_ballot_events": 1,
+  "owner_signoff_events": 1,
+  "team_vs_single_sol": {
+    "wins": 3,
+    "ties": 1,
+    "losses": 4,
+    "unrated": 0
+  },
+  "rated_cases": 8,
+  "model_wall_ms_measures": {
+    "baseline": {
+      "calls": 1,
+      "model_wall_ms": 15521
+    },
+    "team": {
+      "calls": 3,
+      "model_wall_ms": 45682
+    },
+    "human_relays": 0
+  },
+  "manifest_sha256": "9360e869149e463aac526771d79507ce5e4c43bc16e45f99a6c952377a2bc9ba",
+  "published_archive_sha256": "e2daf2903e214d147da2fc11cbda4f51a16091b8ea526f755a1c310e560c0903",
+  "download_equals_original_projection": true,
+  "formal_chrome_native_dsh_ui_certified": false,
+  "independent_review": {
+    "owner_event_and_candidate_revisions_verified": true,
+    "ballot_recomputed_against_frozen_mapping": true,
+    "matching_metrics_and_archive_verified": true,
+    "final_archive_bytes": 4207
+  }
+}

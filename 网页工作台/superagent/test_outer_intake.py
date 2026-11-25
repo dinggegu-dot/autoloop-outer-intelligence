@@ -4,6 +4,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 import tempfile
 from pathlib import Path
+from threading import Event
 import unittest
 from unittest.mock import patch
 
@@ -106,6 +107,94 @@ class OuterIntakeTest(unittest.TestCase):
     def control(self, draft, operation, source_event):
         return self.intake.control(draft['id'], operation, draft['revision'], source_event, actor_id='owner')
 
+    def test_normal_new_workbench_requests_overlap_and_third_waits_for_a_slot(self):
+        from uuid import uuid4
+        from outer_workbench import create_task
+
+        self.workbench.outer_workbench_entry = True
+        arrivals = {}
+        release = Event()
+        requests = []
+        for name in ('甲', '乙', '丙'):
+            request = create_task(self.workbench, dict(workflow='outer', request_id=str(uuid4()), name=name,
+                                                       goal='交付合成报告'+name, acceptance='运行检查'))
+            requests.append(request)
+            arrivals[request['event_id']] = Event()
+
+        def gated(role, context, schema):
+            if role == 'intake_assessor':
+                arrivals[context['event_id']].set()
+                release.wait(8)
+            return self.model(role, context, schema)
+
+        with patch.object(self.intake, 'model', gated), ThreadPoolExecutor(max_workers=2) as workers:
+            calls = [workers.submit(self.intake.drain, 1) for _ in range(2)]
+            try:
+                self.assertTrue(arrivals[requests[0]['event_id']].wait(5))
+                self.assertTrue(arrivals[requests[1]['event_id']].wait(5))
+                self.assertEqual(self.intake.drain(limit=1), 0)
+                self.assertFalse(arrivals[requests[2]['event_id']].is_set())
+                self.assertEqual([self.intake.event(row['event_id'], 'owner')['state'] for row in requests],
+                                 ['RUNNING', 'RUNNING', 'PENDING'])
+            finally:
+                release.set()
+            self.assertEqual([call.result(5) for call in calls], [1, 1])
+        self.assertEqual(self.intake.drain(), 4)
+        settled = [self.intake.event(row['event_id'], 'owner') for row in requests]
+        self.assertEqual([row['state'] for row in settled], ['DONE', 'DONE', 'DONE'])
+        self.assertEqual(len({row['ticket_id'] for row in settled}), 3)
+
+    def test_same_ticket_and_unbound_thread_do_not_pass_earlier_messages(self):
+        for known_ticket in (True, False):
+            with self.subTest(known_ticket=known_ticket):
+                if known_ticket:
+                    draft = self.latest(self.send('初始交付', event='initial'))
+                    binding = {'ticket_id':draft['id'], 'expected_ticket_revision':draft['revision']}
+                    first = self.send('先补充甲', event='first-ticket', source_thread_id='thread-a', **binding)
+                    second = self.send('再补充乙', event='second-ticket', source_thread_id='thread-b', **binding)
+                else:
+                    first = self.send('先建立工单', event='first-thread', source_thread_id='unbound')
+                    second = self.send('再补充资料', event='second-thread', source_thread_id='unbound')
+                free = self.send('其他独立工单', event=f'free-{known_ticket}', source_thread_id=f'free-{known_ticket}')
+                entered, release = Event(), Event()
+
+                def gated(role, context, schema):
+                    if context['event_id'] == first['event_id'] and role == 'intake_assessor':
+                        entered.set()
+                        release.wait(8)
+                    return self.model(role, context, schema)
+
+                with patch.object(self.intake, 'model', gated), ThreadPoolExecutor(max_workers=1) as worker:
+                    active = worker.submit(self.intake.drain, 1)
+                    try:
+                        self.assertTrue(entered.wait(5))
+                        self.assertEqual(self.intake.drain(limit=1), 1)
+                        self.assertEqual(self.intake.event(second['event_id'], 'owner')['state'], 'PENDING')
+                        self.assertTrue(self.intake.event(free['event_id'], 'owner')['ticket_id'])
+                    finally:
+                        release.set()
+                    self.assertEqual(active.result(5), 1)
+                self.intake.drain()
+                result = self.intake.event(second['event_id'], 'owner')
+                self.assertEqual(result['state'], 'REJECTED')
+                self.assertIn('工单版本已变化' if known_ticket else '会话已关联工单', result['error'])
+                self.assertFalse(any(context['event_id'] == second['event_id'] for _, context in self.model.calls))
+
+    def test_old_decision_remains_in_both_desktop_queues_after_history_grows(self):
+        from outer_channels import dispatch
+        pending = self.latest(self.send('vague'))
+        with self.store.connect() as db:
+            for number in range(101):
+                current = {**pending,'id':f'wb-{number:032x}','status':'STOPPED',
+                           'updated_at':'2999-01-01T00:00:00.000+00:00'}
+                db.execute('INSERT INTO outer_tickets VALUES(?,?,?,?,?)',
+                           (current['id'],'default','owner',json.dumps(current),current['updated_at']))
+        for source in ('web','dsh'):
+            with self.subTest(source=source):
+                rows = dispatch(self.intake,source,'list',{})
+                decisions = [row['id'] for row in rows if row['journey']['station']=='decision']
+                self.assertEqual(decisions,[pending['id']])
+
     def test_clarification_reuses_ticket_and_atomic_approval_is_idempotent(self):
         first = self.send('vague', source_thread_id='root')
         self.assertTrue(self.send('vague', source_thread_id='root')['duplicate'])
@@ -175,6 +264,283 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertEqual(task['name'], body['name'])
         self.assertEqual(task['goal_execution']['coordinator_profile'], 'scoped-v1')
         self.assertNotIn('coordinator_profile', self.intake.get(legacy['id'], 'owner'))
+
+    def test_team_preference_binds_profile_pause_version_and_cross_channel_answer(self):
+        from uuid import uuid4
+        from outer_workbench import create_task
+        from superagent.goal_engine import GoalEngine, digest
+        from superagent.goal_team_records import PROFILE
+
+        self.workbench.outer_workbench_entry = True
+        self.workbench.outer_goal_team = True
+        body = dict(workflow='outer', request_id=str(uuid4()), name='偏好工单', goal='生成报告',
+                    acceptance='通过检查并询问样例偏好')
+        approved = self.approve(self.latest(create_task(self.workbench, body, source='dsh')))
+        ticket = approved['id']
+        self.assertEqual(approved['mandate']['execution_profile'], PROFILE)
+        engine = GoalEngine(self.store)
+        engine.prepare(ticket)
+        sample = '合成样例版本'
+        choice = '先回应感受，少给建议。'
+        def enter_wait(task):
+            state = task['goal_execution']
+            state['assignments'].clear()
+            state.update(stage='awaiting_preference', pending_preference={
+                'id':'question', 'prompt':'要哪个样例？', 'revision':1, 'phase':'execute', 'answer':None,
+                'candidate_digest':sample, 'plan_revision':task['version'],
+                'mandate_digest':digest(state['mandate']), 'stop_generation':state['stop_generation'],
+                'options':[{'id':'b', 'label':'乙', 'text':'回应感受'}]})
+            task.update(status='awaiting_preference', phase='execute')
+        self.store.change(ticket, enter_wait)
+        self.assertEqual(self.intake.get(ticket, 'owner')['execution']['pending_preference']['id'], 'question')
+        self.control(approved, 'pause', 'pause-team')
+        self.assertIsNone(self.intake.get(ticket, 'owner')['execution']['pending_preference'])
+        paused = self.intake.get(ticket, 'owner')
+        self.control(paused, 'resume', 'resume-team')
+        ready = self.intake.get(ticket, 'owner')
+        self.assertEqual(ready['execution']['pending_preference']['revision'], 2)
+        answer = {'option_id':'b', 'text':choice}
+        with self.assertRaisesRegex(Problem, '问题或候选已更新'):
+            self.intake.answer_preference(ticket, ready['revision'], 'question', 1, sample,
+                                          answer, 'old', actor_id='owner', source='dsh')
+        result = self.intake.answer_preference(ticket, ready['revision'], 'question', 2, sample,
+                                               answer, 'answer', actor_id='owner', source='dsh')
+        self.assertEqual(result['action'], 'PREFERENCE_RECORDED')
+        replay = self.intake.answer_preference(ticket, ready['revision'], 'question', 2, sample,
+                                               answer, 'answer', actor_id='owner', source='dsh')
+        self.assertTrue(replay['duplicate'])
+        with self.assertRaises(Problem):
+            self.intake.answer_preference(ticket, ready['revision'], 'question', 2, sample,
+                                          answer, 'answer-web', actor_id='owner')
+        task = self.store.get(ticket)
+        self.assertEqual(task['status'], 'queued')
+        self.assertEqual(task['goal_execution']['pending_preference']['answer']['text'], choice)
+        self.assertEqual(len([row for row in task['goal_execution']['decisions']
+                              if row['kind'] == 'preference_answered']), 1)
+
+    def test_team_budget_extension_reuses_work_and_requires_its_own_approval(self):
+        from uuid import uuid4
+        from outer_workbench import create_task
+        from superagent.goal_engine import GoalEngine
+        from superagent.outer_intake import operator_kind
+
+        self.workbench.outer_workbench_entry = True
+        self.workbench.outer_goal_team = True
+        submit = create_task(self.workbench, dict(workflow='outer', request_id=str(uuid4()),
+                                                 name='预算合成单', goal='生成报告', acceptance='通过检查'))
+        approved = self.approve(self.latest(submit))
+        ticket = approved['id']
+        with self.assertRaisesRegex(Problem, '不可追加资源'):
+            self.intake.extend_team_budget(ticket, approved['revision'], 1, 15, 5, 'too-soon', actor_id='owner')
+        def exhaust(task):
+            task.update(status='budget_exhausted', elapsed_seconds=3600)
+            task['goal_execution']['active_candidate'] = {'assignment':'saved-version'}
+        self.store.change(ticket, exhaust)
+        operator = operator_kind.set('acceptance_test')
+        try:
+            result = self.intake.extend_team_budget(ticket, approved['revision'], 1, 15, 5, 'budget', actor_id='owner')
+            self.assertEqual(result['mandate_revision'], 2)
+            repeat = self.intake.extend_team_budget(ticket, approved['revision'], 1, 15, 5, 'budget', actor_id='owner')
+            self.assertTrue(repeat['duplicate'])
+        finally:
+            operator_kind.reset(operator)
+        with self.assertRaises(Problem):
+            self.intake.extend_team_budget(ticket, approved['revision'], 1, 15, 5, 'stale-budget', actor_id='owner')
+        task = GoalEngine(self.store).prepare(ticket)
+        state = task['goal_execution']
+        self.assertNotIn('operator_kind', approved['mandate'])
+        self.assertEqual(state['outer']['mandate']['operator_kind'], 'acceptance_test')
+        self.assertEqual(state['outer']['mandate']['team_role_limit'], 35)
+        self.assertEqual(state['mandate']['budget_seconds'], 4500)
+        self.assertEqual(task['elapsed_seconds'], 3600)
+        self.assertEqual(state['active_candidate']['assignment'], 'saved-version')
+        self.assertEqual(len(state['assignments']), 1)
+
+    def test_normal_entry_freezes_selected_team_review_mode(self):
+        from uuid import uuid4
+        from outer_workbench import create_task
+
+        self.workbench.outer_workbench_entry = True
+        body = dict(workflow='outer', request_id=str(uuid4()), name='合成审稿', goal='生成报告',
+                    acceptance='通过检查', team_review_mode='review')
+        with self.assertRaisesRegex(Problem, '未启用团队审稿'):
+            create_task(self.workbench, body)
+        self.workbench.outer_goal_team = True
+        with self.assertRaisesRegex(Problem, '有效的方案审稿方式'):
+            create_task(self.workbench, dict(body, team_review_mode='invalid'))
+        submission = create_task(self.workbench, body)
+        draft = self.latest(submission)
+        self.assertEqual(draft['approval_terms']['team_review_mode'], 'review')
+        self.assertEqual(self.approve(draft)['mandate']['team_review_mode'], 'review')
+        with self.assertRaises(Problem):
+            create_task(self.workbench, dict(body, team_review_mode='review_and_decide'))
+
+    def test_team_context_passes_only_relevant_approved_source_text(self):
+        from superagent.goal_engine import GoalEngine
+
+        def item(key, text, source='USER_EXPLICIT'):
+            return {'requirement_id':key,'description':text,'source':source,'source_refs':[f'event-{key}']}
+
+        fields = {
+            'deliverables':[item('first','第一步的文件'),item('second','保留原文件的标题')],
+            'required_capabilities':[item('assumed','模型自己补的要求','MODEL_PROPOSED')],
+            'nonfunctional_requirements':[],
+            'constraints':[item('offline','只在本地执行')],
+            'out_of_scope':[],
+        }
+        task = {'workflow':'goal','step':1,'plan':{'steps':[{'acceptance':['a']},{'acceptance':['b']}]},
+                'goal_execution':{'outer':{'goal_contract':fields,'acceptance_contract':{'criteria':[
+                    {'criterion_id':'a','requirement_ids':['first']},
+                    {'criterion_id':'b','requirement_ids':['second','assumed']},
+                ]}}}}
+        result = GoalEngine._team_original_requirements(task)
+        self.assertEqual([row['text'] for row in result], ['保留原文件的标题','只在本地执行'])
+        self.assertEqual(result[0]['source_refs'],['event-second'])
+
+    def test_later_choice_binds_stage_and_requires_current_option(self):
+        from uuid import uuid4
+        from outer_workbench import create_task
+        from superagent.goal_engine import GoalEngine, digest
+
+        self.workbench.outer_workbench_entry = True
+        self.workbench.outer_goal_team = True
+        draft = self.latest(create_task(self.workbench, dict(
+            workflow='outer', request_id=str(uuid4()), name='合成后续选择', goal='生成报告', acceptance='通过检查',
+        )))
+        ticket = self.approve(draft)['id']
+        GoalEngine(self.store).prepare(ticket)
+        sha = 'c' * 64
+
+        def wait(task):
+            state = task['goal_execution']
+            state['assignments'].clear()
+            question = {'id':'second-choice','revision':1,'step':1,'phase':'execute','requires_option':True,
+                        'assignment':'draft-assignment','draft_sha256':sha,'candidate_digest':'question-sha',
+                        'stop_generation':state['stop_generation'],'plan_revision':task['version'],
+                        'mandate_digest':digest(state['mandate']),'prompt':'选择方向',
+                        'options':[{'id':'a','text':'沿用现稿','label':'甲'}, {'id':'b','text':'简洁','label':'乙'}]}
+            scope = {'variants':[{'option_id':'a','mode':'keep'}, {'option_id':'b','mode':'edit'}]}
+            state.update(stage='awaiting_preference', pending_preference=question,
+                         team_pending_handoff={'source_assignment':'draft-assignment','base_sha256':sha,
+                                               'handoff':{'instruction':{'handoff_scope':scope}}})
+            task.update(status='awaiting_preference',step=1)
+
+        self.store.change(ticket,wait)
+        original = self.intake.get(ticket,'owner')
+        public = original['execution']['pending_preference']
+        self.assertEqual(public['step'],1)
+        self.assertEqual([option['mode'] for option in public['options']],['keep','edit'])
+        args = (ticket,original['revision'],'second-choice',1,'question-sha')
+        with self.assertRaisesRegex(Problem, '先选择后续方向'):
+            self.intake.answer_preference(*args,{'text':'不选'},'no-option',actor_id='owner')
+        self.store.change(ticket,lambda task: task.update(step=2))
+        with self.assertRaisesRegex(Problem, '问题或候选已更新'):
+            self.intake.answer_preference(*args,{'option_id':'a'},'old-step',actor_id='owner')
+        self.store.change(ticket,lambda task: task.update(step=1))
+        with self.assertRaisesRegex(Problem,'请选择可修改的方向') as conflict:
+            self.intake.answer_preference(*args,{'option_id':'a','text':'  想改一句  '},'choose-a',actor_id='owner')
+        self.assertEqual(conflict.exception.status,409)
+        unchanged = self.intake.get(ticket,'owner')
+        self.assertEqual(unchanged['revision'],original['revision'])
+        self.assertEqual(unchanged['execution']['pending_preference'],public)
+        with self.store.connect() as db:
+            self.assertIsNone(db.execute("SELECT id FROM outer_events WHERE source_event_id='choose-a'").fetchone())
+        answer = self.intake.answer_preference(*args,{'option_id':'a','text':'  '},'choose-a',actor_id='owner')
+        retry = self.intake.answer_preference(*args,{'option_id':'a'},'choose-a',actor_id='owner')
+        self.assertEqual(answer['action'],'PREFERENCE_RECORDED')
+        self.assertTrue(retry['duplicate'])
+        self.assertEqual(self.store.get(ticket)['step'],1)
+
+    def test_direct_coordination_enqueue_uses_same_team_candidate(self):
+        from uuid import uuid4
+        from outer_workbench import create_task
+        from superagent.goal_engine import GoalEngine
+        from superagent.goal_team_records import PROFILE
+
+        self.workbench.outer_workbench_entry = True
+        self.workbench.outer_goal_team = True
+        body = dict(workflow='outer', request_id=str(uuid4()), name='协调工单', goal='生成报告',
+                    acceptance='通过检查')
+        ticket = self.approve(self.latest(create_task(self.workbench, body)))['id']
+        engine = GoalEngine(self.store)
+        engine.prepare(ticket)
+        candidate = {'assignment':'a'*32,'artifact_sha256':'b'*64,'files':{'report.json':'c'*64}}
+        def enqueue(task):
+            state = task['goal_execution']
+            state.update(active_candidate=candidate, coordination_review_items=['affected'])
+            task.update(step=1, plan={'steps':[{'acceptance':['prior']},{'acceptance':['current']}]})
+            engine._enqueue(task,'repair',60,coordination_proposal='same-proposal')
+            engine._enqueue(task,'review',60,coordination_proposal='same-proposal')
+        state = self.store.change(ticket,enqueue)['goal_execution']
+        repair,review = state['assignments'][-2:]
+        self.assertEqual(repair['candidate_base'], candidate)
+        self.assertEqual(repair['execution_profile'], PROFILE)
+        self.assertEqual(repair['role_slots'], PROFILE['max_roles_per_assignment'])
+        self.assertEqual(review['candidate_base'], candidate)
+        self.assertEqual(review['additional_review_items'], ['prior','affected'])
+
+    def test_team_repair_defers_without_promoting_and_resumes_from_same_file(self):
+        from uuid import uuid4
+        from outer_workbench import create_task
+        from superagent.goal_engine import GoalEngine, current
+
+        self.workbench.outer_workbench_entry = True
+        self.workbench.outer_goal_team = True
+        draft = self.latest(create_task(self.workbench, dict(
+            workflow='outer', request_id=str(uuid4()), name='合成续办预算',
+            goal='生成报告', acceptance='按合同核对结果',
+        )))
+        with self.intake._transaction() as db:
+            draft = self.intake._ticket(db,draft['id'],'owner','default')
+            draft['approval_terms']['team_role_limit'] = 4
+            self.intake._save(db,draft)
+        approved = self.approve(draft)
+        ticket = approved['id']
+        engine = GoalEngine(self.store)
+        engine.prepare(ticket)
+        finding = {'action':'repair','summary':'报告标题错误','retain':[],'verify':['检查标题'],'options':[],
+                   'repair_scope':{'retained':[],'changes':[],'removed_paths':[]}}
+        checkpoint = {'digest':'b'*64,'files':{'report.json':'a'*64},'artifacts':['report.json']}
+
+        def before_deferral(task):
+            state = task['goal_execution']
+            state['assignments'].clear()
+            state['stage'] = task['phase'] = 'execute'
+            criteria = state['outer']['acceptance_contract']['criteria']
+            task['plan'] = {'steps':[{'acceptance':[row['criterion_id'] for row in criteria]}]}
+            engine._enqueue(task,'execute',240)
+            assignment = current(task)
+            scope = {'before_files':checkpoint['files'],'before_sha256':checkpoint['digest'],
+                     'acceptance_sha256':assignment['outer_binding']['contract_digest']}
+            assignment.update(state='dispatched',run=42,role_calls=[
+                {'session':f'session-{i}','turn':f'turn-{i}','status':'completed',
+                 **(finding if i == 2 else {'action':'done'})}
+                for i in range(3)
+            ],inner_repairs=[{'status':'waiting','before_sha256':checkpoint['digest'],'scope':scope}])
+
+        task = self.store.change(ticket,before_deferral)
+        source = current(task)
+        report = dict(id=source['id'],run=42,version=source['version'],outer_binding=source['outer_binding'],
+                      workspace_id=source['id'], result=finding, checkpoint=checkpoint, deferred_repair=True)
+        first = engine.settle(ticket,source['id'],42,'done',report)
+        self.assertIsNone(first['goal_execution'].get('active_candidate'))
+        self.assertEqual(first['goal_execution']['team_pending_repair']['base_sha256'],checkpoint['digest'])
+        exhausted = engine.prepare(ticket)
+        self.assertEqual(exhausted['status'],'budget_exhausted')
+        self.assertIn('1 个角色轮次', exhausted['error'])
+        self.assertIsNone(current(exhausted))
+        current_draft = self.intake.get(ticket,'owner')
+        extra = self.intake.extend_team_budget(ticket,current_draft['revision'],1,0,5,'extra-roles',actor_id='owner')
+        self.assertEqual(extra['mandate_revision'],2)
+        resumed = engine.prepare(ticket)
+        new = current(resumed)
+        self.assertEqual(new['phase'],'execute')
+        self.assertEqual(new['candidate_base']['assignment'],source['id'])
+        self.assertEqual(new['repair_continuation']['finding'],finding)
+        self.assertEqual(new['candidate_base']['artifact_sha256'],checkpoint['digest'])
+        self.assertEqual(new['outer_binding']['mandate_revision'],2)
+        engine.settle(ticket,source['id'],42,'done',report)
+        self.assertEqual(current(engine.prepare(ticket))['id'],new['id'])
 
     def test_legacy_engine_cannot_change_v2_control_state(self):
         ready = self.latest(self.send('生成 JSON 报告'))
@@ -310,6 +676,60 @@ class OuterIntakeTest(unittest.TestCase):
         self.model.fails = 5
         self.assertEqual(restored.drain(), 2)
         self.assertEqual(restored.event(failure['event_id'], 'owner')['state'], 'NEEDS_ATTENTION')
+
+    def test_expired_response_cannot_commit_even_before_another_claim(self):
+        from superagent.outer_model import INTAKE_SCHEMA, role_invoke
+
+        event = self.send('旧回执')
+        event_id = event['event_id']
+        _, lease, snapshot = self.intake._claim()
+        response = role_invoke(self.model, 'intake_assessor', snapshot, INTAKE_SCHEMA)
+        with self.store.connect() as db:
+            db.execute('UPDATE outer_events SET lease_until=0 WHERE lease=?', (lease,))
+        self.intake._settle(event_id, lease, snapshot, response)
+        self.assertEqual(self.intake.event(event_id, 'owner')['state'], 'PENDING')
+        self.assertEqual(self.intake.list('owner'), [])
+        self.assertEqual(self.intake.drain(), 2)
+        fresh = self.intake.event(event_id, 'owner')
+        self.assertEqual(fresh['state'], 'DONE')
+        self.intake._settle(event_id, lease, snapshot, response)
+        self.assertEqual(self.intake.event(event_id, 'owner'), fresh)
+        self.assertEqual(len(self.intake.list('owner')), 1)
+        with self.store.connect() as db:
+            failed = db.execute('SELECT state,result FROM outer_invocations WHERE id=?', (lease,)).fetchone()
+        self.assertEqual(failed['state'], 'lease_expired')
+        self.assertEqual(json.loads(failed['result'])['settlement_reason'], 'lease_expired')
+        self.assertEqual(json.loads(failed['result'])['result'], response['result'])
+
+    def test_pause_replay_returns_original_snapshot_after_resume_once(self):
+        from outer_channels import dispatch
+
+        ticket = self.approve(self.latest(self.send('交付合成账单')))
+        body = {'ticket_id':ticket['id'], 'revision':ticket['revision'], 'request_id':'pause-key'}
+        paused = dispatch(self.intake, 'web', 'pause', body)
+        self.assertEqual(paused['status'], 'PAUSED')
+        self.assertEqual(dispatch(self.intake, 'web', 'pause', body), {**paused, 'duplicate':True})
+        resumed = self.control(paused, 'resume', 'resume-key')
+        self.assertEqual(resumed['status'], 'AUTHORIZED')
+        with self.assertRaises(Problem) as stale:
+            dispatch(self.intake, 'web', 'pause', {**body, 'request_id':'stale-key'})
+        self.assertEqual(stale.exception.status, 409)
+        with self.assertRaises(Problem) as collision:
+            dispatch(self.intake, 'web', 'pause', {**body, 'revision':resumed['revision']})
+        self.assertEqual(collision.exception.status, 409)
+
+        restored = Workbench(self.store, goal_enabled=True, outer_enabled=True,
+                             outer_model=self.model, outer_registry=Registry()).outer()
+        self.assertEqual(dispatch(restored, 'web', 'pause', body), {**paused, 'duplicate':True})
+        current = restored.get(ticket['id'], 'owner')
+        self.assertEqual((current['status'], current['revision']), ('AUTHORIZED', resumed['revision']))
+        decisions = self.store.get(ticket['id'])['goal_execution']['decisions']
+        self.assertEqual(sum(row['kind'] == 'outer_pause' for row in decisions), 1)
+        deliveries = [d for d in restored.pending_outbox() if d['action'] == 'PAUSE']
+        self.assertCountEqual([d['source'] for d in deliveries], ['web', 'feishu'])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM outer_events WHERE source_event_id='pause-key'").fetchone()[0], 1)
+            self.assertIsNone(db.execute("SELECT id FROM outer_events WHERE source_event_id='stale-key'").fetchone())
 
     def test_changed_scope_requires_paused_inner_execution_and_keeps_old_approval(self):
         first = self.latest(self.send('simple', source_thread_id='root'))

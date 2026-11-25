@@ -1,0 +1,75 @@
+{
+  "case": "R1-short-api",
+  "synthetic": true,
+  "entry": "ordinary POST /api/tasks",
+  "browser_controlled": false,
+  "operator": "acceptance test via API",
+  "ticket_ref_sha256": "2a9ba44b689bd8f66aa1ae8e3e11603778227e7295b1e5ac5738ef061e7612c9",
+  "mandate_revision": 1,
+  "plan_revision": 1,
+  "role": {
+    "role": "lead",
+    "requested_model": "gpt-6.2-sol",
+    "model": "gpt-6.2-sol",
+    "effort": "medium",
+    "sandbox": "workspace-write",
+    "status": "completed",
+    "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+    "cli_version": "0.171.0-alpha.13.2",
+    "usage_source": "thread/tokenUsage/updated",
+    "usage": {
+      "total_tokens": 45134,
+      "input_tokens": 44591,
+      "cached_input_tokens": 34816,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 543,
+      "reasoning_output_tokens": 0
+    },
+    "tools": [
+      {
+        "id": "exec-3d277d0e-27bc-4362-8616-83a52a5704f1",
+        "name": "shell",
+        "settled": true,
+        "paired": true,
+        "status": "failed",
+        "exit_code": 1,
+        "duration_ms": 0
+      },
+      {
+        "id": "exec-a5758596-9520-439e-bdc7-2244bfc068a8",
+        "name": "shell",
+        "settled": true,
+        "paired": true,
+        "status": "failed",
+        "exit_code": 1,
+        "duration_ms": 0
+      },
+      {
+        "id": "exec-a5d1758c-b9f7-482c-aa3c-19ca35336afd",
+        "name": "shell",
+        "settled": true,
+        "paired": true,
+        "status": "completed",
+        "exit_code": 0,
+        "duration_ms": 0
+      }
+    ],
+    "session_sha256": "66d754af4eabde4cfde71cb71040b5e363b15a2d547966baba09d72d8e8c8f25",
+    "turn_sha256": "8a4675e08a8ee43cfe1bf2790506638347dcdd5b26b8d269fcc021a7f250bdb4",
+    "duration_seconds": 26.21
+  },
+  "roles_run": 1,
+  "approval_count": 1,
+  "download_sha256": "bbc301a34d002528089d40f9db5e286fd5fb9254d046073acd24116b8377f409",
+  "verification": {
+    "criterion_id": "result-json-exact-match",
+    "verifier_id": "json-artifact",
+    "verifier_version": 1,
+    "passed": true,
+    "status": "PASS",
+    "acceptance_revision": 1,
+    "artifact_sha256": "b83dcba323ab2aa9e1c9ed5e633b456f0c4ecd305a5df48679114110dc227ea8"
+  },
+  "formal_listener_pid_unchanged": true,
+  "download_matches_archived_bytes": true
+}

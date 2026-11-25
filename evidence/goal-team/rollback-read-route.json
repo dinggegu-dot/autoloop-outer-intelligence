@@ -1,0 +1,48 @@
+{
+  "case": "P4-rollback-reader-and-new-v2-route",
+  "passed": true,
+  "synthetic": true,
+  "observed_at_utc": "2026-11-24T14:34:04+00:00",
+  "ticket_ref_sha256": "916c8cf877cdbccdd31bb53e0b0c3165a0b6883e15109b310ffddd2183b263d5",
+  "mode": {
+    "new_ticket_team_flag_before": true,
+    "new_ticket_team_flag_after": false,
+    "same_compatible_source": true
+  },
+  "original": {
+    "read_only_snapshot": true,
+    "original_bytes_unchanged": true,
+    "signed_ticket_preserved": true,
+    "saved_sample_count": 3,
+    "same_public_role_history_count": 17,
+    "same_answer_and_original_notes": true,
+    "same_verified_download_sha256": {
+      "report.html": "863c4e1ad7821e69a603bda36431c07c0ec04590328836239b256c07a66669c7"
+    },
+    "local_dsh_bridge_matches_web": true
+  },
+  "regular_workbench_route_preserved": true,
+  "new_v2": {
+    "operator_kind": "acceptance_test",
+    "mandate_revision": 1,
+    "execution_profile_present": false,
+    "phase_sequence": [
+      "plan",
+      "execute",
+      "review"
+    ],
+    "adapter_called_by_runtime": [
+      "plan",
+      "execute"
+    ],
+    "team_adapter_calls": 0,
+    "real_deterministic_review": true,
+    "download_matches_verified": true
+  },
+  "limits": {
+    "handler_and_ledger": "真实工作台源码和 HTTP 接口",
+    "model_and_hub": "新单以合成模型回执和 Hub 绑定验证实际 V2 调度分支",
+    "original_snapshot": "只读单文件工作台账本和已签收的冻结归档，未复制运行密钥",
+    "browser_or_dsh_ui_tested": false
+  }
+}

@@ -147,7 +147,7 @@ class Isolated:
     def instance_env(self, instance):
         return dict(self.env, AGENT_AUTOLOOP_HOME=str(instance))
 
-    def launch(self, mode):
+    def launch(self, mode, *, goal_team=False, dsh_token=None, trial_token=None):
         (self.root / "mode").write_text(mode)
         worker_driver = self.root / "worker-driver.py"
         worker_driver.write_bytes(Path(__file__).read_bytes())
@@ -177,11 +177,22 @@ class Isolated:
         self.start([*self.cli, "up"], "hub", self.instance_env(self.hub))
         wait_until(lambda: self.ready(hub_url + "/healthz"), 15, "隔离 Hub 就绪超时")
         self.worker_process = self.start_worker()
-        self.start([sys.executable, "-B", str(self.app / "server.py"), "--port", str(self.port),
+        board_command = [sys.executable, "-B", str(self.app / "server.py"), "--port", str(self.port),
                     "--runtime", str(self.runtime), "--hub-home", str(self.hub), "--goal-pilot",
-                    "--outer-intelligence", "--outer-model-timeout", "120"], "board")
+                    "--outer-intelligence", "--outer-model-timeout", "120"]
+        board_env = dict(self.env)
+        if goal_team:
+            (self.root / ".goal-team-pilot").touch(mode=0o600)
+            board_command.append("--outer-goal-team")
+            if dsh_token:
+                board_env["AUTOLOOP_DSH_BRIDGE_TOKEN"] = dsh_token
+            if trial_token:
+                board_env["AUTOLOOP_TRIAL_OPERATOR_TOKEN"] = trial_token
+        self.start(board_command, "board", board_env)
         wait_until(lambda: self.ready(f"http://127.0.0.1:{self.port}/api/session"), 15, "隔离工作台就绪超时")
         board = Board(self.port)
+        if trial_token:
+            board.headers["X-Odyssey-Trial-Operator"] = trial_token
         page = board.call("/", raw=True)
         require(b'id="outer-opt-in"' in page, "正式工作台普通表单缺少显式试点选项")
         return board
@@ -221,12 +232,25 @@ def worker(app, runtime):
         mark = runtime.parent / "fault.json"
         if (assignment["phase"] == "execute" and assignment["step"] == 1 and
                 not report.get("error") and not mark.exists()
-                and mode in {"regression", "pause-stale"}):
-            workspace = store.workspace(assignment["ticket"])
+                and mode in {"regression", "pause-stale", "nonterminal-regression"}):
+            team = assignment.get("execution_profile") is not None
+            if team:
+                from superagent.goal_team_run import seal
+                workspace = directory / "candidate"
+            else:
+                workspace = store.workspace(assignment["ticket"])
             search = workspace / "search.py"
             old = hashlib.sha256(search.read_bytes()).hexdigest()
             search.write_text('print(\'{"matches":["regression.txt"]}\')\n')
-            report["checkpoint"] = capture(workspace)[0]
+            if team:
+                # 仅隔离故障夹具可替换未交回执的候选，保留真实角色原件供对照。
+                (directory / "sealed").rename(directory / "sealed-before-fault")
+                report["checkpoint"] = seal(workspace, directory)
+            else:
+                report["checkpoint"] = capture(workspace)[0]
+            if mode == "regression" and team:
+                # 隔离夹具在已持久化恢复回执与主回执之间模拟 Worker 中断。
+                goal_runtime.save_team_recovery(assignment, directory, report)
             save_json(mark, {"assignment": assignment["id"], "run": assignment["run"],
                              "path": "search.py", "before": old,
                              "after": hashlib.sha256(search.read_bytes()).hexdigest(),
@@ -241,6 +265,15 @@ def worker(app, runtime):
             save_json(runtime.parent / "pause-barrier.json",
                       {"assignment": assignment["id"], "run": assignment["run"], "result": report["result"]})
             wait_until((runtime.parent / "pause-release").exists, 30, "未观察到工单暂停")
+        if mode == "preference-race" and report.get("preference"):
+            barrier = runtime.parent / "preference-barrier.json"
+            if not barrier.exists():
+                from superagent.goal_engine import digest
+                save_json(barrier, {"assignment":assignment["id"], "run":assignment["run"],
+                                    "options":len(report["preference"]["options"]),
+                                    "preference_sha256":digest(report["preference"]),
+                                    "checkpoint_sha256":(report.get("checkpoint") or {}).get("digest")})
+                wait_until((runtime.parent / "preference-release").exists, 30, "未观察到工单暂停")
         return report
 
     goal_runtime.execute_assignment = regress

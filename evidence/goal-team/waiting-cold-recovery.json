@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "case": "waiting_team_ticket_cold_recovery",
+  "synthetic": true,
+  "source_kind": "engine_checkpoint_with_model_and_hub_fixtures",
+  "observed_at_utc": "2026-11-24T13:21:10+00:00",
+  "ticket_ref_sha256": "f35e1e674714753dc2c546cebdc3aef43681afb2a79894c1c0ccad979a861679",
+  "cold_backup": {
+    "original_unchanged": true,
+    "whole_tree_verified": true,
+    "entries": 155,
+    "wal_files": 1
+  },
+  "ledger": {
+    "workbench_integrity_check": "ok",
+    "hub_quick_check": "ok",
+    "outer_status": "AUTHORIZED",
+    "mandate_revision": 1,
+    "approval_count": 1,
+    "matched_completed_runs": 2
+  },
+  "read_only_workbench": {
+    "pending_questions": 1,
+    "option_count": 3,
+    "candidate_digest": "fdc8e009cca8b7bb47c0cefa784cf7d39b9491ea404e7d1a7027a9b2006bc66c",
+    "sealed_samples_match": true,
+    "decision_queue_action": "查看样例",
+    "submit_action": "提交选择",
+    "ui_probe": "real_view_module_in_node_dom_fixture",
+    "browser_used": false,
+    "active_assignments": 0,
+    "scheduler_tick_dispatched": false,
+    "answer_write_rejected": true
+  },
+  "formal_listener_unchanged": true,
+  "limits": {
+    "waiting_case_validated": true,
+    "resumed_execution": false
+  },
+  "fixture_setup": {
+    "production_workflow_components": [
+      "ordinary task intake",
+      "approval",
+      "plan and execute reports",
+      "goal runtime settlement"
+    ],
+    "simulated": [
+      "model outputs",
+      "Hub transport"
+    ],
+    "protected_live_trials_used": false
+  }
+}

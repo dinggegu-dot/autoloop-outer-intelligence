@@ -1,0 +1,68 @@
+{
+  "date": "2026-11-25",
+  "synthetic": true,
+  "result": "PASS",
+  "entry": "Google Chrome → 隔离工作台 → 新建工单 → 目标模式",
+  "ticket_ref_sha256": "f6d317d043fe3cf725b185327b1bacfc22eca0f35059df1ec05b445177469b12",
+  "approval": {
+    "effective_events": 1,
+    "operator_kind": "acceptance_test",
+    "goal_revision": 3,
+    "acceptance_revision": 2,
+    "mandate_revision": 1
+  },
+  "fixture": {
+    "path": "inner-repair-demo.html",
+    "changed_line": 10,
+    "changed_heading": ["Daily Tasks", "Draft Tasks"],
+    "injected_after_real_role": 2,
+    "checks_before_injection": ["PASS", "PASS"],
+    "checks_after_injection": ["FAIL", "PASS"],
+    "model_outputs_modified": false
+  },
+  "runs": {
+    "plan": 1,
+    "execute": 2,
+    "independent_review": 3
+  },
+  "execute_roles": [
+    {"sequence": 1, "role": "lead", "action": "done"},
+    {"sequence": 2, "role": "implementer", "action": "done"},
+    {"sequence": 3, "role": "lead", "action": "repair", "sandbox": "read-only", "successful_shell_calls": 2},
+    {"sequence": 4, "role": "implementer", "action": "done", "sandbox": "workspace-write", "successful_patch_calls": 1, "successful_shell_calls": 3},
+    {"sequence": 5, "role": "lead", "action": "done", "sandbox": "read-only", "successful_shell_calls": 1}
+  ],
+  "runtime": {
+    "roles": "Codex App Server",
+    "model": "gpt-6.2-sol",
+    "distinct_role_sessions": 5,
+    "formal_8765_listener_pid_before_and_after": 738
+  },
+  "versions": {
+    "faulty_candidate_manifest_sha256": "206eb1672baef3b9587306b6ddd0e9dad16bcc33ebcaa6835343f3f57edf3393",
+    "faulty_file_sha256": "90bd23a2ac1092243f12bb2d4d2119f4ca9982aa7ea659cd9bdac409e0d6ce65",
+    "rechecked_candidate_manifest_sha256": "826a82af657f24251e1943a1eb933c0386861d619e59938d78ca348430953872",
+    "repaired_file_sha256": "7e30a5840d984be60c23f40d3d978159f7a7fc098ede1d8f89fb29cd469fce70",
+    "repaired_file_bytes": 385,
+    "only_heading_bytes_changed": true,
+    "browser_download_matches_verified_archive": true
+  },
+  "checks": {
+    "check-daily-tasks": ["FAIL", "PASS"],
+    "check-status-notes": ["PASS", "PASS"],
+    "outer_independent_review": ["PASS", "PASS"]
+  },
+  "chrome_observed": [
+    "通过普通新单提交并在原单修订验收和澄清",
+    "一次有效批准后自动推进",
+    "执行者正在返修",
+    "负责人正在复验新版",
+    "负责人复验通过及两条实际检查",
+    "独立机器验收 2/2 并从原单下载"
+  ],
+  "notes": [
+    "最初把实施步骤混入验收，系统拒绝进入批准，在同一原单修订后通过。",
+    "第一次批准请求恰遇隔离副本模块更新，加载失败且未登记批准，修正后有效批准一次。",
+    "执行者回执误将错版单文件摘要与整个候选清单摘要比较。独立复核确认二者分别正确。后续提示区分这两种摘要并传递逐文件摘要。此文案补充通过本地测试。"
+  ]
+}

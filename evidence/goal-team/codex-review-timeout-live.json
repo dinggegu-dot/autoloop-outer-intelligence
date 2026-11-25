@@ -1,0 +1,76 @@
+{
+  "date": "2026-11-25",
+  "synthetic": true,
+  "result": "PARTIAL",
+  "entry": "隔离工作台普通新单业务 API，试验操作员一次有效批准",
+  "ticket_ref_sha256": "ed89aba7d27fc6bb081cdd40b3576c2cae5a80d0b7628993fa63ba51930e22e9",
+  "fixture": {
+    "initial_html_heading_fault": true,
+    "machine_checks_before_fault": [
+      "PASS",
+      "PASS"
+    ],
+    "machine_checks_after_fault": [
+      "FAIL",
+      "PASS"
+    ],
+    "actual_reviewer_shell_probe": true,
+    "fixture_cutoff_seconds_after_shell_start": 3,
+    "codex_transport_replayed": false
+  },
+  "initial_timeout": {
+    "run": 2,
+    "error_code": "timeout",
+    "deadline_injected_after_actual_shell_start": true,
+    "interrupt_sent": true,
+    "interrupt_acknowledged": true,
+    "turn_terminal_status": "interrupted",
+    "process_record_state": "stopped",
+    "tracked_process_count": 3,
+    "live_tracked_processes_at_interrupt": 3,
+    "live_tracked_after_cleanup": 0,
+    "live_group_members_after_cleanup": 0,
+    "sealed_checkpoint": {
+      "artifacts": [
+        "phase-one-codex-timeout.html"
+      ],
+      "digest": "c0d761c3602e7eecc7d2f72dec06fc9c0fb7ec7f89692230eed787df426bf92f",
+      "files": {
+        "phase-one-codex-timeout.html": "94ee109a70744e7ef334444fad5e3e836414ab969a4f42837ada998c2da062f7"
+      }
+    },
+    "unverified_candidate_download_http": 404
+  },
+  "runtime": {
+    "codex_version": "0.171.0-alpha.13.2",
+    "model": "gpt-6.2-sol",
+    "sandbox": "read-only",
+    "worker_pid_unchanged": true,
+    "formal_8765_pid_unchanged": true,
+    "workbench_only": true
+  },
+  "resume": {
+    "run": 3,
+    "original_mandate_revision": 1,
+    "only_role": "lead",
+    "writable": false,
+    "candidate_bytes_match_sealed_repair": true,
+    "turn_started": true,
+    "tools": 0,
+    "token_usage_reported": false,
+    "responses_websocket_connection_observed": true,
+    "responses_retry_reported_stream_disconnect": true,
+    "specific_endpoint_failure_cause_confirmed": false,
+    "app_server_exit_record": "stopped",
+    "elapsed_seconds": 237.13,
+    "error_code": "timeout"
+  },
+  "outcome": {
+    "ticket": "blocked",
+    "independent_final_review_dispatched": false,
+    "delivery_download_http": 404,
+    "manual_resume_route": "原单暂停后继续，从同一封存候选只续负责人复验",
+    "manual_resume_route_basis": "本次持久状态和已有分支实现，未再发起运行",
+    "sealed_repair_retained_for_read_only_resume": true
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "synthetic": true,
+  "passed_technical_round_trip": true,
+  "review_entries": {
+    "approval": {
+      "count": 1,
+      "operator_kind": "acceptance_test"
+    },
+    "execution_preference": {
+      "count": 1,
+      "operator_kind": "acceptance_test"
+    },
+    "blind_ballot": {
+      "count": 1,
+      "operator_kind": "acceptance_test"
+    },
+    "artifact_review": {
+      "count": 1,
+      "operator_kind": "acceptance_test"
+    }
+  },
+  "source": "隔离普通新单业务 API、真实 Sol App Server、独立外层验证器",
+  "owner_judgments": false,
+  "subjective_conclusion_available": false,
+  "model_wall_ms_measures": {
+    "baseline": {
+      "calls": 1,
+      "model_wall_ms": 19091
+    },
+    "team": {
+      "calls": 3,
+      "model_wall_ms": 54545
+    },
+    "human_relays": 0
+  },
+  "case_counts": {
+    "wins": 0,
+    "ties": 0,
+    "losses": 0,
+    "unrated": 8
+  },
+  "archive_file_sha256": "55d41ae882add63b72ff0b2cc98c269926dab016b76f04228aa7b667382cb52e",
+  "anonymous_download_withheld_before_lock": true,
+  "duplicate_ballot_returned_original": true,
+  "formal_chrome_dsh_gui": false,
+  "paired_dsh_bridge_read_matches_web": true,
+  "paired_dsh_download_matches_archive": true,
+  "independent_review": {
+    "reviewer": "独立 Sol 子 Agent，核对原单账本、两路调用、封存及验后字节",
+    "same_download_sha256_verified": true,
+    "distinct_model_sessions_verified": true,
+    "machine_criteria_passed": 1,
+    "human_criteria_inconclusive": 9,
+    "end_to_end_trial_ms": 271578,
+    "owner_quality_conclusion": null
+  }
+}

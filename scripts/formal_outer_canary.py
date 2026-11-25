@@ -29,6 +29,22 @@ SYNTHETIC_ORDER = {
     "request_id": "11111111-2222-4333-8444-101010101021",
 }
 FIXTURE = {"workflow": "outer", "fixture": "filename-index-v2"}
+TEAM_FIXTURE = {"workflow": "outer", "fixture": "goal-team-brief-v1"}
+TEAM_ORDER = {
+    "workflow": "outer",
+    "name": "合成活动简报 · 团队审稿",
+    "goal": (
+        "制作 stable-outline.html，网页标题为 Plan Sheet，含一级标题 Source Outline 和元素 brief-outline。"
+        "制作 stable-brief.html，网页标题为 Event Brief，含一级标题 Launch Brief 和元素 release-notice。"
+        "所有活动和材料均为合成示例。"
+    ),
+    "acceptance": (
+        "验收一：stable-outline.html 的网页标题是 Plan Sheet，一级标题 Source Outline 出现一次，ID 为 brief-outline 的元素出现一次。"
+        "验收二：stable-brief.html 的网页标题是 Event Brief，一级标题 Launch Brief 出现一次，ID 为 release-notice 的元素出现一次。"
+    ),
+    "request_id": "11111111-2222-4333-8444-101010101023",
+    "team_review_mode": "review_and_decide",
+}
 PREFIX = "/api/outer-canary/"
 TICKET = r"wb-[a-f0-9]{32}"
 ASSETS = {
@@ -36,6 +52,9 @@ ASSETS = {
     "/outer-canary/app.js": "app.js",
     "/outer-canary/outer.js": "outer.js",
     "/outer-canary/style.css": "style.css",
+    "/outer-canary/goal_team.js": "goal_team.js",
+    "/outer-canary/goal_team.css": "goal_team.css",
+    "/outer-canary/task_presentation.js": "task_presentation.js",
 }
 MIMES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}
 CONTROL_FIELDS = {
@@ -55,8 +74,6 @@ def canonical_uuid(value):
 
 
 def valid_command(command, body):
-    if command not in CONTROL_FIELDS or body.keys() != CONTROL_FIELDS[command]:
-        return False
     checks = {
         "ticket_id": lambda v: isinstance(v, str) and re.fullmatch(TICKET, v),
         "event_id": lambda v: isinstance(v, str) and re.fullmatch(r"evt-[a-f0-9]{32}", v),
@@ -65,7 +82,29 @@ def valid_command(command, body):
         "revision": lambda v: type(v) is int and v > 0,
         "goal_revision": lambda v: type(v) is int and v > 0,
         "acceptance_revision": lambda v: type(v) is int and v > 0,
+        "question_revision": lambda v: type(v) is int and v > 0,
+        "question_id": lambda v: isinstance(v, str) and re.fullmatch(r"[a-f0-9]{32}", v),
+        "candidate": lambda v: isinstance(v, str) and re.fullmatch(r"[a-f0-9]{32}", v),
+        "candidate_digest": lambda v: isinstance(v, str) and re.fullmatch(r"[a-f0-9]{64}", v),
+        "artifact_sha256": lambda v: isinstance(v, str) and re.fullmatch(r"[a-f0-9]{64}", v),
+        "require_signoff": lambda v: type(v) is bool,
+        "answer": lambda v: (
+            isinstance(v, dict) and v.keys() == {"option_id", "text"} and v["text"] == ""
+            and isinstance(v["option_id"], str) and re.fullmatch(r"[a-z0-9_-]{1,64}", v["option_id"])
+        ),
     }
+    binding = CONTROL_FIELDS["approve"]
+    fields = CONTROL_FIELDS.get(command)
+    if command == "approve" and "require_signoff" in body:
+        fields = binding | {"require_signoff"}
+    elif command in {"pause", "resume", "stop"} and "goal_revision" in body:
+        fields = binding
+    elif command == "answer_preference":
+        fields = binding | {"question_id", "question_revision", "candidate_digest", "answer"}
+    elif command == "accept_artifact":
+        fields = binding | {"candidate", "artifact_sha256"}
+    if not fields or body.keys() != fields:
+        return False
     return all(checks[key](value) for key, value in body.items())
 
 
@@ -117,7 +156,8 @@ class OuterCanary:
                 "POST" if body is not None else "GET", route, headers,
                 None if body is None else json.dumps(body, ensure_ascii=False).encode())
             mime = result_headers.get("Content-Type", "").split(";", 1)[0]
-            allowed = "application/octet-stream" if route.startswith("/api/tasks/") and status == 200 else "application/json"
+            download = re.fullmatch(f"/api/tasks/{TICKET}/artifact", urlsplit(route).path)
+            allowed = "application/octet-stream" if download and status == 200 else "application/json"
             if mime != allowed:
                 raise ValueError("灰度连接返回无效内容")
             disposition = result_headers.get("Content-Disposition")
@@ -128,9 +168,11 @@ class OuterCanary:
 
     def post(self, handler, route, body):
         if route == "/api/tasks":
-            if body != FIXTURE:
-                return handler.json_response({"error": "灰度入口仅接受内置合成索引工单"}, 409)
-            return self.forward(handler, "/api/tasks", SYNTHETIC_ORDER)
+            if body == FIXTURE:
+                return self.forward(handler, "/api/tasks", SYNTHETIC_ORDER)
+            if body == TEAM_FIXTURE:
+                return self.forward(handler, "/api/tasks", TEAM_ORDER)
+            return handler.json_response({"error": "灰度入口仅接受内置合成工单"}, 409)
         command = route.removeprefix(PREFIX)
         if not valid_command(command, body):
             return handler.json_response({"error": "灰度工单操作或者版本格式无效"}, 400)
@@ -149,6 +191,6 @@ class OuterCanary:
         endpoint = route.removeprefix(PREFIX)
         if endpoint == "drafts":
             return self.forward(handler, "/api/outer")
-        if endpoint == "tasks" or re.fullmatch(f"tasks/{TICKET}/artifact", endpoint):
+        if endpoint == "tasks" or re.fullmatch(f"tasks/{TICKET}/(?:artifact|draft-preview)", endpoint):
             return self.forward(handler, "/api/" + endpoint + suffix)
         return handler.json_response({"error": "灰度工单接口不存在"}, 404)

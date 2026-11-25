@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-24T12:44:48Z",
+  "platform": "macOS",
+  "codex_cli": "0.171.0-alpha.13.2",
+  "input": "synthetic files only",
+  "model_turn_started": false,
+  "app_server_handshake": {
+    "transport": "stdio",
+    "requests": ["initialize", "initialized", "config/read", "skills/list", "thread/start"],
+    "request_model": "gpt-6.2-sol",
+    "confirmed_model": "gpt-6.2-sol",
+    "confirmed_effort": "high",
+    "approval_policy": "never",
+    "ephemeral_thread": true,
+    "only_staged_workspace_is_runtime_root": true,
+    "confirmed_permission_digests": {
+      "read-only": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+      "workspace-write": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5"
+    }
+  },
+  "host_permission_probe": {
+    "method": "codex sandbox --permission-profile, with the same named-profile policy as the role adapter",
+    "tool": "system shell, cat, and nc",
+    "policy": {
+      "root_access": "deny",
+      "minimal_system_access": "read",
+      "workspace_access": "role-specific",
+      "workspace_hidden_paths": "deny",
+      "tool_network_enabled": false
+    },
+    "unconfined_control_reached_temporary_loopback_listener": true,
+    "observed_access": {
+      "read-only": {
+        "staged_file_read": true,
+        "staged_hidden_file_read": false,
+        "sibling_synthetic_workbench_db_read": false,
+        "sibling_synthetic_token_read": false,
+        "symlink_to_sibling_token_read": false,
+        "staged_output_write": false,
+        "sibling_output_write": false,
+        "temporary_loopback_listener_connect": false
+      },
+      "workspace-write": {
+        "staged_file_read": true,
+        "staged_hidden_file_read": false,
+        "sibling_synthetic_workbench_db_read": false,
+        "sibling_synthetic_token_read": false,
+        "symlink_to_sibling_token_read": false,
+        "staged_output_write": true,
+        "sibling_output_write": false,
+        "temporary_loopback_listener_connect": false
+      }
+    },
+    "observations": [
+      "The desktop task sandbox rejected nested sandbox initialization. The host rerun used the Codex sandbox with the same profile.",
+      "The macOS Python launcher could not reach its developer tools within this profile. The host rerun used system shell utilities."
+    ]
+  }
+}

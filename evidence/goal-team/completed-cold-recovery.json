@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "case": "completed_team_ticket_cold_recovery",
+  "synthetic": true,
+  "observed_at_utc": "2026-11-24T13:14:11+00:00",
+  "ticket_ref_sha256": "30269eadf98098933738e5e82b761f086553f6c7150ae47d241168c2d7b853b3",
+  "cold_backup": {
+    "original_unchanged": true,
+    "whole_tree_verified": true,
+    "entries": 315,
+    "wal_files": 1
+  },
+  "ledger": {
+    "workbench_integrity_check": "ok",
+    "hub_quick_check": "ok",
+    "outer_status": "AUTHORIZED",
+    "mandate_revision": 1,
+    "approval_count": 1,
+    "matched_completed_runs": 5
+  },
+  "read_only_workbench": {
+    "candidate_digest": "e51d573e40d700e8ef5718cb64614f5fe8eb471f54650989f7e977e71dd33f4e",
+    "archive_matches_candidate": true,
+    "role_history_count": 2,
+    "download_sha256": {
+      "search.py": "91d2a7b824eb6c7d524b4026daf5c5f3516101478802a8c902fbdd2652de09b9",
+      "update.py": "58b7d35d4862ca8e0db15c84ec67c50de02777007b980aa082919f4d10017058"
+    },
+    "unauthenticated_read_rejected": true,
+    "write_rejected": true,
+    "wrong_candidate_rejected": true
+  },
+  "formal_listener_unchanged": true,
+  "limits": {
+    "waiting_case_validated": false,
+    "resumed_execution": false
+  }
+}
