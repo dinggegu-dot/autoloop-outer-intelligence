@@ -497,6 +497,24 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,text:'撤回所选模型建议',
    intent:'change',withdraw_requirement_ids:['suggestion'],allow_model_input:true});
  });
+ await t.test('本人可用同单已授权补充答复当前问题，并在发送前确认',async t=>{
+  const row={...ticket,status:'AWAITING_CLARIFICATION',ticket_team:{id:ticket.id},
+   question:{question_id:'q-first',question_text:'对接人是谁？',options:[]},
+   subscription:{entries:[{event_id:'evt-public',text:'对接人是周老师',allow_model_input:true},
+    {event_id:'evt-local',text:'仅保存在本机',allow_model_input:false}]}};
+  const ui=await mount(t,row);
+  assert.equal(ui.control('answer-with-evt-local'),undefined);
+  ui.control('answer-with-evt-public').onclick();
+  assert.equal(ui.events.length,0);
+  assert.equal(ui.confirm.textContent,'同意并提交');
+  ui.confirm.onclick();
+  await flushGoalUI();
+  const [{path,body:{request_id,...payload}}]=ui.events;
+  assert.ok(request_id);
+  assert.equal(path,'/api/outer/submit');
+  assert.deepEqual(payload,{ticket_id:row.id,revision:row.revision,question_id:'q-first',
+   text:'对接人是周老师',allow_model_input:true});
+ });
  await t.test('直启工作台的 Router 原单也逐次确认补充外发',async t=>{
   const ui=await mount(t,{...ticket,ticket_team:{id:ticket.id}},{panel:'feedback',formalModelInputConsent:false});
   ui.fill('supplement-text','隔离测试补充');

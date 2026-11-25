@@ -14,7 +14,8 @@ from superagent.codex_worker import _object
 from superagent.coordination_tools import DESCRIPTIONS, SERVER, _handle, _read, serve
 from superagent.goal_engine import plan_result
 from superagent.outer_model import (
-    CodexOuterModel, ModelFailure, ACCEPTANCE_SCHEMA, SCOPED_PROMPT_VERSION, TXT, role_invoke,
+    CodexOuterModel, ModelFailure, ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, REQUIREMENT_SOURCES,
+    SCOPED_PROMPT_VERSION, TXT, role_invoke,
 )
 
 
@@ -26,6 +27,25 @@ def local_executable(directory, program):
 
 
 class OuterModelTest(unittest.TestCase):
+    def test_intake_requirement_sources_reject_a_new_material_source_enum(self):
+        from superagent.test_outer_intake import Model
+
+        fields = INTAKE_SCHEMA['properties']['goal_draft']['properties']
+        self.assertEqual(fields['required_capabilities']['items']['properties']['source']['enum'],
+                         list(REQUIREMENT_SOURCES))
+        model = Model()
+        context = dict(event_id='ticket-event',snapshot_revision=1,ticket_id='ticket',
+                       available_actions=['CREATE_DRAFT'],untrusted_text={'current_message':'联系人：李青'})
+        result = model('intake_assessor',context,INTAKE_SCHEMA)
+        item = result['goal_draft']['deliverables'][0]
+        adapter = lambda *_: result
+        for source in REQUIREMENT_SOURCES:
+            item['source'] = source
+            self.assertIn('result',role_invoke(adapter,'intake_assessor',context,INTAKE_SCHEMA))
+        item['source'] = 'AUTHORIZED_INTAKE_MATERIAL'
+        with self.assertRaisesRegex(ModelFailure,'invalid_output'):
+            role_invoke(adapter,'intake_assessor',context,INTAKE_SCHEMA)
+
     def test_mcp_tool_rejects_cross_ticket_selectors(self):
         name = next(iter(DESCRIPTIONS))
         for arguments in ({'ticket_id': 'other-ticket'}, {'path': 'other-file'}, {'revision': 6}):
