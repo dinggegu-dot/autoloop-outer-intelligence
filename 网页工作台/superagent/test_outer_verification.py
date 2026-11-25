@@ -1504,8 +1504,12 @@ class OuterExecutionTests(unittest.TestCase):
                        (self.ticket,'default','owner',json.dumps(ticket),'time'))
         candidate = flow(task)['artifact_reviews'][-1]
         result = intake.decide_artifact(self.ticket,'return',1,candidate['assignment'],candidate['artifact_sha256'],
-                                        '调整 two.json 的排版','operator-return',actor_id='owner')
+                                        '调整 two.json 的排版','operator-return',actor_id='owner',allow_model_input=True)
         self.assertEqual(result['action'],'ARTIFACT_RETURNED')
+        with self.store.connect() as db:
+            authorized = db.execute("SELECT json_type(body,'$.allow_model_input') FROM outer_events WHERE source_event_id=?",
+                                    ('operator-return',)).fetchone()[0]
+        self.assertEqual(authorized,'true')
         (self.workspace/'two.json').write_text('{"ok": true}')
         self.checkpoint('repair')
         subsequent = self.launch('review')

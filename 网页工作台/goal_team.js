@@ -52,7 +52,7 @@ const phases = {plan:'规划',replan:'重新规划',execute:'实施',repair:'修
 const stepStates = {completed:'已完成',done:'已完成',running:'正在进行',in_progress:'正在进行',executing:'正在进行',pending:'待开始',failed:'未通过'};
 const assignmentStates = {pending:'待投递',queued:'已排队',dispatched:'已派发',settled:'已结算',cancelled:'已取消',unknown:'待核对'};
 
-export function projectGoalRow(row) {
+export function projectGoalRow(row,{allowFreeText=true}={}) {
   const view = row.journey || {};
   const preference = preferenceOf(row);
   const clarification = currentClarification(row);
@@ -87,11 +87,12 @@ export function projectGoalRow(row) {
       const direction=directionQuestion(preference);
       label = direction ? stepLabel(preference.step)+'待定方向' : '待选样例';
       reason = preference.prompt || reason;
-      next = preference.next || (direction ? '选择修改方向，或写下希望保留和修改的内容。' : '选择一组，或写下希望保留和修改的内容。');
+      next = allowFreeText ? preference.next || (direction ? '选择修改方向，或写下希望保留和修改的内容。' : '选择一组，或写下希望保留和修改的内容。') :
+        (direction ? '选择一个修改方向。' : '选择一组样例。');
       action = direction ? '查看修改方向' : '查看样例';
     } else if (clarification) {
       label = '待澄清'; reason = row.question.reason || row.question.question_text || reason;
-      next = row.question.question_text; action = '回答澄清';
+      next = row.question.question_text; action = allowFreeText ? '回答澄清' : '查看待澄清事项';
     } else if (view.approve) {
       label = '待批准'; next = '核对交付、验收、权限与预算，再决定是否批准。'; action = '查看本版授权';
     } else if (canExtendBudget(row)) {
@@ -110,10 +111,13 @@ export function projectGoalRow(row) {
         reason='当前候选需要匿名评阅，正式材料就绪后会出现在原单。'; action='查看材料状态';
       } else {
         anchor='artifacts'; label = sequence ? '交付 v'+sequence+' · 待签收' : '待签收';
-        next = '核对当前候选和验收结果，签收或退回。'; action = '查看待签收版本';
+        if (!allowFreeText) reason='核对当前候选的交付文件和验收结果。';
+        next = allowFreeText ? '核对当前候选和验收结果，签收或退回。' : '核对通过后签收交付。'; action = '查看待签收版本';
       }
     } else if (view.modify || row.status === 'VERIFICATION_GAP') {
-      label = view.label || '待补条件'; next = '补充可验证的条件或说明需要调整的要求。'; action = '查看并补充';
+      label = view.label || '待补条件';
+      if (allowFreeText) { next = '补充可验证的条件或说明需要调整的要求。'; action = '查看并补充'; }
+      else { anchor='criteria'; action='查看验收条件'; }
     } else if (row.status === 'AWAITING_APPROVAL' && view.pause) {
       label = '待暂停旧版'; next = '暂停旧执行，停稳后再批准新版。'; action = '查看本版授权';
     } else {
@@ -491,8 +495,11 @@ function showDirection(parent, direction) {
 }
 
 export function mountGoalTeam(root, {request, renewSession, initial, regularOpen, regularVisibility, viewChanged, callHistory,
-  limitedCanary=false} = {}) {
+  formalModelInputConsent=false} = {}) {
   const call = (command, data) => request('/api/outer/'+command,data);
+  const supportsExperiments = !formalModelInputConsent;
+  const canSendText = row => !formalModelInputConsent || row.allow_model_input===true;
+  const project = row => projectGoalRow(row,{allowFreeText:canSendText(row)});
   const getDraft = draftStore();
   const queueHead = el('div',null,'goal-toolbar');
   const filterBar = el('div',null,'goal-actions');
@@ -513,7 +520,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   const known = new Set((initial?.drafts || []).map(row=>row.id));
   const cache = new Map();
   const confirmTitle = el('h3'); confirmTitle.id = 'goal-confirm-title';
-  const confirmText = el('p');
+  const confirmText = el('p'); confirmText.id = 'goal-confirm-text';
+  confirmBox.setAttribute('aria-describedby',confirmText.id);
   const confirmActions = el('div',null,'goal-actions');
   const cancelButton = button('取消',()=>confirmBox.close());
   const confirmButton = button('确认',()=>{
@@ -522,11 +530,16 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     action?.();
   },'primary');
   confirmActions.append(cancelButton,confirmButton); confirmBox.append(confirmTitle,confirmText,confirmActions);
-  confirmBox.addEventListener('close',()=>{confirmation = null;});
+  confirmBox.addEventListener('close',()=>{if (!confirmBox.open) confirmation = null;});
   function approveAction(heading, text, label, fn, cancelLabel='取消') {
     confirmTitle.textContent = heading; confirmText.textContent = text; confirmButton.textContent = label;
     cancelButton.textContent=cancelLabel;
+    if (formalModelInputConsent) ++loadVersion;
     confirmation = fn; confirmBox.showModal(); cancelButton.focus();
+  }
+  function askModelInputConsent(purpose, label, submit, consequence='') {
+    approveAction('允许发送本次内容给 Codex 模型？',
+      [purpose,consequence].filter(Boolean).join('\n'),label,()=>submit({allow_model_input:true}));
   }
   function route() {
     const query = new URLSearchParams(location.search);
@@ -599,7 +612,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   }
   function drawList() {
     if (data) for (const row of data.drafts || []) known.add(row.id);
-    const goalRows = (data?.drafts || []).map(projectGoalRow);
+    const goalRows = (data?.drafts || []).map(project);
     const rows = [...goalRows,...regular.filter(row=>!known.has(row.id))];
     const match = search.value.trim().toLowerCase();
     const shown = rows.filter(row=>(!match || (row.title+' '+row.id).toLowerCase().includes(match)) &&
@@ -663,7 +676,9 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   }
   async function perform(row, command, fields, feedback, success, draft, nextAnchor) {
     if (commandInFlight || !connected || row.id!==focused || selectedSnapshot!==row) return;
-    const version = ['extend_team_budget','lock_blind_ballot'].includes(command) ? {ticket_id:row.id,revision:row.revision} : binding(row);
+    const useTicketRevision = ['extend_team_budget','lock_blind_ballot'].includes(command) ||
+      (formalModelInputConsent && command==='submit');
+    const version = useTicketRevision ? {ticket_id:row.id,revision:row.revision} : binding(row);
     const payload = {...version,...fields};
     const fingerprint = JSON.stringify([command,payload]);
     let requestId = tokens.get(fingerprint) || draft?.data.requests?.[fingerprint];
@@ -793,6 +808,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const previewKey=stagedPreferenceKey(row,q);
     const draft=getDraft(previewKey || row.id+'/preference/'+q.id+'/'+q.revision);
     const fieldset=el('fieldset');
+    const allowFreeText=canSendText(row);
     const direction=directionQuestion(q);
     const digest=q.draft_sha256 || q.candidate_digest;
     const scopes=new Map();
@@ -825,18 +841,19 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     }
     const {group,field}=input('希望保留或修改什么？',draft,'text','goal-preference-text',{maxLength:2000});
     parent.append(fieldset);
-    if (!limitedCanary) parent.append(group);
+    if (allowFreeText) parent.append(group);
     const feedback=actionStatus(parent);
     field.addEventListener('input',()=>{feedback.textContent='';});
     parent.append(writeButton(direction ? '提交修改方向' : '提交选择','goal-submit-preference',()=>{
       const option=options.find(item=>item.id===draft.data.option_id);
       const option_id=option?.id;
-      const text=limitedCanary ? '' : field.value;
+      const text=!allowFreeText || (formalModelInputConsent && !field.value.trim()) ? '' : field.value;
       const conflict=preferenceDirectionConflict(option,text);
       if (conflict) { feedback.textContent=conflict; field.focus(); return; }
       if (!option_id && (q.requires_option || !text.trim())) {
-        if (q.requires_option || limitedCanary) {
-          feedback.textContent=limitedCanary ? '请先选择一个方向。' : '请先选择一个修改方向。你也可以补充意见。';
+        if (q.requires_option || !allowFreeText) {
+          feedback.textContent=(direction ? '请先选择一个修改方向。' : '请先选择一组样例。')+
+            (allowFreeText ? '你也可以补充意见。' : '');
           fieldset.querySelector('input')?.focus();
         } else {
           feedback.textContent=direction ? '请选择一个方向，或写下你的意见。' : '请选择一组样例，或写下你的意见。';
@@ -844,10 +861,13 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         }
         return;
       }
-      perform(currentDirection?.row || row,'answer_preference',{
+      const submit=(consent={})=>perform(currentDirection?.row || row,'answer_preference',{
         question_id:q.id,question_revision:q.revision,candidate_digest:q.candidate_digest,
-        answer:{option_id,text},
+        answer:{option_id,text},...consent,
       },feedback,'选择已记录，正在刷新原单。',draft);
+      if (formalModelInputConsent && text) {
+        askModelInputConsent('你填写的意见将发送给 Codex 模型，用于继续处理这张工单。','同意并提交',submit);
+      } else submit();
     },true));
   }
   function draftVersion(parent,label,digest) {
@@ -856,7 +876,12 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   function clarificationForm(row, parent) {
     const q=row.question, draft=getDraft(row.id+'/clarification/'+q.question_id+'/'+row.revision);
     const feedback=actionStatus(parent);
-    const submit=text=>perform(row,'submit',{text,question_id:q.question_id},feedback,'澄清回复已登记。',draft);
+    const submit=text=>{
+      const send=(consent={})=>perform(row,'submit',{text,question_id:q.question_id,...consent},feedback,'澄清回复已登记。',draft);
+      if (formalModelInputConsent) {
+        askModelInputConsent('这条澄清答复将发送给 Codex 模型，用于补齐原单条件。','同意并提交',send);
+      } else send();
+    };
     const options=el('div',null,'goal-actions');
     for (const [index,choice] of (q.options || []).entries())
       options.append(writeButton(renderValue(choice),'goal-clarification-option-'+index,()=>submit(renderValue(choice)),true));
@@ -1091,6 +1116,10 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     if (review.status==='locked') { lockedBlindResult(review,section); return; }
     const cases=review.projection?.cases;
     if (review.status!=='awaiting_ballot' || candidate.state!=='pending' || !cases?.length) return;
+    if (!supportsExperiments) {
+      section.append(el('p','这版安排了匿名评阅，请核对本单的验收安排。','goal-muted'));
+      return;
+    }
     const draft=getDraft(row.id+'/blind/'+review.experiment_id+'/'+review.manifest_digest);
     section.append(el('p','逐例比较甲和乙。选甲、乙或相当时请写理由，也可以留为未评。'));
     const judgments=new Map();
@@ -1150,17 +1179,19 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       approveAction('签收交付 '+name,'签收后归档当前候选。\n归档摘要 '+candidate.artifact_sha256,'确认签收',
         ()=>perform(row,'accept_artifact',reviewed,feedback,'已签收交付 '+name+'。',draft,'artifacts'));
     },true);
-    if (limitedCanary) {
-      parent.append(signoff);
-      return;
-    }
+    if (!blindRequired(row,candidate) || blindLocked(row,candidate)) parent.append(signoff);
+    if (!canSendText(row)) return;
     const rejection=details('退回 '+name,'return-'+candidate.assignment,Boolean(draft.data.reason));
     const {group,field}=input('这版需要改哪里？',draft,'reason','goal-return-reason',{required:true,maxLength:1000});
     rejection.append(group,writeButton('退回 '+name+' 继续修改','goal-return-artifact',()=>{
       if (!field.value.trim()) { feedback.textContent='请输入退回理由。'; field.focus(); return; }
-      perform(row,'return_artifact',{...reviewed,reason:field.value},feedback,'已记录 '+name+' 的退回理由。',draft,'artifacts');
+      const reason=field.value;
+      const submit=(consent={})=>perform(row,'return_artifact',{...reviewed,reason,...consent},
+        feedback,'已记录 '+name+' 的退回理由。',draft,'artifacts');
+      if (formalModelInputConsent) {
+        askModelInputConsent('退回 '+name+' 后，退回理由将发送给 Codex 模型，用于继续修改这版交付。','同意并退回',submit);
+      } else submit();
     }));
-    if (!blindRequired(row,candidate) || blindLocked(row,candidate)) parent.append(signoff);
     parent.append(rejection);
   }
   function displayArtifacts(row, parent) {
@@ -1259,7 +1290,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     if (!history.querySelector('p')) history.append(el('p','尚无执行记录。','goal-muted'));
     parent.append(history);
     if (protectedBallot) return;
-    displayBlindHistory(row,parent);
+    if (supportsExperiments) displayBlindHistory(row,parent);
     const diagnostics=details('角色与执行记录','outer-history',section==='outer-history');
     diagnostics.id='goal-section-outer-history';
     for (const item of execution?.team_activity || []) {
@@ -1285,7 +1316,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       };
       diagnostics.ontoggle=load; load();
     }
-    if (['PAUSED','STOPPED'].includes(row.status) || row.journey?.artifact_review || preferenceOf(row) || currentClarification(row)) return;
+    if (!canSendText(row) || ['PAUSED','STOPPED'].includes(row.status) || row.journey?.artifact_review || preferenceOf(row) || currentClarification(row)) return;
     const update=details('补充或修改要求','revisions',section==='revisions'); update.id='goal-section-revisions';
     const draft=getDraft(row.id+'/changes/'+row.revision);
     const contract=row.goal_contract || {};
@@ -1309,9 +1340,14 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     update.append(writeButton('提交本单要求','goal-submit-revision',()=>{
       if (!field.value.trim()) { feedback.textContent='请填写要求。'; field.focus(); return; }
       const replace_requirement_ids=choices.filter(option=>option.checked).map(option=>option.value);
-      const submit=()=>perform(row,'submit',{text:field.value,replace_requirement_ids:replace_requirement_ids.length?replace_requirement_ids:undefined},
+      const text=field.value;
+      const submit=(consent={})=>perform(row,'submit',{text,...consent,replace_requirement_ids:replace_requirement_ids.length?replace_requirement_ids:undefined},
         feedback,'补充或修改已登记。',draft);
-      if(replace_requirement_ids.length)approveAction('确认替换原要求','替换选中的 '+replace_requirement_ids.length+' 项要求，并重新核对契约。','确认替换',submit);
+      const replacement=replace_requirement_ids.length ? '替换选中的 '+replace_requirement_ids.length+' 项要求，并重新核对契约。' : '';
+      if (formalModelInputConsent) {
+        askModelInputConsent('你填写的要求将发送给 Codex 模型，用于重新整理本单的目标和验收条件。',
+          '同意并提交',submit,replacement);
+      } else if(replacement)approveAction('确认替换原要求',replacement,'确认替换',submit);
       else submit();
     }));
     parent.append(update);
@@ -1365,7 +1401,9 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       openDirection=null; main.replaceChildren(backButton);
       main.append(el('h2',receipt?.choices?.length?'这条需求属于哪张工单？':eventId?'需求已收到，正在建立工单':'正在核对原单'));
       if (eventId) main.append(el('p','收件号 '+eventId,'goal-muted'));
-      if (receipt?.choices?.length) {
+      if (receipt?.choices?.length && !supportsExperiments) {
+        main.append(el('p','请从工单簿打开已有工单，再提交补充要求。','goal-muted'));
+      } else if (receipt?.choices?.length) {
         for (const item of [...receipt.choices,{id:null,summary:'新建工单'}]) {
           const choice=button(item.summary || item.id,async()=>{
             if (commandInFlight || !connected) return;
@@ -1385,7 +1423,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       }
       return;
     }
-    const model=projectGoalRow(row), header=el('header',null,'goal-detail-head');
+    const model=project(row), header=el('header',null,'goal-detail-head');
     const heading=el('h2',model.title); heading.id='goal-ticket-title'; heading.tabIndex=-1;
     const identity=el('div',null,'goal-actions');
     identity.append(el('span',model.label,'goal-chip'),el('small',time(model.at),'goal-muted'));
@@ -1397,8 +1435,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     identity.append(copyId); header.append(heading,identity);
     const view=row.journey || {};
     const canDecide=model.station==='decision' && pref && !['PAUSED','STOPPED'].includes(row.status);
-    const directionKey=canDecide && !rejected
-      ? stagedPreferenceKey(row,pref) : '';
+    const stagedKey=canDecide && !rejected ? stagedPreferenceKey(row,pref) : '';
+    const directionKey=stagedKey && JSON.stringify([stagedKey,canSendText(row)]);
     // 同一版待定方向的表单和预览保持挂载，后台更新不重置阅读位置、选区和焦点。
     const keepDirection=directionKey && openDirection?.key===directionKey;
     const now=keepDirection ? openDirection.now : el('section',null,'goal-now');
@@ -1424,14 +1462,14 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         openDirection=direction;
         preferenceForm(row,pref,now,direction);
       } else if (pref && !['PAUSED','STOPPED'].includes(row.status)) preferenceForm(row,pref,now);
-      else if (!limitedCanary && currentClarification(row)) clarificationForm(row,now);
+      else if (canSendText(row) && currentClarification(row)) clarificationForm(row,now);
       else if (view.approve && row.approval_terms) approval(row,now);
-      else if (!limitedCanary && row.execution && canExtendBudget(row)) budgetDecision(row,now);
+      else if (row.execution && canExtendBudget(row)) budgetDecision(row,now);
       else if (view.artifact_review && panel!=='artifacts') now.append(button(
         model.anchor==='blind-review'?'查看匿名材料':'查看当前候选',()=>{
         panel='artifacts'; section=model.anchor; focusNext=true; writeRoute({id:row.id,anchor:section}); drawDetail(row);
       },'primary'));
-      else if (!limitedCanary && (view.modify || row.status==='VERIFICATION_GAP')) now.append(button('补充条件',()=>{
+      else if (canSendText(row) && (view.modify || row.status==='VERIFICATION_GAP')) now.append(button('补充条件',()=>{
         panel='decisions'; section='revisions'; focusNext=true; writeRoute({id:row.id,anchor:section}); drawDetail(row);
       },'primary'));
     }

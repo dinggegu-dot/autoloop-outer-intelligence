@@ -43,6 +43,9 @@ def create_task(workbench, body, *, source='web'):
         raise Problem('请填写工单目标，并使用有效的请求编号')
     if body.get('ticket_id') is not None:
         raise Problem('工作台试点入口仅用于新建工单', 409)
+    if body.get('allow_model_input') is True:
+        # 只保留建单授权证据，模型快照仍读取名称、目标和完成标准。
+        fields['allow_model_input'] = True
     result = workbench.outer().submit(source=source, source_event_id=request, actor_id='owner',
                                       text=fields['goal'], workbench_request=fields,
                                       goal_team=team_enabled)

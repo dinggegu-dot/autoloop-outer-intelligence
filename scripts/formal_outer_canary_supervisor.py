@@ -132,6 +132,7 @@ class Supervisor:
         self.env = {key: os.environ[key] for key in ('PATH', 'CODEX_HOME', 'LANG', 'LC_ALL', 'LC_CTYPE')
                     if key in os.environ}
         self.env.update(HOME=str(Path.home()), SHELL='/bin/sh', TMPDIR=str(self.runtime / 'tmp'))
+        self.auth_source = (Path(self.env.get('CODEX_HOME', Path.home() / '.codex')) / 'auth.json').resolve()
         outer_proxy = os.environ.get('AUTOLOOP_OUTER_PROXY_PORT')
         if outer_proxy:
             require(re.fullmatch(r'[0-9]{1,5}', outer_proxy) and 0 < int(outer_proxy) <= 65535,
@@ -139,6 +140,24 @@ class Supervisor:
             self.env['AUTOLOOP_OUTER_PROXY_PORT'] = outer_proxy
         self.processes = []
         self.stopping = False
+
+    def role_environment(self):
+        # 运行时只继承现有登录。个人 skills、项目目录和 MCP 配置不进入团队进程。
+        home = self.runtime / 'role-home'
+        codex = self.runtime / 'codex-home'
+        for directory in (home, codex):
+            directory.mkdir(mode=0o700, exist_ok=True)
+            owned(directory, directory=True)
+        owned(self.auth_source)
+        auth = codex / 'auth.json'
+        if not auth.exists() and not auth.is_symlink():
+            auth.symlink_to(self.auth_source)
+        if auth.is_symlink():
+            require(auth.resolve() == self.auth_source, '团队 Codex 登录指向了不同身份')
+        else:
+            # CLI 刷新身份文件时可能用私有文件原子替换链接。
+            owned(auth)
+        return dict(self.env, HOME=str(home), CODEX_HOME=str(codex), AUTOLOOP_REQUIRE_SCOPED_WORKSPACE='1')
 
     def rules(self):
         rule = 'odyssey-goal'
@@ -265,22 +284,23 @@ class Supervisor:
         if not self.runtime.exists() and not self.runtime.is_symlink():
             self.initialize()
         owner = self.validate_runtime()
+        role_env = self.role_environment()
         self.alive()
         hub_log = self.start('hub', [*self.cli, 'up'], dict(self.env, AGENT_AUTOLOOP_HOME=str(self.runtime / 'hub')))
         self.wait_ready(lambda: hub_log(f'[hub] listening on 127.0.0.1:{self.hub_port}')
                         and request(self.hub_port, '/healthz') == 200, 'hub')
-        self.start('worker', [*self.cli, 'up'], dict(self.env, AGENT_AUTOLOOP_HOME=str(self.runtime / 'worker')))
+        self.start('worker', [*self.cli, 'up'], dict(role_env, AGENT_AUTOLOOP_HOME=str(self.runtime / 'worker')))
         self.wait_ready(lambda: request(self.hub_port, '/v1/state', {'Authorization': f'Bearer {owner}'}) is True,
                         'worker')
         board_log = self.start('board', [sys.executable, '-B', str(self.board), '--goal-pilot',
                                '--outer-intelligence', '--outer-goal-team', '--outer-workbench-entry', '--outer-model-timeout', '120',
                                '--runtime', str(self.runtime / 'workbench'), '--hub-home', str(self.runtime / 'hub'),
-                               '--port', str(self.board_port)], dict(self.env, AUTOLOOP_CANARY_GATEWAY_KEY=self.gateway_key))
+                               '--port', str(self.board_port)], dict(role_env, AUTOLOOP_CANARY_GATEWAY_KEY=self.gateway_key))
         self.wait_ready(lambda: board_log(f'Local: http://127.0.0.1:{self.board_port}')
                         and board_ready(self.board_port, self.gateway_key), 'board')
         require(not self.scheduler_running(), '已有其他目标调度器持有灰度账本')
         self.start('scheduler', [sys.executable, '-B', str(self.goal), 'serve',
-                                '--runtime', str(self.runtime / 'workbench'), '--hub', str(self.runtime / 'hub')], self.env)
+                                '--runtime', str(self.runtime / 'workbench'), '--hub', str(self.runtime / 'hub')], role_env)
         self.wait_ready(self.scheduler_running, 'scheduler')
         self.alive()
         print('READY', flush=True)

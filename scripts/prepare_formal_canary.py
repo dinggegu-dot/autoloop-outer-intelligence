@@ -1,4 +1,4 @@
-"""构建正式 8765 的合成单灰度叠加层和独立 V2 服务目录。"""
+"""构建正式工作台的 Codex 团队入口和签名回环服务。"""
 import argparse
 import hashlib
 import json
@@ -58,16 +58,56 @@ def frontend(formal, front):
     html = replace_once(html, dialog, '''</span></button><!--OUTER-CANARY-BEGIN--><div class="wb-actions">
 <button id="outer-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成索引试单</button>
 <button id="outer-team-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成简报试单</button>
-<a href="/workbench">查看智能试单</a></div><!--OUTER-CANARY-END--></form></dialog>''')
+<a href="/workbench">查看 Codex 团队工单</a></div><!--OUTER-CANARY-END--></form></dialog>''')
+    html = replace_once(html, '<p class="draft-warning" id="task-form-status">',
+                        '''<!--OUTER-TEAM-OPTIONS-BEGIN--><fieldset id="outer-team-options" class="model-fields">
+<legend>任务交给谁</legend>
+<label><input type="checkbox" id="outer-goal-team"> 使用 Codex 团队</label>
+<div id="outer-team-settings" hidden>
+<label for="outer-team-review-mode">团队审稿</label>
+<select id="outer-team-review-mode">
+<option value="">随任务自动安排</option>
+<option value="review">比较方案并审稿</option>
+<option value="review_and_decide">从第 2 步审稿并请我定方向</option>
+</select>
+<label><input type="checkbox" id="outer-team-consent"> 允许把本单填写的名称、目标和完成标准发送给 Codex</label>
+<p class="draft-warning">勾选后开始研判。执行等你在工单批准。请只填写获准发送的内容。</p>
+</div></fieldset><!--OUTER-TEAM-OPTIONS-END--><p class="draft-warning" id="task-form-status">''')
+    server = replace_once(server, "            body = body.replace(b'<!--OUTER-CANARY-END-->', b'</template>', 1)",
+                          """            body = body.replace(b'<!--OUTER-CANARY-END-->', b'</template>', 1)
+            body = body.replace(b'<!--OUTER-TEAM-OPTIONS-BEGIN-->', b'<template>', 1)
+            body = body.replace(b'<!--OUTER-TEAM-OPTIONS-END-->', b'</template>', 1)""")
     tasks = replace_once((formal / "tasks.js").read_text(), """    if (working) return;
     working = true;
     const button = form.querySelector('[type=submit]');""", """    if (working) return;
-    if (['outer-canary-submit','outer-team-canary-submit'].includes(event.submitter?.id)) {
+    const team = Boolean(node('#outer-goal-team')?.checked);
+    const synthetic = ['outer-canary-submit','outer-team-canary-submit'].includes(event.submitter?.id);
+    if (team || synthetic) {
+      const consent = node('#outer-team-consent');
+      if (!synthetic && !consent.checked) {
+        node('#task-form-status').textContent = '登记前请确认是否同意将本单填写的内容发送给 Codex。';
+        consent.focus();
+        return;
+      }
       working = true;
-      event.submitter.disabled = true;
+      const submitter = event.submitter || form.querySelector('[type=submit]');
+      submitter.disabled = true;
       try {
-        const fixture = event.submitter.id === 'outer-team-canary-submit' ? 'goal-team-brief-v1' : 'filename-index-v2';
-        const result = await post('/api/tasks', {workflow:'outer',fixture});
+        let body;
+        if (synthetic) {
+          const fixture = submitter.id === 'outer-team-canary-submit' ? 'goal-team-brief-v1' : 'filename-index-v2';
+          body = {workflow:'outer',fixture};
+        } else {
+          const name = form.elements.name.value.trim();
+          const goal = form.elements.goal.value.trim();
+          if (!goal) throw Error('请填写希望完成的目标。');
+          const acceptance = form.elements.acceptance.value.trim();
+          body = {workflow:'outer',name:name || Array.from(goal).slice(0,80).join(''),goal,acceptance,
+                  allow_model_input:true,request_id:requestId ||= crypto.randomUUID()};
+          const mode = node('#outer-team-review-mode').value;
+          if (mode) body.team_review_mode = mode;
+        }
+        const result = await post('/api/tasks', body);
         const target = new URL('/workbench', location.origin);
         if (result.ticket_id) target.searchParams.set('goal', result.ticket_id);
         else target.searchParams.set('outer_event', result.event_id);
@@ -76,12 +116,38 @@ def frontend(formal, front):
         node('#task-form-status').textContent = error.message;
       } finally {
         working = false;
-        event.submitter.disabled = false;
+        submitter.disabled = false;
       }
       return;
     }
     working = true;
     const button = form.querySelector('[type=submit]');""")
+    tasks = replace_once(tasks, "  const modeInput=node('#task-mode'), timeInput=node('#task-budget');",
+                         """  const teamMode=node('#outer-goal-team');
+  const teamConsent=node('#outer-team-consent');
+  const teamModelFields=form.querySelector('fieldset.model-fields');
+  const syncTeamMode=()=>{
+    const enabled=Boolean(teamMode?.checked);
+    if (!teamMode) return;
+    node('#outer-team-settings').hidden=!enabled;
+    if (!enabled) teamConsent.checked=false;
+    teamModelFields.hidden=enabled;
+    for (const id of ['task-mode','task-budget']) {
+      node('#'+id).hidden=enabled;
+      form.querySelector('label[for="'+id+'"]').hidden=enabled;
+    }
+    const button=form.querySelector('[type=submit]');
+    if (!button.dataset.defaultText) button.dataset.defaultText=button.textContent;
+    button.textContent=enabled?'登记目标':button.dataset.defaultText;
+  };
+  teamMode?.addEventListener('change',syncTeamMode);
+  for (const name of ['name','goal','acceptance']) {
+    form.elements[name].addEventListener('input',()=>{if(teamConsent)teamConsent.checked=false;});
+  }
+  node('#task-dialog').addEventListener('close',()=>{if(teamConsent)teamConsent.checked=false;});
+  form.addEventListener('reset',()=>setTimeout(syncTeamMode,0));
+  syncTeamMode();
+  const modeInput=node('#task-mode'), timeInput=node('#task-budget');""")
     for name, text in zip(FRONT_FILES, (server, html, tasks)):
         write(front / name, text)
     shutil.copy2(REPO / "scripts/formal_outer_canary.py", front / "outer_canary.py")
@@ -95,7 +161,7 @@ def frontend(formal, front):
     app = replace_once(app, "launch.hidden=false;launch.textContent", "launch.hidden=true;launch.textContent")
     app = replace_once(app, "if(new URLSearchParams(location.search).has('new'))launch.click();", "")
     app = replace_once(app, "request,renewSession,initial:outer,callHistory,",
-                       "request,renewSession,initial:outer,callHistory,limitedCanary:true,")
+                       "request,renewSession,initial:outer,callHistory,formalModelInputConsent:true,")
     app = app.replace("'/api/tasks", "'/api/outer-canary/tasks").replace("'/api/outer'", "'/api/outer-canary/drafts'")
     write(ui / "app.js", app)
     outer = (BOARD / "outer.js").read_text().replace("'/api/tasks/", "'/api/outer-canary/tasks/").replace(
@@ -145,20 +211,29 @@ def backend(app):
             proof = response_proof(os.environ['AUTOLOOP_CANARY_GATEWAY_KEY'], self.canary_nonce, status, body)
             self.send_header('X-Odyssey-Canary-Proof', proof)
         for key, value in headers:""")
-    server = replace_once(server, "            if dsh:\n                return self.dsh_command", """            from outer_canary import SYNTHETIC_ORDER, TEAM_ORDER, valid_command
+    server = replace_once(server, "            if dsh:\n                return self.dsh_command", """            from outer_canary import (
+                SYNTHETIC_ORDER, TEAM_ORDER, command_uses_model_input, valid_command, valid_custom_order,
+            )
             if path == '/api/tasks':
-                if body not in (SYNTHETIC_ORDER, TEAM_ORDER):
-                    raise Problem('灰度后台仅接收内置合成工单', 409)
+                if body not in (SYNTHETIC_ORDER, TEAM_ORDER) and not valid_custom_order(body):
+                    raise Problem('请从工作台确认本单资料范围后登记', 409)
             elif not path.startswith('/api/outer/') or not valid_command(path.removeprefix('/api/outer/'), body):
                 raise Problem('灰度后台未开放此操作', 400)
             if dsh:
                 return self.dsh_command""")
     approval = "                return self.json_response(dispatch(workbench.outer(),'web',cmd,body))"
-    server = replace_once(server, approval, """                if cmd == 'approve':
+    server = replace_once(server, approval, """                free_text = command_uses_model_input(cmd, body)
+                if cmd == 'approve' or free_text:
                     current = workbench.outer().get(body.get('ticket_id'), 'owner')
+                    if free_text and current.get('allow_model_input') is not True:
+                        raise Problem('当前固定试单只接受预设选项。可另建自定义目标工单。', 409)
+                if cmd == 'approve':
                     criteria = (current.get('acceptance_contract') or {}).get('criteria', [])
-                    if not criteria or any(c.get('verification_type') != 'DETERMINISTIC' for c in criteria):
-                        raise Problem('合成索引灰度只接受确定性验收', 409)
+                    if any(c.get('verifier_id') == 'blind-projection' for c in criteria):
+                        raise Problem('盲评需使用独立试验工作台。可在此单调整验收方式。', 409)
+                    if current.get('allow_model_input') is not True and (not criteria or any(
+                            c.get('verification_type') != 'DETERMINISTIC' for c in criteria)):
+                        raise Problem('固定试单只接受确定性验收', 409)
                 return self.json_response(dispatch(workbench.outer(),'web',cmd,body))""")
     server = replace_once(server, "    if args.outer_goal_team and (\n", """    # 只有签名网关后的专用灰度进程可用持久 side runtime。
     signed_canary = (args.runtime is not None and args.hub_home is not None
@@ -175,7 +250,8 @@ def backend(app):
     write(app / "server.py", server)
     workbench = (app / "outer_workbench.py").read_text()
     workbench = replace_once(workbench, "    team_enabled = getattr(workbench, 'outer_goal_team', False)",
-                             "    team_enabled = getattr(workbench, 'outer_goal_team', False) and 'team_review_mode' in body")
+                             "    team_enabled = getattr(workbench, 'outer_goal_team', False) and (\n"
+                             "        'team_review_mode' in body or body.get('allow_model_input') is True)")
     write(app / "outer_workbench.py", workbench)
     shutil.copy2(REPO / "scripts/formal_outer_canary_wire.py", app)
     shutil.copy2(REPO / "scripts/formal_outer_canary.py", app / "outer_canary.py")

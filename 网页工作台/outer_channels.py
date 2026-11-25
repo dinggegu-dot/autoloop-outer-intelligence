@@ -18,6 +18,7 @@ EXECUTION_STATUS = {'created':'已创建','planning':'正在规划','queued':'�
 
 def dispatch(service, source, command, body):
     """身份来自本机 session 或已经验证的桥签名，调用方不能指定 actor。"""
+    consent = {'allow_model_input': True} if source == 'web' and body.get('allow_model_input') is True else {}
     if command == 'list':
         return [dict(row,journey=journey(row)) for row in service.list(OWNER)]
     if command == 'event':
@@ -30,7 +31,7 @@ def dispatch(service, source, command, body):
                               text=body['text'], source_thread_id=body.get('thread'),
                               ticket_id=body.get('ticket_id'), question_id=body.get('question_id'),
                               expected_ticket_revision=body.get('revision'),
-                              replace_requirement_ids=body.get('replace_requirement_ids'))
+                              replace_requirement_ids=body.get('replace_requirement_ids'), **consent)
     ticket = body['ticket_id']
     if not isinstance(ticket, str) or not TICKET.fullmatch(ticket):
         raise Problem('工单编号无效')
@@ -50,7 +51,7 @@ def dispatch(service, source, command, body):
     if command == 'answer_preference':
         return service.answer_preference(ticket, body['revision'], body['question_id'], body['question_revision'],
                                          body['candidate_digest'], body['answer'], body['request_id'],
-                                         actor_id=OWNER, source=source)
+                                         actor_id=OWNER, source=source, **consent)
     if command == 'lock_blind_ballot':
         return service.workbench.blind_review().lock_ballot(
             ticket, body['revision'], body['experiment_id'], body['manifest_digest'], body['judgments'],
@@ -71,7 +72,8 @@ def dispatch(service, source, command, body):
         operation = command.removesuffix('_artifact')
         return service.decide_artifact(ticket, operation, body['revision'], body['candidate'],
                                        body['artifact_sha256'], body.get('reason', ''), body['request_id'],
-                                       actor_id=OWNER, source=source, source_thread_id=body.get('thread'))
+                                       actor_id=OWNER, source=source, source_thread_id=body.get('thread'),
+                                       **(consent if operation == 'return' else {}))
     if command in ('pause','resume','stop'):
         return service.control(ticket, command, body['revision'], body['request_id'], actor_id=OWNER, source=source,source_thread_id=body.get('thread'))
     raise Problem('未知操作',404)
