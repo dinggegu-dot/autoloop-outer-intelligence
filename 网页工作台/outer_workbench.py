@@ -2,14 +2,17 @@
 import re
 
 from workbench import Problem
+from superagent.goal_team_records import TEAM_REVIEW_MODES
 
 
-def create_task(workbench, body):
+def create_task(workbench, body, *, source='web'):
     outer_enabled = getattr(workbench, 'outer_enabled', False)
     enabled = getattr(workbench, 'outer_workbench_entry', False)
     if outer_enabled and not enabled:
         raise Problem('请在智能接单入口登记需求', 409)
     if body.get('workflow') != 'outer':
+        if 'team_review_mode' in body:
+            raise Problem('请在目标模式下选择审稿方式', 409)
         if enabled:
             with workbench.store.connect() as db:
                 existing = db.execute(
@@ -21,17 +24,26 @@ def create_task(workbench, body):
         return workbench.create(body)
     if not enabled:
         raise Problem('当前工作台未启用智能工单试点', 409)
+    team_enabled = getattr(workbench, 'outer_goal_team', False)
     fields = {}
     for key, limit in (('name', 80), ('goal', 6000), ('acceptance', 4000)):
         value = body.get(key, '')
         if not isinstance(value, str) or len(value.strip()) > limit:
             raise Problem('工单名称、目标或完成标准的格式无效')
         fields[key] = value.strip()
+    if 'team_review_mode' in body:
+        mode = body['team_review_mode']
+        if mode not in TEAM_REVIEW_MODES:
+            raise Problem('请选择有效的方案审稿方式')
+        if source != 'web' or not team_enabled:
+            raise Problem('当前入口未启用团队审稿', 409)
+        fields['team_review_mode'] = mode
     request = body.get('request_id')
     if not fields['goal'] or not isinstance(request, str) or not re.fullmatch('[a-f0-9-]{36}', request):
         raise Problem('请填写工单目标，并使用有效的请求编号')
     if body.get('ticket_id') is not None:
         raise Problem('工作台试点入口仅用于新建工单', 409)
-    result = workbench.outer().submit(source='web', source_event_id=request, actor_id='owner',
-                                      text=fields['goal'], workbench_request=fields)
+    result = workbench.outer().submit(source=source, source_event_id=request, actor_id='owner',
+                                      text=fields['goal'], workbench_request=fields,
+                                      goal_team=team_enabled)
     return dict(result, workflow='outer')

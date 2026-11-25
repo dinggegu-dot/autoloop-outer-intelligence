@@ -1,0 +1,159 @@
+{
+  "date": "2026-11-25",
+  "synthetic": true,
+  "result": "PASS",
+  "entry": "Google Chrome → 隔离工作台 → 新建工单 → 目标模式 → 从第 2 步审稿并请我定方向",
+  "ticket_ref_sha256": "c30aaf73fb613d64d59a53ee03ff24fb7f8ba4813b865359e2463fd773a45ab8",
+  "approval": {
+    "operator_kind": "acceptance_test",
+    "effective_events": 1,
+    "mandate_revision": 1,
+    "goal_revision": 1,
+    "acceptance_revision": 1,
+    "team_review_mode": "review_and_decide",
+    "require_signoff": true
+  },
+  "runtime": {
+    "roles": "Codex App Server",
+    "confirmed_isolated_ports": {
+      "workbench": 62840,
+      "hub": 62841
+    },
+    "workbench_only": true,
+    "formal_listener_pids_preserved": {
+      "8765": 738,
+      "8766": 748
+    },
+    "isolated_hub_pid_preserved": 81000,
+    "served_assets_match_source": [
+      "task_presentation.js",
+      "goal_team.js",
+      "goal_team.css"
+    ]
+  },
+  "first_stage": {
+    "independent_review_run": 3,
+    "result": "PASS",
+    "verified_file_preserved": "stable-outline.html"
+  },
+  "draft": {
+    "run": 4,
+    "roles_in_order": [
+      "lead:read",
+      "advisor:read",
+      "lead:write",
+      "advisor:read",
+      "lead:ask"
+    ],
+    "seal_sha256": "0f73854b7bb8e6ffe06b24fabbaf08dadd3d2bfbd9bc63778dc160b89eb8d480",
+    "question_revision": 1,
+    "candidate_digest": "452423a02a28d83e18304f027e4cb8359ecebf357071dfb78b866696e4cdf2c1",
+    "files": {
+      "stable-brief.html": {
+        "bytes": 964,
+        "sha256": "0672d650455ac49e44b19858a0c9702bd7c74ea0e44a569e6d005185c0739907"
+      },
+      "stable-outline.html": {
+        "bytes": 1198,
+        "sha256": "cc66ea4a0685ac063e68c025a642b5383df69e7e749f250cd7afbb4f09a22c1f"
+      }
+    }
+  },
+  "independent_read_only_checks": {
+    "file_manifest_and_preview_bytes_match_archived_receipt_and_sqlite": true,
+    "advisor_observations_match_saved_handoff": 2,
+    "direction_modes_match_saved_handoff": [
+      "keep",
+      "edit",
+      "edit"
+    ],
+    "preview_before_question": 409,
+    "extra_query_field": 400,
+    "incorrect_question_revision_or_digest": 409,
+    "undeclared_path": 404,
+    "unauthenticated_preview": 403,
+    "final_download_during_execution_and_preference_wait": 404,
+    "ticket_and_business_events_unchanged_after_preview": true
+  },
+  "final_state": {
+    "ticket": "awaiting_preference",
+    "active_assignments": 0,
+    "preference_answers": 0,
+    "artifact_signoffs": 0
+  },
+  "chrome_observed": {
+    "entry": "工作台首页「等你拍板」进入原单",
+    "starts_collapsed": true,
+    "inline_headings": {
+      "stable-brief.html": "Launch Brief",
+      "stable-outline.html": "Source Outline"
+    },
+    "full_source_utf8_bytes_and_sha256_match_both_archived_files": true,
+    "advisor_excerpt_and_issue_visible": true,
+    "three_direction_cards_show_changes_and_retained_content": true,
+    "advisor_file_button_reopens_preview_and_switches_file": true,
+    "second_stage_still_awaits_decision_with_no_direction_selected": true
+  },
+  "after_user_choice": {
+    "selection": {
+      "source": "web",
+      "effective_events": 1,
+      "option": "keep-draft",
+      "label": "原样保留",
+      "has_note": false,
+      "question_revision": 1,
+      "candidate_digest": "452423a02a28d83e18304f027e4cb8359ecebf357071dfb78b866696e4cdf2c1",
+      "original_draft_sha256": "0f73854b7bb8e6ffe06b24fabbaf08dadd3d2bfbd9bc63778dc160b89eb8d480",
+      "reused_approval_and_question_binding": true
+    },
+    "continuation": {
+      "run": 5,
+      "changed_files": [],
+      "removed_files": [],
+      "retained_whole_files": [
+        "stable-brief.html",
+        "stable-outline.html"
+      ],
+      "byte_equal_to_draft": true,
+      "lead_verified_read_paths": [
+        "stable-brief.html",
+        "stable-outline.html"
+      ]
+    },
+    "independent_review": {
+      "run": 6,
+      "checks": {
+        "stable-outline-html": "PASS",
+        "stable-brief-html": "PASS"
+      },
+      "archived_bytes_match_draft": true,
+      "archive_sha256": "0f73854b7bb8e6ffe06b24fabbaf08dadd3d2bfbd9bc63778dc160b89eb8d480",
+      "bound_to_pending_signoff": true,
+      "old_draft_preview_status": 409,
+      "unsigned_final_download_status": 404,
+      "offered_candidate_download_bytes_match": true,
+      "read_only_probe_left_ledger_unchanged": true
+    },
+    "latest_state": {
+      "ticket": "awaiting_artifact_review",
+      "signoff_events": 0,
+      "active_assignments": 0
+    },
+    "chrome_observed": {
+      "offered_version": 1,
+      "listed_files": 2,
+      "machine_checks_passed": 2,
+      "signoff_and_return_controls_visible": true,
+      "signoff_or_return_clicked": false
+    },
+    "result": "PASS"
+  },
+  "after_user_signoff": {
+    "ticket": "completed",
+    "accepted_version": 1,
+    "effective_signoff_events": 1,
+    "source": "web",
+    "accepted_archive_sha256": "0f73854b7bb8e6ffe06b24fabbaf08dadd3d2bfbd9bc63778dc160b89eb8d480",
+    "final_downloads_match_verified_archive": 2
+  }
+}

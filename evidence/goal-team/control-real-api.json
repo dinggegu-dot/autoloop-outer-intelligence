@@ -1,0 +1,67 @@
+{
+  "synthetic": true,
+  "entry": "普通新单业务 API",
+  "mode": "control",
+  "runtime": "codex-app-server",
+  "passed": true,
+  "criteria": {
+    "search.py": [
+      "search-alpha-example",
+      "search-alpha-variant",
+      "search-z-example",
+      "search-z-variant"
+    ],
+    "update.py": [
+      "update-alpine-example",
+      "update-alpine-variant",
+      "update-zebra-example",
+      "update-zebra-variant"
+    ]
+  },
+  "wrong_approval_version_rejected": true,
+  "approved": {
+    "goal_revision": 1,
+    "acceptance_revision": 1,
+    "revision": 3
+  },
+  "stage_one": {
+    "checks": {
+      "search-alpha-example": "PASS",
+      "search-alpha-variant": "PASS",
+      "search-z-example": "PASS",
+      "search-z-variant": "PASS"
+    },
+    "artifact_sha256": "878709a530b2a33a11330d4e1c771f66b916cfe2c8aff543ab1b60437e1d1a39"
+  },
+  "unseen_inputs": [
+    {
+      "id": "unseen-search",
+      "passed": true,
+      "detail": "expected JSON matched in both isolated executions"
+    },
+    {
+      "id": "unseen-update",
+      "passed": true,
+      "detail": "expected JSON matched in both isolated executions"
+    }
+  ],
+  "delivery": {
+    "checks": {
+      "search-alpha-example": "PASS",
+      "search-alpha-variant": "PASS",
+      "search-z-example": "PASS",
+      "search-z-variant": "PASS",
+      "update-alpine-example": "PASS",
+      "update-alpine-variant": "PASS",
+      "update-zebra-example": "PASS",
+      "update-zebra-variant": "PASS"
+    },
+    "artifact_sha256": "e51d573e40d700e8ef5718cb64614f5fe8eb471f54650989f7e977e71dd33f4e",
+    "mandate_revision": 1
+  },
+  "ticket_ref_sha256": "30269eadf98098933738e5e82b761f086553f6c7150ae47d241168c2d7b853b3",
+  "operator": "acceptance_test",
+  "browser_controlled": false,
+  "approval_count": 1,
+  "formal_listener_unchanged": true
+}

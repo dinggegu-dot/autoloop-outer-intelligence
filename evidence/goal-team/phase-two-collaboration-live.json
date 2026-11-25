@@ -1,0 +1,285 @@
+{
+  "ticket": "wb-14aec3853240490abf62593ea5cf1b8f",
+  "outer_status": "AUTHORIZED",
+  "checks": {
+    "phase-two-outline.html": "outline-html",
+    "phase-two-final.html": "final-html"
+  },
+  "verification_gaps": [],
+  "status": "completed",
+  "stage": "verified_complete",
+  "assignments": [
+    [
+      1,
+      "plan",
+      0,
+      "settled"
+    ],
+    [
+      2,
+      "execute",
+      0,
+      "settled"
+    ],
+    [
+      3,
+      "review",
+      0,
+      "settled"
+    ],
+    [
+      4,
+      "execute",
+      1,
+      "settled"
+    ],
+    [
+      5,
+      "execute",
+      1,
+      "settled"
+    ],
+    [
+      6,
+      "review",
+      1,
+      "settled"
+    ]
+  ],
+  "error": "",
+  "first_stage": {
+    "run": 3,
+    "archive": {
+      "digest": "674dd6807c78d3f0a6f33fdf97f434a73c5eb1831751fb24132aeadcc6c23922",
+      "files": {
+        "phase-two-outline.html": "bfa4a4dd0c2df8fb939332be41ffec1269bded118175961ad5d5b101831e252d"
+      },
+      "artifacts": [
+        "phase-two-outline.html"
+      ]
+    },
+    "roles": [
+      {
+        "sequence": 1,
+        "role": "lead",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "prompt_sha256": "b90796be2a42f7952bc78fdfea2a19f142db47abf831007463dfbd913fa06fa9",
+        "candidate_sha256": null,
+        "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+        "session_sha256": "ec6efdaf6053de243ad1ddfc562eb95c3d75c5d9d886e42d4d0524aad2dee2a2",
+        "turn_sha256": "4aae3df947cf9f7f2640ba4ad1fe85295c4997dff693e31ba161504002c9cc46"
+      }
+    ]
+  },
+  "draft": {
+    "run": 4,
+    "manifest": {
+      "digest": "4d11aef887913ae7ee4fe4bc2095d6833578f9ddd94a5f076800a5efde5b0cb9",
+      "files": {
+        "phase-two-final.html": "e943dff2bf84ef12f0194263366c3934259e456a1c9ca7bc46ba603097201446",
+        "phase-two-outline.html": "bfa4a4dd0c2df8fb939332be41ffec1269bded118175961ad5d5b101831e252d"
+      },
+      "artifacts": [
+        "phase-two-final.html",
+        "phase-two-outline.html"
+      ]
+    },
+    "roles": [
+      {
+        "sequence": 1,
+        "role": "lead",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "prompt_sha256": "fdf005aad78aa8620ea3f93ff5557070411ee1d10b8cd9b2c29b728f45acf6c3",
+        "candidate_sha256": "674dd6807c78d3f0a6f33fdf97f434a73c5eb1831751fb24132aeadcc6c23922",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "session_sha256": "c3be1dfa4e33f133a738ae41832549debf64be38682fcbd4e486f4687fe7465a",
+        "turn_sha256": "625d20dd4c3a15a19ffad20c57db4a8999fb9e4432c50ba6ac5ad5803a73d70b"
+      },
+      {
+        "sequence": 2,
+        "role": "advisor",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "prompt_sha256": "70b14adb515cd1da761fb7eb9d22968968b354a2ab03e0615aff52926f2cd95d",
+        "candidate_sha256": "674dd6807c78d3f0a6f33fdf97f434a73c5eb1831751fb24132aeadcc6c23922",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "session_sha256": "65439727e4a6afd2e9712e07011af7ed23cc1c005a3865ba5eebd206cce3ae72",
+        "turn_sha256": "921a739a59c8ef8c83f9d5bdc8401e9070d8971673003d80c030d934ca3d98d3"
+      },
+      {
+        "sequence": 3,
+        "role": "lead",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "prompt_sha256": "52cc7ad652b886df048b94d09300e5616a20f75aaf22834d14c9452f97aa5e80",
+        "candidate_sha256": "4d11aef887913ae7ee4fe4bc2095d6833578f9ddd94a5f076800a5efde5b0cb9",
+        "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+        "session_sha256": "0d91af82383a0dc16765e7975038c6a0ccda1ab988c1bcba7cc40b230ec9b8b9",
+        "turn_sha256": "8a886d8459b2e024f40027774077e9dc02c489b3ad147e4fe77d3c04ef0a39dd"
+      },
+      {
+        "sequence": 4,
+        "role": "advisor",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "prompt_sha256": "57c653c79e57f73d7280c831a361f7b8e42bd6230b00b126f434a57eebe36416",
+        "candidate_sha256": "4d11aef887913ae7ee4fe4bc2095d6833578f9ddd94a5f076800a5efde5b0cb9",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "session_sha256": "c3fb94bc9960c5ccaa038ddec8c2c28462f5b37f6fb0d20df3e5152ee1f1b100",
+        "turn_sha256": "67efd9d3a3805f69156c8c0a54f77206b44f848cb2e736fb62e7ff1ede92a133"
+      },
+      {
+        "sequence": 5,
+        "role": "lead",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "prompt_sha256": "96c9d691ffaff47a7caa138a5e674d3bc0a3591d1bf783c6939cd5793ef65b47",
+        "candidate_sha256": "4d11aef887913ae7ee4fe4bc2095d6833578f9ddd94a5f076800a5efde5b0cb9",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "session_sha256": "3c5bc6a08690b327e962c5f196b3fc48dcee86458a74b3ac0a6d043a41dbf21f",
+        "turn_sha256": "581dc388bd9fabd71cd6e4d4779554961266e6e859e4bf64f7ff0eb9577b8df0"
+      }
+    ],
+    "review_evidence": [
+      {
+        "excerpt": "<title>Event Brief</title>",
+        "issue": "第 5 行：位于 head 中，是全文唯一的 title，文本符合要求。",
+        "path": "phase-two-final.html"
+      },
+      {
+        "excerpt": "<h1>Launch Brief</h1>",
+        "issue": "第 9 行：文本完全匹配的一级标题恰好一个。",
+        "path": "phase-two-final.html"
+      },
+      {
+        "excerpt": "<section id=\"release-notice\">",
+        "issue": "第 10 行：指定 ID 恰好出现于一个元素。本机 xmllint 的 HTML 解析器对 HTML5 的 main 和 section 报出不识别提示，但仍保留了这两个元素，XPath 计数不受影响。",
+        "path": "phase-two-final.html"
+      }
+    ],
+    "read_tool_receipt_count": 2,
+    "comparison": "已在工作区新增独立的 `phase-two-final.html` 初稿，供负责人决定是否沿用。采纳负责人方案的独立、简洁、无外部依赖结构，避免改动已验收的大纲；采纳顾问方案中可见的发布提示，让审阅者明确知道哪些事项仍待确认。未照搬顾问样例的通用 `div` 和对外分享措辞：改用原生 `main` 和 `section` 表达页面结构，正文只说明发布时间和后续步骤待确认，不暗示已经批准或可以发布。实际文件已通过本地离线检查；未代为批准、签收或发布。",
+    "review": "已读取实际封存的 phase-two-final.html，并用本地解析器离线核对：全文只有一个 title，文本为 Event Brief；文本为 Launch Brief 的 h1 恰好一个；ID 为 release-notice 的元素恰好一个。两份 HTML 的 SHA-256 均与封存记录一致。本轮技术验收项均满足，未修改文件，也未代负责人批准或签收。",
+    "instructions": [
+      "phase-two-final.html 第 10–13 行（发布提示区）：本人选定后，执行者仅处理第 12 行正文；沿用现稿则不改，状态版替换为一段，清单版替换为引导段和两项列表。保留容器、ID 和二级标题。",
+      "phase-two-final.html 第 5、9、10 行：执行者对选定版本运行 `final-html`，离线解析实际文件，确认全篇唯一的 `<title>` 在 `<head>` 中且为 `Event Brief`，`Launch Brief` 一级标题和 `release-notice` ID 各匹配一次。",
+      "phase-two-outline.html 全文件不修改：执行者复核 SHA-256 与上一阶段检查点一致，并离线确认 `Plan Sheet` 文档标题、`Source Outline` 一级标题及 `brief-outline` ID 各匹配一次。"
+    ],
+    "options": [
+      "沿用现稿：保留审阅说明",
+      "只报状态：缩短通知",
+      "改成清单：逐项核对"
+    ]
+  },
+  "effective_contract_approvals": 1,
+  "verified_user_text_marker": "试验风格已确认",
+  "passed": true,
+  "answer": {
+    "source": "web",
+    "selection": "改成清单：逐项核对",
+    "text": "按这个方向修改。请将「试验风格已确认」放在简报正文，保留既有标题和元素 ID。",
+    "effective_events": 1,
+    "operator_kind": "acceptance_test"
+  },
+  "continuation": {
+    "run": 5,
+    "starting_draft": "4d11aef887913ae7ee4fe4bc2095d6833578f9ddd94a5f076800a5efde5b0cb9",
+    "roles": [
+      {
+        "sequence": 1,
+        "role": "implementer",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "prompt_sha256": "71ae05675158bc92ba0283cf8805a979d70fdc43afabe311ed5cd8fba5da365a",
+        "candidate_sha256": null,
+        "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+        "session_sha256": "4aaabc5648d6f0ea68801ac0adb4e43a95b7696a113461a5fd970173535dc814",
+        "turn_sha256": "4fe8f68730533ac63cbfc79b83bbfc9affef7915a51935d8062b7de1c3362200"
+      },
+      {
+        "sequence": 2,
+        "role": "lead",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "prompt_sha256": "7cdda66b22e6e05a626eee04e701629d1e56926afe6afc7592491718c78cfe99",
+        "candidate_sha256": "9cf1b5c9b82916ede6bbcffdbbf455a8f7cac058bd6e02810e5f99240c179f64",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "session_sha256": "7a5409e5639add30263c2665e5e706ab76f2cfa516944d1ad5b26f4220871138",
+        "turn_sha256": "2d1aaf2063d0c490849c123e4a4157ea9bc0855e501b9db25405fb059a92a564"
+      }
+    ]
+  },
+  "independent_final": {
+    "run": 6,
+    "verified": {
+      "digest": "9cf1b5c9b82916ede6bbcffdbbf455a8f7cac058bd6e02810e5f99240c179f64",
+      "files": {
+        "phase-two-final.html": "144082853c568d070010c23e05e5cbad2db1422c32dd0aad710612b7a25e6fca",
+        "phase-two-outline.html": "bfa4a4dd0c2df8fb939332be41ffec1269bded118175961ad5d5b101831e252d"
+      },
+      "artifacts": [
+        "phase-two-final.html",
+        "phase-two-outline.html"
+      ]
+    },
+    "checks": {
+      "outline-html": "PASS",
+      "final-html": "PASS"
+    }
+  },
+  "http_downloads": {
+    "phase-two-final.html": {
+      "status": 200,
+      "sha256": "144082853c568d070010c23e05e5cbad2db1422c32dd0aad710612b7a25e6fca"
+    },
+    "phase-two-outline.html": {
+      "status": 200,
+      "sha256": "bfa4a4dd0c2df8fb939332be41ffec1269bded118175961ad5d5b101831e252d"
+    }
+  },
+  "selected_direction_implemented": {
+    "before_items": [],
+    "after_items": [
+      "Release timing",
+      "Next steps"
+    ],
+    "body_note": "试验风格已确认"
+  },
+  "role_durations_seconds": [
+    28.42,
+    43.05,
+    42.76,
+    29.05,
+    31.93
+  ],
+  "review_assignment_seconds": 330,
+  "formal_listener_pids_after": [
+    738
+  ],
+  "synthetic": true,
+  "entry": "Chrome 隔离工作台普通新单",
+  "independent_reviewer": true,
+  "draft_while_waiting": {
+    "public_question_bound_to_draft": true,
+    "artifact_download_http": 404
+  },
+  "first_attempt": {
+    "status": "blocked",
+    "reason": "shared assignment deadline",
+    "assignment_max_seconds": 240,
+    "question_present": false,
+    "verified_delivery_present": false
+  },
+  "chrome_downloads": {
+    "phase-two-final.html": {
+      "sha256": "144082853c568d070010c23e05e5cbad2db1422c32dd0aad710612b7a25e6fca",
+      "size": 389
+    },
+    "phase-two-outline.html": {
+      "sha256": "bfa4a4dd0c2df8fb939332be41ffec1269bded118175961ad5d5b101831e252d",
+      "size": 188
+    }
+  }
+}

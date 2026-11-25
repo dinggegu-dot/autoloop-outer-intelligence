@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-24",
+  "fixture": "合成情感对话，误发草稿后担心同事评价",
+  "entry": "隔离工作台普通新单业务 API",
+  "approved_once_by": "acceptance_test",
+  "planning": "Codex CLI",
+  "sample_roles": {
+    "runtime": "Codex App Server",
+    "model": "gpt-6.2-sol",
+    "completed_calls": 5,
+    "options": 3
+  },
+  "candidate_sha256": "09dc1dc2ab44b32be627dbc6dd52dd21ceb86a9254d29c4fc0b50d9325c81fcf",
+  "latest_verified_state": "awaiting_preference",
+  "owner_preference_recorded": false,
+  "owner_signoff_recorded": false,
+  "formal_chrome_full_journey_verified": false
+}

@@ -77,6 +77,16 @@ _REGISTRY = {
         "resource_limits": {"file_bytes": goal_checks.MAX_WORKSPACE_FILE},
         "trust_status": "TRUSTED",
     },
+    "blind-projection": {
+        "artifact_types": ["file", "data"],
+        "capabilities": ["核对匿名成对文本的结构、固定例号顺序和显式来源泄露"],
+        "required_inputs": ["path", "expected_result"],
+        "supported_environments": [LOCAL_DATA],
+        "permission_requirements": ["immutable_artifacts_only"],
+        "runner": "bounded-blind-projection-v1",
+        "resource_limits": {"file_bytes": goal_checks.MAX_WORKSPACE_FILE},
+        "trust_status": "TRUSTED",
+    },
     "human-review": {
         "artifact_types": ["any"], "capabilities": ["主观质量或业务判断"],
         "required_inputs": ["description"], "supported_environments": [],
@@ -144,6 +154,12 @@ def _artifact_spec(verifier, spec, expected):
         if not path.endswith(".json") or type(expected) not in (dict, list) or not expected:
             raise ValueError("JSON 产物验收需要 .json 文件和非空预期结构")
         expected = goal_checks._json(expected, [2048, 64 * 1024])
+    elif verifier == "blind-projection":
+        goal_checks._fields(expected, ("case_ids",))
+        ids = _list_of_strings(expected["case_ids"], length=32, max_length=3)
+        if not path.endswith(".json") or not ids or any(not re.fullmatch(r"[A-Z][0-9]{2}", key) for key in ids):
+            raise ValueError("盲评结构验收须提供 .json 文件和已确定的例号顺序")
+        expected = {"case_ids": ids}
     else:
         if not path.endswith((".html", ".htm")):
             raise ValueError("静态 HTML 验收需要 HTML 产物")
@@ -294,7 +310,7 @@ def compile_proposal(goal, proposal):
         if kind == "DETERMINISTIC" and verifier == "python-json-cli" and type(version) is int and version == 1:
             spec, expected = _python_spec(key, spec, expected)
             availability = ENVIRONMENT if ENVIRONMENT in environment else None
-        elif (kind == "DETERMINISTIC" and verifier in ("json-artifact", "html-document")
+        elif (kind == "DETERMINISTIC" and verifier in ("json-artifact", "html-document", "blind-projection")
               and type(version) is int and version == 1):
             spec, expected = _artifact_spec(verifier, spec, expected)
             availability = LOCAL_DATA
@@ -401,6 +417,15 @@ def _criterion_result(criterion, files, occupied):
         if spec["path"] not in files:
             return "FAIL", "缺少约定的静态 HTML 产物"
         return _html_result(files[spec["path"]],criterion["expected_result"])
+    if verifier == "blind-projection":
+        from superagent.goal_blind_review import BlindReviewError, load_json, validate_projection
+        if spec["path"] not in files:
+            return "FAIL", "缺少冻结的匿名对照材料"
+        try:
+            validate_projection(load_json(files[spec["path"]]), expected_ids=criterion["expected_result"]["case_ids"])
+        except BlindReviewError as error:
+            return "FAIL", f"匿名对照结构或来源检查失败（{error.code}，{error.location}）"
+        return "PASS", "冻结例号、匿名结构及显式来源标记检查通过"
     if verifier == "json-artifact":
         if spec["path"] not in files:
             return "FAIL", "缺少约定的 JSON 产物"

@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "case": "owner-preference-approved-run-readonly",
+  "observed_at_utc": "2026-11-24T13:54:25+00:00",
+  "result": "BLOCKED",
+  "ticket_ref_sha256": "916c8cf877cdbccdd31bb53e0b0c3165a0b6883e15109b310ffddd2183b263d5",
+  "entry": {
+    "preference_channel": "web",
+    "ledger_actor_kind": "owner",
+    "approval_operator_kind": "acceptance_test",
+    "browser_session_independently_verified": false,
+    "paired_read_http_status": 200
+  },
+  "preference": {
+    "one_effective_event": true,
+    "event_ref_sha256": "b1f85450ce2079466ede6b36c904d2544c5a3644728d5bb4b3cd2b6e51fa7cc6",
+    "source_event_and_task_answer_match_exactly": true,
+    "preferred_option_bound": true,
+    "run_bound_to_preference_event": 6,
+    "mandate_revision": 1,
+    "plan_revision": 1,
+    "artifact_adoption_verified": false
+  },
+  "run": {
+    "phase": "execute",
+    "hub_transport": "done",
+    "business_state": "blocked",
+    "roles": [
+      {
+        "role": "lead",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "status": "completed",
+        "role_wall_ms": 28913,
+        "process_state": "stopped",
+        "recorded_tool_terminal_counts": {
+          "completed": 1
+        }
+      },
+      {
+        "role": "implementer",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "status": "completed",
+        "role_wall_ms": 28853,
+        "process_state": "stopped",
+        "recorded_tool_terminal_counts": {
+          "completed": 2
+        }
+      },
+      {
+        "role": "lead",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "status": "completed",
+        "role_wall_ms": 26472,
+        "process_state": "stopped",
+        "recorded_tool_terminal_counts": {
+          "completed": 2,
+          "failed": 1
+        }
+      },
+      {
+        "role": "implementer",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "status": "failed",
+        "role_wall_ms": 13472,
+        "process_state": "stopped",
+        "recorded_tool_terminal_counts": {
+          "completed": 1
+        },
+        "error_code": "unapproved_tool"
+      }
+    ],
+    "rejected_tool_specific_type_available_in_retained_evidence": false
+  },
+  "archive": {
+    "independent_review_has_started": false,
+    "verified_candidate": false,
+    "published_delivery": false,
+    "requested_artifact_http_status": 404
+  },
+  "limits": [
+    "签收和归档均无结果。最后一轮因工具超出批准清单被停止，原意见已登记并绑定续办；尚无成果可核对意见是否落实。",
+    "证据未保存意见原文、标题或完整工单内容。仅执行了配对读取和文件访问检查，未签收、暂停、重试或改变工单。"
+  ],
+  "followups": [
+    {
+      "observed_at_utc": "2026-11-24T13:58:58+00:00",
+      "result": "BLOCKED",
+      "resume_run": 7,
+      "state": "blocked",
+      "hub_transport": "done",
+      "same_initial_mandate_and_plan_v1": true,
+      "same_effective_owner_preference_event": true,
+      "api_detail_http_status": 200,
+      "roles": [
+        {
+          "role": "lead",
+          "model": "gpt-6.2-sol",
+          "sandbox": "read-only",
+          "status": "completed",
+          "business_action": "ask",
+          "elapsed_ms": 32500,
+          "process_state": "stopped",
+          "tool_results": {
+            "completed": 1
+          }
+        },
+        {
+          "role": "implementer",
+          "model": "gpt-6.2-sol",
+          "sandbox": "workspace-write",
+          "status": "completed",
+          "business_action": "ask",
+          "elapsed_ms": 18696,
+          "process_state": "stopped",
+          "tool_results": {
+            "completed": 1
+          }
+        },
+        {
+          "role": "lead",
+          "model": "gpt-6.2-sol",
+          "sandbox": "read-only",
+          "status": "completed",
+          "business_action": "repair",
+          "elapsed_ms": 24875,
+          "process_state": "stopped",
+          "tool_results": {
+            "completed": 1,
+            "failed": 1
+          }
+        },
+        {
+          "role": "implementer",
+          "model": "gpt-6.2-sol",
+          "sandbox": "workspace-write",
+          "status": "completed",
+          "business_action": "ask",
+          "elapsed_ms": 24381,
+          "process_state": "stopped",
+          "tool_results": {
+            "completed": 1
+          }
+        },
+        {
+          "role": "reviewer",
+          "model": "gpt-6.2-sol",
+          "sandbox": "read-only",
+          "status": "completed",
+          "business_action": "ask",
+          "elapsed_ms": 19460,
+          "process_state": "stopped",
+          "tool_results": {
+            "completed": 1
+          }
+        }
+      ],
+      "blocking_reason": "执行角色未提交可交外层核验的候选",
+      "unapproved_tool_error_recurred": false,
+      "archive": {
+        "report_file_created": false,
+        "sealed_candidate": false,
+        "independent_review_has_started": false,
+        "download_http_status": 404
+      },
+      "limits": [
+        "实际角色调用均结束，业务动作未形成可验收候选。已核对同一意见的续办绑定，无法核对意见落实到成果。",
+        "本次只读，无签收或工单写入，证据不含意见原文。"
+      ]
+    },
+    {
+      "observed_at_utc": "2026-11-24T14:08:53+00:00",
+      "result": "VERIFIED_AND_EXTERNALLY_OWNER_ACCEPTED",
+      "resume_run": 8,
+      "review_run": 9,
+      "state": "completed",
+      "observed_pending_before_signoff": true,
+      "ticket_revision": 10,
+      "same_initial_mandate_and_plan_v1": true,
+      "same_effective_owner_preference_event": true,
+      "preference_event_ref_sha256": "b1f85450ce2079466ede6b36c904d2544c5a3644728d5bb4b3cd2b6e51fa7cc6",
+      "api_detail_http_status": 200,
+      "api_answer_matched_ledger_exactly": true,
+      "roles": [
+        {
+          "role": "lead",
+          "model": "gpt-6.2-sol",
+          "sandbox": "read-only",
+          "status": "completed",
+          "business_action": "done",
+          "elapsed_ms": 32680,
+          "process_state": "stopped",
+          "tool_results": {
+            "completed": 2
+          }
+        },
+        {
+          "role": "implementer",
+          "model": "gpt-6.2-sol",
+          "sandbox": "workspace-write",
+          "status": "completed",
+          "business_action": "repair",
+          "elapsed_ms": 96904,
+          "process_state": "stopped",
+          "tool_results": {
+            "failed": 3,
+            "completed": 3
+          }
+        },
+        {
+          "role": "lead",
+          "model": "gpt-6.2-sol",
+          "sandbox": "read-only",
+          "status": "completed",
+          "business_action": "repair",
+          "elapsed_ms": 46383,
+          "process_state": "stopped",
+          "tool_results": {
+            "completed": 4,
+            "failed": 1
+          }
+        }
+      ],
+      "role_action_ask_count": 0,
+      "worker_receipts_match_ledger": {
+        "8": true,
+        "9": true
+      },
+      "adoption": {
+        "original_owner_comment_visible": true,
+        "chosen_sample_label_visible": true,
+        "original_chosen_sample_visible": true,
+        "separately_labeled_revision_with_distinct_text": true,
+        "other_two_samples_disclosed_as_pending_source_material": true,
+        "revision_responds_to_concrete_followup_action_and_concern_in_a_distinct_reply": true
+      },
+      "archive": {
+        "file": "report.html",
+        "file_bytes": 6797,
+        "file_sha256": "863c4e1ad7821e69a603bda36431c07c0ec04590328836239b256c07a66669c7",
+        "manifest_sha256": "81418cc78ede827d6ea8222c41418a410f5ae78ac2ebadbace5bb4f731afc68f",
+        "download_http_status": 200,
+        "download_attachment_confirmed": true,
+        "paired_download_matches_sealed_review_input_and_verified_bytes": true,
+        "verified_candidate": true,
+        "deterministic_checks_passed": 1,
+        "human_checks_inconclusive_at_machine_review": 4,
+        "check_digests_recomputed": true,
+        "signoff_state": "accepted",
+        "published_delivery": true
+      },
+      "external_signoff": {
+        "channel": "web",
+        "ledger_actor_kind": "owner",
+        "operator_kind": "owner",
+        "event_actor_type": "human",
+        "event_ref_sha256": "58f06e82ddcac1a8ff80c13d04c01e6f1d1db199a9f2620d6e161eeca1bdd3eb",
+        "state": "DONE",
+        "decision": "accept",
+        "same_candidate_and_manifest": true,
+        "browser_session_independently_verified": false
+      },
+      "limits": [
+        "通过已配对的本机业务 API 与原单归档只读验证。Chrome 和 DSH 原生界面的会话未在本复核中独立观察。",
+        "最终报告保留本人意见和所选原样例，单列的修订回复具体回应了原情境中的补救动作和后续顾虑。另两组仍标待补原文。机器核验的四项本人判断仍为 INCONCLUSIVE。另有原单账本事件确认本人签收该候选。",
+        "证据未保存意见、样例或改稿原文。复核过程未执行签收或写入运行状态。"
+      ]
+    }
+  ],
+  "latest_result": "VERIFIED_AND_EXTERNALLY_OWNER_ACCEPTED",
+  "latest_run": 9
+}

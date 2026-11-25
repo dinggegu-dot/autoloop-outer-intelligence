@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "result": "PASS",
+  "synthetic": true,
+  "reviewed_at_utc": "2026-11-24T13:21:40.490+00:00",
+  "entry": {
+    "surface": "普通新单的本机鉴权工单 API",
+    "source": "web",
+    "operator_kind": "acceptance_test",
+    "create_http_status": 201,
+    "wrong_approval_version_http_status": 409,
+    "approval_http_status": 200,
+    "formal_chrome_validated": false,
+    "dsh_validated": false
+  },
+  "ticket_ref_sha256": "1741c45f1b79616eab4cf4c47fcf9007ce950b26c1f51e2cc1bb2709e9104df6",
+  "approval": {
+    "count": 1,
+    "mandate_revision": 1,
+    "acceptance_revision": 1
+  },
+  "runtime": {
+    "worker": "实际隔离 Worker",
+    "hub_wal_verified_commits": 30,
+    "intake_models": {
+      "intake_assessor": "gpt-6.2-sol",
+      "acceptance_designer": "gpt-6.2-sol"
+    },
+    "roles_transport": "Codex App Server",
+    "coordinator_transport": "Codex CLI JSON 事件与本机受限 MCP",
+    "runs": [
+      {
+        "run": 1,
+        "phase": "plan",
+        "stage": 1,
+        "assignment_sha256": "ad20b07467857ac7852009413e2c787642577e6c3a5991080623bdb8d0220c46",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 2,
+        "phase": "execute",
+        "stage": 1,
+        "assignment_sha256": "4a01a6ff70f395932009a2e76d7a11ddfb37b79d4bc4d86765407d6b6364bf45",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 3,
+        "phase": "review",
+        "stage": 1,
+        "assignment_sha256": "1ba215a60f0c2c0cb8832410e18fc684111bc0f4657c0be0d9e3a8d440611c1b",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 4,
+        "phase": "execute",
+        "stage": 2,
+        "assignment_sha256": "452c048e2ea7a892f2c25f4fa0badf9c809ecc1c2d4f7acd75d8678d1d624f24",
+        "transport": "nothing",
+        "workbench": "settled",
+        "report_on_disk": false
+      },
+      {
+        "run": 5,
+        "phase": "review",
+        "stage": 2,
+        "assignment_sha256": "6f85b24294b44527c87e17fc6b064dee25fe4d71db3d23cd3ce94d9c0b8d0471",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 6,
+        "phase": "coordinate",
+        "stage": 2,
+        "assignment_sha256": "b9134d4e5e8353899e5efa43b12578e0bebb3eb533b30c8c29611ce391b3e528",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 7,
+        "phase": "repair",
+        "stage": 2,
+        "assignment_sha256": "89c2b28050b5d85d88a5e1a97a90a99bc5fa8f0c10f1bad7fe7d211c2d836f06",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      },
+      {
+        "run": 8,
+        "phase": "review",
+        "stage": 2,
+        "assignment_sha256": "26bbcfa72b8a2ff7d13189c9abce56c45c47f67673b24ab1b871b491cc1201fc",
+        "transport": "done",
+        "workbench": "settled",
+        "report_on_disk": true
+      }
+    ],
+    "role_calls": [
+      {
+        "run": 2,
+        "role": "lead",
+        "protocol_model": "gpt-6.2-sol",
+        "effort": "medium",
+        "sandbox": "workspace-write",
+        "status": "completed",
+        "session_sha256": "33b14d4f5549da64aa627916fb52d2dbdffdbc82dd53ea3398b5fe49ed2eb95b",
+        "turn_sha256": "cb99f83c3177451001cfc13ee37ef8d4a215a52363c7dc03a3b6aa33b2114098",
+        "process_state": "stopped",
+        "tool_terminal_counts": {
+          "completed": 6,
+          "failed": 2
+        },
+        "usage_source": "thread/tokenUsage/updated"
+      },
+      {
+        "run": 4,
+        "role": "lead",
+        "protocol_model": "gpt-6.2-sol",
+        "effort": "medium",
+        "sandbox": "workspace-write",
+        "status": "completed",
+        "session_sha256": "12d537a2c677f5c6e6dcec6fe01ccafdf5f55553fd72db33b65fa096cfacc4b3",
+        "turn_sha256": "43e0257bcba06b00ac323ee2adf9a92f1895d9c630caca532c5fae0838b135f4",
+        "process_state": "stopped",
+        "tool_terminal_counts": {
+          "completed": 3,
+          "failed": 2
+        },
+        "usage_source": "thread/tokenUsage/updated"
+      },
+      {
+        "run": 7,
+        "role": "lead",
+        "protocol_model": "gpt-6.2-sol",
+        "effort": "medium",
+        "sandbox": "workspace-write",
+        "status": "completed",
+        "session_sha256": "22acfb94fb347483762883b15e33c07c367d67215fc798e31949fe23bd801db0",
+        "turn_sha256": "dd53b31432016152be13450e6e81fd0194eb2ee0675ed6b65f4684ccc24c9065",
+        "process_state": "stopped",
+        "tool_terminal_counts": {
+          "failed": 2,
+          "completed": 3
+        },
+        "usage_source": "thread/tokenUsage/updated"
+      }
+    ]
+  },
+  "stage_one": {
+    "artifact_sha256": "43814a78b19d5939ac85dd9714b5697b0c9ec37c101c4c93209c727599586a35",
+    "archive_files": {
+      "search.py": {
+        "sha256": "4239cf8646de4e3231472d1d3ce3c533e4d958ae2860838215588d94986ebf0a",
+        "bytes": 335
+      }
+    },
+    "checks": {
+      "search-example-matches": "PASS",
+      "search-prefix-and-sort": "PASS",
+      "search-example-no-matches": "PASS",
+      "search-no-match-control": "PASS"
+    },
+    "verifier_evidence_hashes_recomputed": true
+  },
+  "regressed_candidate": {
+    "artifact_sha256": "e12981ebc184061c968a795fcd022c3bd9d5aa6d8cba8cec35687f89e9027445",
+    "search_before_sha256": "4239cf8646de4e3231472d1d3ce3c533e4d958ae2860838215588d94986ebf0a",
+    "search_after_sha256": "a171f0672def348bb01c63e16b5d35e209a1743d570c738f42405664f1d739e9",
+    "update_sha256": "1331e5a7beea17efe076214c835ccfbcbd04ae7d7440a042701e9dd4de889de5",
+    "checks": {
+      "search-example-matches": "FAIL",
+      "search-prefix-and-sort": "FAIL",
+      "search-example-no-matches": "FAIL",
+      "search-no-match-control": "FAIL",
+      "update-example-add-delete": "PASS",
+      "update-add-delete-lists": "PASS",
+      "update-example-existing-addition": "PASS",
+      "update-existing-addition-and-sort": "PASS"
+    },
+    "verifier_evidence_hashes_recomputed": true,
+    "download_http_status": {
+      "default": 404,
+      "failed_candidate": 404
+    }
+  },
+  "coordinator": {
+    "run": 6,
+    "model": "gpt-6.2-sol",
+    "session_sha256": "15e3276f58503229de3ac62db3dc1ca17800595daf7b17247415785cc357872a",
+    "input_snapshot_revision": "92005cebb280f0cef83f50dbc380caead2594ddd397fc249c48b3837e4b40496",
+    "duration_ms": 42890,
+    "reported_usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 28928,
+      "input_tokens": 46511,
+      "output_tokens": 1622,
+      "reasoning_output_tokens": 798
+    },
+    "proposal": "REPAIR",
+    "disposition": "accepted",
+    "tools": [
+      {
+        "evidence_sha256": "e851648456cf3c2d6145d13b591d5f7ebbd7933b52b7310541e7e3bd3f6ed14c",
+        "name": "read_failure_evidence",
+        "status": "completed",
+        "matches_bound_snapshot": true
+      },
+      {
+        "evidence_sha256": "48669b0e5e2b730bf6ae9d3c77dc0cb5cc538147f35fb336b9b2771986919749",
+        "name": "read_remaining_budget",
+        "status": "completed",
+        "matches_bound_snapshot": true
+      },
+      {
+        "evidence_sha256": "cf487160cee90e242e47cbc43b6c8483bcc54cdf170edb1a644d85a27871c8ca",
+        "name": "read_plan_versions",
+        "status": "completed",
+        "matches_bound_snapshot": true
+      },
+      {
+        "evidence_sha256": "067d140f718638a5110b7442bb487c3a0bb99cf40d025bd9f5e50c97ca0d6196",
+        "name": "read_verified_artifacts",
+        "status": "completed",
+        "matches_bound_snapshot": true
+      }
+    ],
+    "owner_call_index_and_detail_http_status": 200
+  },
+  "source_evidence_sha256": {
+    "acceptance_manifest": "75c277eeed9360acbf8e67fd938db74e42447ae8811c00c5dda5c18f0bb76cba",
+    "workbench_database": "e76fdbcef573fd59e9faecf8d9171dad4611d58e644a7003ab02bdb2d4191a37",
+    "hub_wal": "ade44aedc7f399cdaac6951cd0846f7747eb5f35494fc203cd014106545cf320",
+    "worker_log": "f14560cd1f5faab1fb1858c7140fafbdcaf6c629eb66658218d23cb96742595b",
+    "http_access_log": "07e9c2fe36a3032b86084694ab233cfba41c31bfefa3ea54cc82aae623da12ae",
+    "coordinator_receipt": "10670856e944affdd851e0d691c7c72899dc873047acee91ca12340f9dd41a4e"
+  },
+  "case": "F1-index-api-independent-review",
+  "worker_restart": {
+    "run": 4,
+    "worker_process_changed": true,
+    "restart_log_entries": 2,
+    "transport_terminal": "nothing",
+    "business_report_exists": false,
+    "recovered_checkpoint_sha256": "e12981ebc184061c968a795fcd022c3bd9d5aa6d8cba8cec35687f89e9027445"
+  },
+  "replay": {
+    "new_order": true,
+    "approval": true,
+    "coordinator_result_no_second_repair": true
+  },
+  "followup": {
+    "repair_run": 7,
+    "independent_review_run": 8,
+    "affected_stages": [
+      1,
+      2
+    ],
+    "same_mandate_revision": 1,
+    "retained_update_bytes_match": true
+  },
+  "delivery": {
+    "status": "completed",
+    "artifact_sha256": "250c94f23913894d2462411ee6aebdd09f69660c804648ea88f85c54c77c2f56",
+    "archive_files": {
+      "update.py": {
+        "sha256": "1331e5a7beea17efe076214c835ccfbcbd04ae7d7440a042701e9dd4de889de5",
+        "bytes": 455
+      },
+      "search.py": {
+        "sha256": "d3673b4f219bbf0f69299e2b6bf2e36c0de83e8c07dddd629883a274dcdbd59f",
+        "bytes": 336
+      }
+    },
+    "checks": {
+      "search-example-matches": "PASS",
+      "search-prefix-and-sort": "PASS",
+      "search-example-no-matches": "PASS",
+      "search-no-match-control": "PASS",
+      "update-example-add-delete": "PASS",
+      "update-add-delete-lists": "PASS",
+      "update-example-existing-addition": "PASS",
+      "update-existing-addition-and-sort": "PASS"
+    },
+    "verifier_evidence_hashes_recomputed": true,
+    "download_http_status": {
+      "update.py": 200,
+      "search.py": 200
+    },
+    "initial_run_compared_downloaded_bytes_to_archive": true,
+    "original_runner_unseen_checks": [
+      "unseen-search",
+      "unseen-update"
+    ]
+  },
+  "limits": [
+    "两个阶段的真实隔离工单。故障替换和回执丢失由隔离夹具注入。",
+    "独立复核只读重开终验归档、重算文件与清单摘要。HTTP 状态和响应字节对账分别来自原运行日志和验收脚本断言。本次未发起下载。",
+    "三阶段非末阶段回归、真人审批、正式 Chrome 和 DSH 操作另取证。"
+  ]
+}

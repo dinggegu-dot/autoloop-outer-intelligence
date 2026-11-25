@@ -1,0 +1,10 @@
+{
+  "synthetic": true,
+  "operator_kind": "acceptance_test",
+  "initial_source": "web",
+  "web_replay_returns_original": true,
+  "stale_dsh_bridge_status": 409,
+  "reason": "工单版本已变化，请重新查看",
+  "recorded_preference_events": 1,
+  "formal_chrome_dsh_gui": false
+}

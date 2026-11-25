@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case": "isolated-dsh-runtime-readonly",
+  "observed_at_utc": "2026-11-24T13:42:13+00:00",
+  "status": "native_host_and_workbench_pairing_verified",
+  "native_host": {
+    "loopback_port": 61498,
+    "listener": "DeepSeek Harness",
+    "installed_version": "0.2.2-rc.3",
+    "running_profile": "web",
+    "isolated_profile_marker": true,
+    "process_has_isolated_plugin_patch": true,
+    "local_plugin_id": "autoloop-dsh-workbench",
+    "native_client_platform": "web",
+    "activation_failure_in_startup_log": false,
+    "signed_local_entry_in_startup_log": true,
+    "owner_route_without_login_http": 401
+  },
+  "workbench": {
+    "loopback_port": 60966,
+    "listener": "Python workbench",
+    "pairing_file_mode": "0600",
+    "list_without_pairing_http": 403,
+    "list_with_existing_pairing_http": 200,
+    "paired_visible_tickets": 2,
+    "paired_waiting_preference_tickets": 1,
+    "paired_existing_ticket_detail_http": 200,
+    "same_ticket_preference_options": 3
+  },
+  "ui_verification": {
+    "native_ui_transport": "DSH web profile rendered in Chrome, with plugin right sidebar and local command",
+    "documented_browser_tool": "unified computer use CUA",
+    "dedicated_dsh_connector_discovered": false,
+    "this_run_authenticated_native_renderer_observed": false,
+    "real_existing_ticket_data_modified": false
+  },
+  "remaining": [
+    "请在 Chrome 打开 DSH 启动日志中已有的本机受签入口，打开原生右侧栏的「目标模式」，也可用 /autoloop-workbench。",
+    "从已登录 DSH 界面读到与当前工作台相同的待偏好工单，核对三组样例和版本。",
+    "配对接口只读验证与原生界面实际点击分别记证据。当前工单的选择由本人提交。"
+  ]
+}

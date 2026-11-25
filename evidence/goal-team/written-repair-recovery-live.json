@@ -1,0 +1,76 @@
+{
+  "synthetic": true,
+  "passed": true,
+  "independent_reviewer": true,
+  "entry": "隔离工作台普通新单接口，Chrome 原单补充验收并批准下载",
+  "ticket": "wb-446fdb6968fd4c49a2432dca88187939",
+  "effective_approvals": 1,
+  "initial_checks": [
+    "PASS",
+    "PASS"
+  ],
+  "injected_checks": [
+    "FAIL",
+    "PASS"
+  ],
+  "repaired_only_injected_heading": true,
+  "worker_interruption": {
+    "signal": "SIGKILL",
+    "worker_exit": -9,
+    "source_role_count": 4,
+    "sealed_before_owner_review": true,
+    "recovery_sha256": "36a82b7f97a9b320d8027accb06ea97707798ba182bb1c6cce3e0ca5be430a79"
+  },
+  "worker_restarted": true,
+  "native_recovery": {
+    "interrupted_run": 2,
+    "observed_queue_to_reclaim_seconds": 300.06,
+    "observed_queue_to_terminal_seconds": 301.37,
+    "terminal": "nothing"
+  },
+  "original_roles_unchanged": true,
+  "continuation": {
+    "original_run": 2,
+    "native_transport": "nothing",
+    "receipt_source": "recovery",
+    "primary_receipt_missing": true,
+    "repaired_checkpoint": {
+      "artifacts": [
+        "phase-one-review-recovery.html"
+      ],
+      "digest": "d479a1fb93267e86c91c4a177292a6a2efea405d1aa77864fd8e164130d6ac43",
+      "files": {
+        "phase-one-review-recovery.html": "8ad8eb1f8bb82c33ebbb0ab8ea508d8437a279dba13677eb7549dee6a1a6531d"
+      }
+    },
+    "unverified_candidate_download_http": 404,
+    "only_read_only_lead_reran": true,
+    "continuation_run": 3,
+    "independent_review_run": 4
+  },
+  "reader": {
+    "role": "lead",
+    "model": "gpt-6.2-sol",
+    "sandbox": "read-only",
+    "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+    "candidate_sha256": "d479a1fb93267e86c91c4a177292a6a2efea405d1aa77864fd8e164130d6ac43"
+  },
+  "read_only_material_matches": true,
+  "independent_checks": [
+    {
+      "id": "html-daily-tasks",
+      "status": "PASS"
+    },
+    {
+      "id": "html-status-notes",
+      "status": "PASS"
+    }
+  ],
+  "download_http": 200,
+  "chrome_download": {
+    "sha256": "8ad8eb1f8bb82c33ebbb0ab8ea508d8437a279dba13677eb7549dee6a1a6531d",
+    "size": 564
+  },
+  "formal_listener_unchanged": true,
+  "scope": "真实 Worker 中断和候选复验。此隔离实例建立于新文件指纹取证机制合入前。"
+}

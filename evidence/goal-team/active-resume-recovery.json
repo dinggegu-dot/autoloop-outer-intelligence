@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "ticket_ref_sha256": "31887c3b7aadb2e7c296ff7730d3687cb5ba168d8b0089b80fc68d8f21f32dda",
+  "cold_recovery": {
+    "tree_unchanged": true,
+    "original_absolute_path_reused": true,
+    "workbench_integrity_check": "ok",
+    "hub_quick_check": "ok",
+    "outer_status": "AUTHORIZED",
+    "mandate_revision": 1,
+    "approval_count": 1,
+    "matched_completed_runs": 2
+  },
+  "waiting": {
+    "intake_and_model_outputs": "fixtures",
+    "hub_worker": "actual"
+  },
+  "resumption": {
+    "hub_worker": "actual",
+    "model_transport": "actual_codex_app_server",
+    "fixture_answer_replayed_idempotently": true,
+    "answer_operator": "acceptance_test",
+    "mandate_revision": 1,
+    "before_waiting_roles": 5,
+    "resumed_phases": [
+      "execute",
+      "review"
+    ],
+    "resumed_roles": [
+      {
+        "role": "lead",
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "effort": "high",
+        "sandbox": "read-only",
+        "status": "completed",
+        "cli_version": "0.171.0-alpha.13.2",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "usage": {
+          "total_tokens": 17186,
+          "input_tokens": 16813,
+          "cached_input_tokens": 8064,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 373,
+          "reasoning_output_tokens": 108
+        },
+        "turn_sha256": "c653af02dc2f76437364e13581437892761c4e24b978335062a8f99ba1078d67"
+      },
+      {
+        "role": "implementer",
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "effort": "high",
+        "sandbox": "workspace-write",
+        "status": "completed",
+        "cli_version": "0.171.0-alpha.13.2",
+        "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+        "usage": {
+          "total_tokens": 36251,
+          "input_tokens": 35686,
+          "cached_input_tokens": 27392,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 565,
+          "reasoning_output_tokens": 0
+        },
+        "turn_sha256": "499481223ec5b9fb868e0bed646dafecb3d28ec57a542896123911d822260a56"
+      },
+      {
+        "role": "lead",
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "effort": "high",
+        "sandbox": "read-only",
+        "status": "completed",
+        "cli_version": "0.171.0-alpha.13.2",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "usage": {
+          "total_tokens": 27130,
+          "input_tokens": 26601,
+          "cached_input_tokens": 17152,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 529,
+          "reasoning_output_tokens": 166
+        },
+        "turn_sha256": "a1ee32aace078d6ada9b9537a7d7bd753f04a05305d7199ce3b1bbb2642cd184"
+      },
+      {
+        "role": "reviewer",
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "effort": "high",
+        "sandbox": "read-only",
+        "status": "completed",
+        "cli_version": "0.171.0-alpha.13.2",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "usage": {
+          "total_tokens": 36010,
+          "input_tokens": 35340,
+          "cached_input_tokens": 27392,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 670,
+          "reasoning_output_tokens": 188
+        },
+        "turn_sha256": "5cc320eca1e2f243836f480c140d81c421738ed565fd76dbb8e26cd01484945d"
+      }
+    ],
+    "final_state": "awaiting_artifact_review",
+    "independent_machine_checks": [
+      {
+        "id": "result",
+        "verifier_id": "json-artifact",
+        "status": "PASS",
+        "passed": true
+      },
+      {
+        "id": "owner-choice",
+        "verifier_id": "human-review",
+        "status": "INCONCLUSIVE",
+        "passed": false
+      }
+    ],
+    "candidate_sha256": "0e93693cb42b6979d62c7fa7cdfcbb30350bb3170afd4bf91e752ef71a3b5a29",
+    "file_sha256": "4ce03c783348fded18f502a2462f0d998067bc4975c4263d3995cb7eecccafe5",
+    "manual_signoff_performed": false,
+    "total_tokens_reported": 116577
+  },
+  "protected_listener_processes_unchanged": true,
+  "case": "resume_waiting_team_ticket_after_cold_restore",
+  "observed_at_utc": "2026-11-24T13:53:49+00:00",
+  "earlier_rehearsals": [
+    {
+      "state": "blocked",
+      "stage": "actual_model_stream",
+      "category": "network_timeout",
+      "preserved_verified_candidate": false
+    },
+    {
+      "state": "blocked",
+      "stage": "candidate_validation",
+      "reason": "synthetic fixture left marker ambiguous in the approved goal and answer",
+      "preserved_verified_candidate": false
+    }
+  ]
+}

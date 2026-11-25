@@ -15,14 +15,17 @@ from pathlib import Path
 
 if __package__ in (None, ''):
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from workbench import Hub, Problem, Store
+from workbench import Hub, Problem, Store, Workbench, is_blind_goal
 from superagent.goal_engine import (
     StaleCoordination,
     PACKAGE_LIMIT, GoalEngine, active_assignments, assignment_route, canonical, current, digest, flow,
+    report_matches_assignment, team_candidate_assignment,
 )
 
 
 TERMINAL_RUNS = ('done', 'nothing', 'cancelled')
+TEAM_RECOVERY_FILE = 'candidate-recovery.json'
+TEAM_RECOVERY_VERSION = 1
 
 
 def missing_receipt_diagnostic(run, assignment):
@@ -100,11 +103,98 @@ def manifest(workspace):
 
 
 def save_json(path, value):
-    with tempfile.NamedTemporaryFile(dir=path.parent,mode='w',delete=False) as stream:
-        stream.write(canonical(value))
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(stream.name,path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent,mode='w',encoding='utf-8',delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(canonical(value))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary,path)
+        descriptor = os.open(path.parent,os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def read_json(path):
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('回执须为普通文件')
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def save_team_recovery(assignment, directory, report):
+    if (not team_candidate_assignment(assignment) or not report_matches_assignment(report,assignment)
+            or report.get('error')):
+        return
+    # 先保存与派工及候选绑定的完整回执，再对中台确认本轮完成。
+    save_json(directory/TEAM_RECOVERY_FILE, {
+        'schema_version':TEAM_RECOVERY_VERSION,
+        'ticket':assignment['ticket'],
+        'mandate_digest':assignment['mandate_digest'],
+        'report':report,
+    })
+
+
+def read_team_recovery(directory, assignment):
+    entered = directory/'entered'
+    record = read_json(directory/TEAM_RECOVERY_FILE)
+    if (entered.is_symlink() or not entered.is_file() or entered.read_text() != str(assignment['run'])
+            or not isinstance(record,dict) or type(record.get('schema_version')) is not int
+            or record['schema_version'] != TEAM_RECOVERY_VERSION
+            or record.get('ticket') != assignment['ticket']
+            or record.get('mandate_digest') != assignment['mandate_digest']
+            or not report_matches_assignment(record.get('report'), assignment)
+            or record['report'].get('error')):
+        raise Problem('原派工的团队恢复回执无法核对')
+    return record['report']
+
+
+def team_samples(report):
+    handoff = report.get('team_handoff')
+    instruction = handoff.get('instruction') if isinstance(handoff,dict) else None
+    if isinstance(instruction,dict) and instruction.get('action') == 'ask':
+        return {'prompt':instruction.get('summary'), 'options':instruction.get('options')}
+    return report.get('preference')
+
+
+def verify_team_seal(directory, report, task=None, assignment=None):
+    from superagent.outer_verification import capture
+    sealed = directory/'sealed'
+    if sealed.is_symlink():
+        raise Problem('封存版本与回执不一致')
+    checkpoint,files,_ = capture(sealed)
+    if checkpoint != report.get('checkpoint'):
+        raise Problem('封存版本与回执不一致')
+    if 'team_handoff' in report:
+        from superagent.goal_team_handoff import validate_draft_observations, validate_handoff_scopes
+        handoff = report['team_handoff']
+        reviewer = handoff.get('draft_review') if isinstance(handoff,dict) else None
+        if not isinstance(reviewer,dict) or handoff.get('draft_sha256') != checkpoint['digest']:
+            raise Problem('草稿审稿回执与封存版本不一致')
+        validate_draft_observations(reviewer.get('observations'),files)
+        validate_handoff_scopes(handoff['instruction'],checkpoint,files)
+    if 'handoff_verification' in report:
+        from superagent.goal_team_handoff import make_handoff_verification
+        from superagent.goal_team_run import sealed_workspace
+        from superagent.goal_engine import team_preference_for_step
+        origin = assignment.get('team_handoff_origin') or {
+            'handoff':assignment['team_handoff_continuation'], 'base':assignment['candidate_base'],
+        }
+        before, before_files, _ = capture(sealed_workspace(directory,origin['base']))
+        bound = dict(assignment,outer_acceptance=flow(task)['outer']['acceptance_contract'],plan=task['plan'],
+                     preference_answer=team_preference_for_step(task).get('answer'))
+        evidence = make_handoff_verification(bound,origin['handoff']['instruction'],before,before_files,
+                                             checkpoint,files)
+        if report['handoff_verification'] != evidence:
+            raise Problem('候选文件与负责人登记的修改和保留证据不匹配')
+    samples = team_samples(report)
+    if samples is not None and read_json(directory/'samples.json') != samples:
+        raise Problem('用户所见样例与封存版本不一致')
 
 
 def freeze_verified(workspace, directory, checkpoint):
@@ -121,19 +211,22 @@ def freeze_verified(workspace, directory, checkpoint):
 
 def ensure_process_exit(root, ticket, key):
     path = attempt_file(root,ticket,key,'process.json')
-    if not path.is_file():
+    records = [record for record in [path, *path.parent.glob('role-*/process.json')] if record.is_file()]
+    if not records:
         return
     from process_guard import alive, processes
-    tracked = json.loads(path.read_text())
-    if tracked.get('version') != 1 or 'processes' not in tracked:
-        raise Problem('旧模型进程记录无法校验')
     rows = processes()
-    if alive(tracked['processes'],rows):
-        raise Problem('旧模型进程尚未确认退出，等待核对',409)
-    parent_group = tracked.get('pgid')
-    if parent_group and any(row['group'] == parent_group and not row['state'].startswith('Z')
-                            for row in rows.values()):
-        raise Problem('先前模型进程组仍可能运行，等待核对',409)
+    for record in records:
+        tracked = json.loads(record.read_text())
+        if tracked.get('version') != 1 or 'processes' not in tracked:
+            raise Problem('旧模型进程记录无法校验')
+        if alive(tracked['processes'],rows):
+            raise Problem('旧模型进程尚未确认退出，等待核对',409)
+        parent_group = tracked.get('pgid')
+        if (tracked.get('state') != 'stopped' and parent_group
+                and any(row['group'] == parent_group and not row['state'].startswith('Z')
+                        for row in rows.values())):
+            raise Problem('先前模型进程组仍可能运行，等待核对',409)
 
 
 class GoalRuntime:
@@ -141,6 +234,7 @@ class GoalRuntime:
         self.store = store
         self.hub = hub
         self.engine = GoalEngine(store)
+        self._blind_workbench = None
 
     def _event(self, task, assignment):
         event, _, subject = assignment_route(assignment)
@@ -202,6 +296,9 @@ class GoalRuntime:
         run_row = runs[0]
         run, status = run_row['run'], run_row['state']
         task = self.engine.bind(ticket,key,event,run)
+        assignment = current(task,key)
+        if not assignment:
+            return task
         if flow(task)['stop_requested'] and status not in TERMINAL_RUNS:
             self.hub.request('POST',f'/v1/runs/{run}/cancel',{})
         if status in TERMINAL_RUNS:
@@ -211,22 +308,48 @@ class GoalRuntime:
                 self.engine.observe(ticket,key,'unknown')
                 raise
             path = attempt_file(self.store.root,ticket,key,'report.json')
-            report = json.loads(path.read_text()) if path.is_file() else None
+            report = None
+            primary_exists = os.path.lexists(path)
+            if primary_exists:
+                try:
+                    report = read_json(path)
+                except (ValueError, RecursionError):
+                    pass
             outer = assignment.get('outer_binding')
-            valid = (isinstance(report,dict) and report.get('id') == key and report.get('run') == run
-                     and report.get('version') == assignment['version']
-                     and report.get('outer_binding') == outer)
+            valid = report_matches_assignment(report, assignment)
+            recovery_report = None
             recovery_checkpoint = None
             recovery_error = None
             confirmed_unstarted = (flow(task)['stop_requested'] and status == 'cancelled'
                                   and assignment.get('coordination_proposal') is not None
                                   and not any(os.path.lexists(path.parent/name)
-                                              for name in ('entered','report.json','process.json'))
+                                              for name in ('entered','report.json','process.json',TEAM_RECOVERY_FILE))
                                   and hub_confirmed_unstarted(self.hub,run,rule))
-            if confirmed_unstarted:
+            if team_candidate_assignment(assignment) and not confirmed_unstarted:
+                try:
+                    if valid and not report.get('error'):
+                        verify_team_seal(path.parent,report,task,assignment)
+                    elif not valid:
+                        if isinstance(report,dict):
+                            raise Problem('业务回执与原派工绑定不一致')
+                        candidate_receipt = read_team_recovery(path.parent,assignment)
+                        verify_team_seal(path.parent,candidate_receipt,task,assignment)
+                        recovery_report = candidate_receipt
+                except (KeyError, TypeError, OSError, RuntimeError, ValueError, Problem):
+                    if valid:
+                        report = dict(report, error='团队封存产物不存在或摘要不匹配')
+                    else:
+                        recovery_error = '原派工没有可核对的团队封存回执'
+            elif confirmed_unstarted:
                 from superagent.outer_verification import capture
                 try:
-                    recovery_checkpoint = capture(self.store.workspace(ticket))[0]
+                    approved = flow(task).get('active_candidate')
+                    if approved:
+                        from superagent.goal_team_run import sealed_workspace
+                        workspace = sealed_workspace(path.parent, approved)
+                    else:
+                        workspace = self.store.workspace(ticket)
+                    recovery_checkpoint = capture(workspace)[0]
                 except (OSError, RuntimeError, ValueError, Problem):
                     pass
             elif assignment['phase'] in ('execute','repair') and (
@@ -236,7 +359,7 @@ class GoalRuntime:
                 candidate = (path.parent/'candidate' if flow(task).get('workspace_base')
                              else self.store.workspace(ticket))
                 try:
-                    if (report is not None and not valid) or (path.parent/'entered').read_text() != str(run):
+                    if (primary_exists and not valid) or (path.parent/'entered').read_text() != str(run):
                         recovery_error = '缺少与原 Run 一致的执行记录'
                     elif candidate.is_symlink() or not candidate.is_dir():
                         recovery_error = '缺少原派工的工作区，无法核对其产物'
@@ -255,13 +378,37 @@ class GoalRuntime:
                         raise Problem('验收归档已改变')
                 except (OSError, RuntimeError, ValueError, Problem):
                     report = dict(report,error='独立归档不存在、已改变或无法安全读取')
-            settled = self.engine.settle(ticket,key,run,status,report,recovery_checkpoint=recovery_checkpoint,
+            settled = self.engine.settle(ticket,key,run,status,report,recovery_report=recovery_report,
+                                         recovery_checkpoint=recovery_checkpoint,
                                          recovery_error=recovery_error,confirmed_unstarted=confirmed_unstarted)
-            if not valid and not confirmed_unstarted:
+            if not valid and recovery_report is None and not confirmed_unstarted:
                 self.store.event(ticket,'goal_transport','中台轮次已结束，缺少有效业务回执',
                                  missing_receipt_diagnostic(run_row,assignment))
             return settled
         return self.engine.observe(ticket,key,status)
+
+    def publish_blind_review(self, ticket):
+        task = self.store.get(ticket)
+        if task['status'] != 'awaiting_artifact_review' or not is_blind_goal(task):
+            return
+        state = flow(task)
+        review = state['artifact_reviews'][-1]
+        candidate = state['active_candidate']['assignment']
+        prepared = attempt_file(self.store.root,ticket,candidate,'blind-preparation.json')
+        if not prepared.is_file() or prepared.is_symlink():
+            raise Problem('缺少已核验候选对应的受信盲评材料', 409)
+        if self._blind_workbench is None:
+            self._blind_workbench = Workbench(store=self.store, goal_enabled=True, outer_enabled=True)
+        ledger = self._blind_workbench.blind_review()
+        actor = state['outer']['actor_id']
+        view = ledger.get(ticket,actor_id=actor)
+        if view and view['current']:
+            return
+        with self.store.connect() as db:
+            row = db.execute('SELECT body FROM outer_tickets WHERE id=?', (ticket,)).fetchone()
+        metadata = json.loads(prepared.read_text())
+        ledger.register(ticket, json.loads(row[0])['revision'], review['assignment'], review['artifact_sha256'],
+                        actor_id=actor, **metadata)
 
     def run(self, *, once=False):
         lock_path = self.store.root / 'goal-runtime.lock'
@@ -282,6 +429,18 @@ class GoalRuntime:
                                        AND json_extract(body,'$.goal_execution.stage')='review' THEN 1
                                       ELSE 2 END, updated_at, id
                     """)]
+                    blind_waiters = [row[0] for row in db.execute("""
+                        SELECT t.id FROM tasks t WHERE json_extract(t.body,'$.status')='awaiting_artifact_review'
+                        AND EXISTS (SELECT 1 FROM json_each(t.body,'$.goal_execution.outer.acceptance_contract.criteria') c
+                                    WHERE json_extract(c.value,'$.verifier_id')='blind-projection'
+                                      AND json_extract(c.value,'$.required')=1)
+                    """)]
+                for ticket in blind_waiters:
+                    try:
+                        self.publish_blind_review(ticket)
+                    except (ValueError, KeyError, OSError, Problem):
+                        # 刚完成、暂停或替换时，下次仍按原候选核对。
+                        pass
                 # 多张活跃单按轮询交错提交就绪包，避免先扫描的一张单预占整个中台队列。
                 # 正在运行的包照常对账；实际领取由中台规则组和 Worker 的容量共同约束。
                 package_slots = 1 if len(tickets)>1 else PACKAGE_LIMIT
@@ -349,6 +508,7 @@ def worker(store, verification):
                     marker.flush()
                     os.fsync(marker.fileno())
                 report = execute_assignment(store,assignment,attempt_dir,verification)
+            save_team_recovery(assignment,attempt_dir,report)
             save_json(report_path,report)
     print(f'目标派工回执 {key}')
 
@@ -364,6 +524,9 @@ def execute_assignment(store, assignment, directory, verification):
     try:
         if outer:
             report.update(outer_binding=outer,verifier_profile='outer-v2')
+            if assignment.get('execution_profile') and assignment.get('candidate_base'):
+                from superagent.goal_team_run import sealed_workspace
+                workspace = sealed_workspace(directory, assignment['candidate_base'])
             if phase == 'review':
                 if assignment.get('coordination_proposal'):
                     with GoalEngine(store).launch_gate(assignment['ticket'],assignment['id'],assignment['run']):
@@ -376,6 +539,15 @@ def execute_assignment(store, assignment, directory, verification):
                 if capture(workspace)[0] != assignment['checkpoint']:
                     return dict(report,checkpoint_mismatch=True,error='待执行的协调动作与已核对的工作区版本不一致')
             prepare_outer_execution(assignment)
+            if assignment.get('execution_profile') and phase in ('execute', 'repair'):
+                from superagent.goal_team_run import run_team
+                engine = GoalEngine(store)
+                result = run_team(engine, assignment, workspace, directory, report, lambda:
+                                  engine.launch_gate(assignment['ticket'], assignment['id'], assignment['run']))
+                samples = team_samples(result)
+                if samples is not None:
+                    save_json(directory/'samples.json',samples)
+                return result
         base_id = assignment.get('workspace_base')
         if base_id:
             workspace = directory.parent/base_id/'candidate'
@@ -531,6 +703,17 @@ def prepare_outer_execution(assignment):
         'steps[].checks 只填写对应的 criterion_id。每个阶段包含至少一项必需验收，'
         '全部必需验收项必须出现在计划中，每项只在一个阶段。'
     )
+    if phase == 'plan':
+        from superagent.goal_team_blind import required_blind
+        if required_blind(contract):
+            context['contract_instruction'] += (
+                '这个计划必须只有一个 steps 元素，列出所有已批准的必要 criterion_id。'
+                '本人先看小样并留意见，两路生成、封存、独立检查和之后锁票属于同一个版本，请勿拆成多个步骤。')
+        elif context.get('team_review_mode') == 'review_and_decide':
+            context['contract_instruction'] += (
+                '按真实依赖安排至少两个阶段，每阶段有独立且不同的已批准验收条款。'
+                '把前置文件放在第一阶段，第二阶段要有可供本人选择方向的明确产物。'
+                '仅按实际交付依赖拆分阶段。')
     if phase == 'replan':
         context['contract_instruction'] += '仅调整后续阶段的实施方案，保持现有阶段顺序和验收项不变。'
     if instructions.get('schema_version')==2:

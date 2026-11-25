@@ -1,0 +1,45 @@
+{
+  "owner-report": {
+    "state": "completed",
+    "authorization_revision": 1,
+    "name": "report.html",
+    "download_sha256": "863c4e1ad7821e69a603bda36431c07c0ec04590328836239b256c07a66669c7",
+    "workbench_dsh_bytes_equal": true,
+    "byte_count": 6797,
+    "sample_count_in_history": 3,
+    "effective_approvals": 1,
+    "owner_preference_events": 1,
+    "owner_signoff_events": 1,
+    "same_preference_across_repair": true,
+    "failed_runs_without_checkpoint": [
+      6,
+      7
+    ],
+    "accepted_production_run": 8,
+    "independent_review_run": 9
+  },
+  "short-control": {
+    "state": "completed",
+    "authorization_revision": 1,
+    "name": "result.json",
+    "download_sha256": "003528552342603caf2ca0a1d5b54ca202eea9de55cbde8b5a6de6b25bdee03e",
+    "workbench_dsh_bytes_equal": true,
+    "byte_count": 36,
+    "effective_approvals": 1,
+    "human_signoff_required": false
+  },
+  "isolated_asset_refresh": {
+    "workbench_asset_served_exact": true,
+    "workbench_asset_sha256": "84e5649d30726f7974d3b1e8dc0722a2cec6c51bfdec1e9771a74463f052fab6",
+    "dsh_package_points_to_current_source": true,
+    "rendering_verified_via_fixtures_only": true,
+    "archives_verified_after_refresh": true,
+    "worker_source_sha256": "cc1c4df68b09140be799ca58220f50b8201c16058d52a16cd0502ca12caeb92c",
+    "worker_updated_after_both_orders_settled": true
+  },
+  "scope": {
+    "primary_test": "real isolated tickets plus web and paired DSH API downloads",
+    "preparation_and_rejected_result_regression": "controlled local tests",
+    "native_formal_chrome_dsh_ui_certified": false
+  }
+}

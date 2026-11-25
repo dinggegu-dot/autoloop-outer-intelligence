@@ -1,0 +1,120 @@
+{
+  "case": "F9-role-allowance-real-api",
+  "passed": true,
+  "synthetic": true,
+  "runtime": "codex-app-server",
+  "transport": "isolated Web API",
+  "approval_operator": "acceptance_test",
+  "intake": "synthetic-intake-fixture",
+  "ticket_ref_sha256": "71adb33c0a3dc9fb6eaab34c19fc4b81b966679bd0a86f497221f1c9995e1533",
+  "initial_authorization": {
+    "contract_approvals": 1,
+    "revision": 1,
+    "role_limit": 1,
+    "operator_kind": "acceptance_test"
+  },
+  "exhausted": {
+    "execution_status": "budget_exhausted",
+    "execution_error": "内层角色调用额度用完",
+    "completed_stages": 1,
+    "assignments": {
+      "plan": 1,
+      "execute": 2,
+      "review": 3
+    },
+    "verified_first_file_sha256": "e4323baa331fa81998e81d26c586bc2ac08aaca838f9e0950c115ed1efbb04c0",
+    "role": {
+      "role": "lead",
+      "requested_model": "gpt-6.2-sol",
+      "model": "gpt-6.2-sol",
+      "effort": "medium",
+      "sandbox": "workspace-write",
+      "status": "completed",
+      "usage": null,
+      "usage_source": null
+    },
+    "suppressed_notifications": 6,
+    "scope": "真实模型轮输出不变。隔离 Worker 在本地收件时丢弃首角色的用量更新。",
+    "role_timing": {
+      "wall_seconds": 27.56,
+      "assignment_limit_seconds": 240,
+      "process_state": "stopped"
+    },
+    "no_second_stage_file_before_extension": true
+  },
+  "extension": {
+    "new_authorizations": 1,
+    "old_mandate_revision": 1,
+    "new_mandate_revision": 2,
+    "additional_minutes": 0,
+    "additional_roles": 5,
+    "new_role_limit": 6,
+    "decline_is_read_only": true,
+    "zero_increase_http": 400,
+    "duplicate_event_reused": true,
+    "changed_same_key_http": 409,
+    "stale_version_http": 409
+  },
+  "final": {
+    "status": "completed",
+    "stage_two_runs": {
+      "execute": 4,
+      "review": 5
+    },
+    "checks": {
+      "f9-stage-1": "PASS",
+      "f9-stage-2": "PASS"
+    },
+    "download_sha256": {
+      "first.json": "e4323baa331fa81998e81d26c586bc2ac08aaca838f9e0950c115ed1efbb04c0",
+      "second.json": "53431a97d98d4dbfd2dc297455153ca392d2e9221bfec66ede70f17900cd19b6"
+    },
+    "preserved_first_stage_bytes": true,
+    "role": {
+      "role": "lead",
+      "requested_model": "gpt-6.2-sol",
+      "model": "gpt-6.2-sol",
+      "effort": "medium",
+      "sandbox": "workspace-write",
+      "status": "completed",
+      "usage": {
+        "total_tokens": 72804,
+        "input_tokens": 71399,
+        "cached_input_tokens": 58880,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1405,
+        "reasoning_output_tokens": 31
+      },
+      "usage_source": "thread/tokenUsage/updated"
+    },
+    "independent_billing": null,
+    "role_timing": {
+      "wall_seconds": 42.77,
+      "assignment_limit_seconds": 240,
+      "process_state": "stopped"
+    },
+    "usage_replay": {
+      "replayed": true,
+      "receipt_count": 2,
+      "total_tokens_unchanged": true,
+      "scope": "根据实测报告值重建协议快照，在本地回放"
+    }
+  },
+  "role_usage_ui": {
+    "method": "网页和 DSH JavaScript 控件模拟",
+    "unreported": "用量未报告",
+    "explicit_zero_and_positive_values_distinguished": true,
+    "real_browser_session": false
+  },
+  "earlier_intake_attempt": {
+    "model": "real-codex",
+    "timeouts": 2,
+    "no_execution_ticket_created": true
+  },
+  "evidence_scope": {
+    "actual": "真实规划、WorkBench API、Hub、Worker、两次 GPT‑6.2 Sol 角色轮、两次独立复验、最终归档。",
+    "fixture": "试验员批准前把合成单额度设为 1。接单和验收设计采用固定夹具。首个真实角色的六条协议用量更新在本地丢弃，模型输出未改。",
+    "remaining": "本案的每次实施派工只有一名角色。多角色逼近共同截止时限、限时停稳及平台费用另待核对。"
+  },
+  "observed_at": "2026-11-24T13:52:48+00:00"
+}

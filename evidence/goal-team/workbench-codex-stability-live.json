@@ -1,0 +1,177 @@
+{
+  "scope": "synthetic isolation acceptance, independent read-only file and SQLite verification",
+  "ticket_ref_sha256": "8c53078cb9c514459da809a9372f4b86604dcf9aa78d3a60a5e3c15e581a8f01",
+  "status": "completed",
+  "first_stage": {
+    "run": 3,
+    "earlier_than_draft_dispatch": true,
+    "checks": {
+      "verify-stable-outline": "PASS"
+    },
+    "catalog_sha256": "a5dff7a44d5b047e29d60a9058bc550889fe3f284ba0fa241cef9872a308dc1f",
+    "files": {
+      "stable-outline.html": "a301a95d4e7bb87bc69d6ab9421567497946270d8bd62922a6bd93de660b3d91"
+    }
+  },
+  "draft": {
+    "run": 4,
+    "catalog_sha256": "900a9c28795b49cfdb19df07048f6632ad704415d19c7e7a1ce857d255b56475",
+    "files": {
+      "stable-brief.html": "4a57f46da815a61f081f33d8ec03a36bea21645fe771b7ef10d927cdab64f849",
+      "stable-outline.html": "a301a95d4e7bb87bc69d6ab9421567497946270d8bd62922a6bd93de660b3d91"
+    },
+    "distinct_role_sessions": 5,
+    "two_proposals_against_same_stage_one_catalog": true,
+    "comparison_created_new_catalog": true,
+    "advisor_verified_read_paths": [
+      "stable-brief.html",
+      "stable-outline.html"
+    ],
+    "advisor_verified_excerpt_count": 2,
+    "options": [
+      {
+        "id": "keep-draft",
+        "mode": "keep",
+        "changes": 0,
+        "retained": 2
+      },
+      {
+        "id": "details-first",
+        "mode": "edit",
+        "changes": 1,
+        "retained": 4
+      },
+      {
+        "id": "notice-first",
+        "mode": "edit",
+        "changes": 2,
+        "retained": 4
+      }
+    ]
+  },
+  "effective_web_mandate_events": 1,
+  "human_signoff_required": true,
+  "continuation": {
+    "run": 5,
+    "mode": "edit",
+    "option_id": "details-first",
+    "original_draft_sha256": "900a9c28795b49cfdb19df07048f6632ad704415d19c7e7a1ce857d255b56475",
+    "catalog_sha256": "d2700cc7310b75e23ecbff8ef0c70a15ae15351315faa1939620ecc3fa53e939",
+    "changed_files": [
+      "stable-brief.html"
+    ],
+    "lead_verified_read_paths": [
+      "stable-brief.html",
+      "stable-outline.html"
+    ],
+    "retained_rows_pass": 4,
+    "first_stage_bytes_preserved": true,
+    "original_notice_wording_preserved": true,
+    "title_heading_and_ids_preserved": true,
+    "note_marker_hashes_in_candidate": []
+  },
+  "final_review": {
+    "run": 6,
+    "checks": {
+      "verify-stable-outline": "PASS",
+      "verify-stable-brief": "PASS"
+    },
+    "verified_bytes_equal_continuation": true,
+    "catalog_sha256": "d2700cc7310b75e23ecbff8ef0c70a15ae15351315faa1939620ecc3fa53e939",
+    "files": {
+      "stable-brief.html": "0da7bfb3fe5bcc133ef0c208fd0d66359bd3bf710c1fc29c868e0e51fe118b22",
+      "stable-outline.html": "a301a95d4e7bb87bc69d6ab9421567497946270d8bd62922a6bd93de660b3d91"
+    }
+  },
+  "signoff": {
+    "events": 1,
+    "source": "web",
+    "version_matches_archive": true,
+    "operator_kind": "acceptance_test"
+  },
+  "board_artifact_get_200": 2,
+  "chrome_downloaded_files": {
+    "stable-brief.html": {
+      "size": 1696,
+      "sha256": "0da7bfb3fe5bcc133ef0c208fd0d66359bd3bf710c1fc29c868e0e51fe118b22"
+    },
+    "stable-outline.html": {
+      "size": 485,
+      "sha256": "a301a95d4e7bb87bc69d6ab9421567497946270d8bd62922a6bd93de660b3d91"
+    }
+  },
+  "synthetic": true,
+  "passed": true,
+  "ticket": "wb-33a8c4e11a1948078575934e0381b1fd",
+  "effective_preferences": 1,
+  "entry": "Chrome 隔离工作台普通新单",
+  "formal_listener_unchanged": true,
+  "prior_attempts": {
+    "missing_read_proof": {
+      "run": 5,
+      "latest_role": "lead",
+      "error": "Problem: 只读角色未留下与本次实际候选文件匹配的读取记录",
+      "matching_candidate_read_paths": [],
+      "successful_shell_call_count": 3,
+      "sealed_candidate_sha256": "280a99b279ba3282ebaa90fadd1042b96911f8c5bf64c6e791f82c3127b37bad",
+      "sealed_files": {
+        "stable-brief.html": "eb76afcdecaaf81e27840b495f42d9537ca44b2e226d55317df9dc3cc067b599",
+        "stable-outline.html": "41662df500da12b5f891ec9637164315b7cb1d2e5a2f6464e1dbba05f33fa01d"
+      },
+      "first_stage_bytes_preserved": true,
+      "worker_machine_checks_passed": true,
+      "durable_partial_receipt_verified": true,
+      "outer_final_review_dispatched": false,
+      "signoff_occurred": false,
+      "delivery_available": false
+    },
+    "nested_replacement_rejected_by_old_counter": {
+      "run": 6,
+      "error": "审稿续办未通过。新版未出现约定的原文改动。",
+      "selected_option_id": "main-region",
+      "latest_role": "lead",
+      "latest_role_status": "completed",
+      "matching_latest_role_read_paths": [
+        "stable-brief.html",
+        "stable-outline.html"
+      ],
+      "candidate_sha256": "98e402d13302ba07e9a96f0a72c7cf1d437a947beb13b3a12029650926d64d83",
+      "candidate_files": {
+        "stable-brief.html": "a16fb8ea3e196e1ccf6fb679700dc74c8aa01254e069c4f77a871e4701f58c9d",
+        "stable-outline.html": "334814cec7b0ed7a627a532fe170489f563b666fc4e91c01f01ad1d82010d41f"
+      },
+      "first_stage_bytes_preserved": true,
+      "outer_final_review_dispatched": false,
+      "signoff_occurred": false,
+      "delivery_available": false
+    },
+    "fixed_counter_read_only_replay": {
+      "scope": "read-only replay of actual prior Chrome candidate using corrected verifier",
+      "option_id": "main-region",
+      "draft_sha256": "499467766b57ef6dee4c22314e0e475f848dab2cabe51a3a55028ac6e18c2d27",
+      "candidate_sha256": "826640be9b70edee592e07e271e1031bbfb4d9fec75436f8fcd336477e9662a5",
+      "actual_candidate_passed": true,
+      "append_without_replacing_old_title_rejected": true,
+      "outline_byte_identical": true,
+      "outline_sha256": "334814cec7b0ed7a627a532fe170489f563b666fc4e91c01f01ad1d82010d41f",
+      "requested_paragraph_after_main": true,
+      "observed_changes": [
+        {
+          "path": "stable-brief.html",
+          "before_count": 1,
+          "after_count": 1,
+          "passed": true
+        }
+      ],
+      "negative_observed_changes": [
+        {
+          "path": "stable-brief.html",
+          "before_count": 2,
+          "after_count": 1,
+          "passed": false
+        }
+      ],
+      "prior_run_live_state": "executing"
+    }
+  }
+}

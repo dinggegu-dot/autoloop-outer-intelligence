@@ -1,0 +1,56 @@
+{
+  "case": "R1-short-api-independent-review",
+  "reviewed_at": "2026-11-24T12:54:52+00:00",
+  "result": "PASS",
+  "scope": "合成短任务。通过本机鉴权工单接口、归档下载与只读业务账本及 Hub 投影独立复核。",
+  "ticket_ref_sha256": "2a9ba44b689bd8f66aa1ae8e3e11603778227e7295b1e5ac5738ef061e7612c9",
+  "approval": {
+    "count": 1,
+    "channel": "web",
+    "mandate_revision": 1
+  },
+  "hub_runs": {
+    "plan": 1,
+    "execute": 2,
+    "review": 3
+  },
+  "role": {
+    "count": 1,
+    "role": "lead",
+    "requested_model": "gpt-6.2-sol",
+    "protocol_model": "gpt-6.2-sol",
+    "effort": "medium",
+    "sandbox": "workspace-write",
+    "session_sha256": "66d754af4eabde4cfde71cb71040b5e363b15a2d547966baba09d72d8e8c8f25",
+    "turn_sha256": "8a4675e08a8ee43cfe1bf2790506638347dcdd5b26b8d269fcc021a7f250bdb4",
+    "status": "completed",
+    "process_record": "stopped",
+    "reported_tokens": 45134,
+    "usage_source": "thread/tokenUsage/updated"
+  },
+  "intake_models": {
+    "intake_assessor": "gpt-6.2-sol",
+    "acceptance_designer": "gpt-6.2-sol"
+  },
+  "verification": {
+    "criterion_id": "result-json-exact-match",
+    "verifier": "json-artifact v1",
+    "acceptance_revision": 1,
+    "status": "PASS",
+    "expected_and_actual": {
+      "filenames": [
+        "rill.md",
+        "road.md"
+      ]
+    },
+    "worker_check_digest_verified": true
+  },
+  "download": {
+    "file": "result.json",
+    "bytes": 54,
+    "sha256": "bbc301a34d002528089d40f9db5e286fd5fb9254d046073acd24116b8377f409",
+    "archive_manifest_sha256": "b83dcba323ab2aa9e1c9ed5e633b456f0c4ecd305a5df48679114110dc227ea8",
+    "matches_sealed_and_verified_bytes": true
+  },
+  "limits": "本次复核仅覆盖这张合成短任务的工作台接口与自动交付。"
+}

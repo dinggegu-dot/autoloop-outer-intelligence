@@ -24,18 +24,31 @@ ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT / '.runtime'
 RULE = 'odyssey-workbench'
 TASK_RE = re.compile(r'^wb-[a-f0-9]{32}$')
-STATES = {'created':'待派发','queued':'排队中','planning':'正在规划','awaiting_approval':'等待你的决定','executing':'正在执行','reviewing':'独立验收中','awaiting_artifact_review':'待人工签收','completed':'已验收完成','blocked':'遇到阻塞','paused':'已暂停','stopping':'正在停止','rejected':'已拒绝','budget_exhausted':'达到执行预算'}
+STATES = {'created':'待派发','queued':'排队中','planning':'正在规划','awaiting_approval':'等待你的决定','executing':'正在执行','reviewing':'独立验收中','awaiting_artifact_review':'待人工签收','awaiting_preference':'待选样例','completed':'已验收完成','blocked':'遇到阻塞','paused':'已暂停','stopping':'正在停止','rejected':'已拒绝','budget_exhausted':'达到执行预算'}
 
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
 
 
+def is_blind_goal(task):
+    outer = (task.get('goal_execution') or {}).get('outer') or {}
+    criteria = (outer.get('acceptance_contract') or {}).get('criteria', ())
+    return any(row.get('required') and row.get('verifier_id') == 'blind-projection' for row in criteria)
+
+
 def omit_call_payloads(task):
     """通用看板和飞书读取的是任务副本；完整新增回执只从单次调用入口加载。"""
+    blind = is_blind_goal(task)
     for assignment in (task.get('goal_execution') or {}).get('assignments', []):
-        if assignment.get('report'):
-            assignment['report'].pop('model_audit', None)
+        report = assignment.get('report')
+        if report:
+            report.pop('model_audit', None)
+            if blind:
+                report.pop('result', None)
+        if blind and not (report or {}).get('preference'):
+            # 双路会话的顺序和用量也可能暴露匿名来源。
+            assignment.pop('role_calls', None)
     return task
 
 
@@ -450,9 +463,25 @@ class Workbench:
         self.outer_enabled = outer_enabled
         self.outer_workbench_entry = outer_enabled and outer_workbench_entry
         self._outer_service = None
+        self._blind_service = None
         if outer_enabled:
             from superagent.outer_intake import OuterIntake
             self._outer_service = OuterIntake(self, outer_model, outer_registry)
+            from superagent.goal_blind_ledger import BlindReviewLedger
+            self._blind_service = BlindReviewLedger(self)
+
+    def blind_review(self):
+        if self._blind_service is None:
+            raise Problem('此实例未启用盲评', 404)
+        return self._blind_service
+
+    def require_public_artifact(self, task_id, candidate=None):
+        task = self.store.get(task_id)
+        if is_blind_goal(task) and task['status'] != 'completed':
+            view = self.blind_review().get(task_id, actor_id='owner')
+            if (not view or view['status'] != 'locked' or not view['current']
+                    or (candidate is not None and view['candidate'] != candidate)):
+                raise Problem('匿名评阅完成前，原单仅展示匿名样例', 409)
 
     def outer(self):
         if self._outer_service is None:

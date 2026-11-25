@@ -222,11 +222,13 @@ class CrossChannelTest(unittest.TestCase):
         self.assertNotIn('require_signoff',service.approve_goal_contract.call_args.kwargs)
         dispatch(service,'web','approve',dict(payload,require_signoff=True))
         self.assertIs(service.approve_goal_contract.call_args.kwargs['require_signoff'],True)
+        task, _ = self.wb.store.create({'name':'普通下载','goal':'下载已验报告',
+                                        'request_id':'00000000-0000-4000-8000-000000000001'})
         self.wb.artifact_bytes=Mock(return_value=(Path('报告.txt'),b'candidate file'))
-        url=self.base+'/api/tasks/'+draft['id']+'/artifact?path=%E6%8A%A5%E5%91%8A.txt&candidate=assignment-2'
+        url=self.base+'/api/tasks/'+task['id']+'/artifact?path=%E6%8A%A5%E5%91%8A.txt&candidate=assignment-2'
         with self.client.open(url) as response:
             self.assertEqual(response.read(),b'candidate file')
-        self.wb.artifact_bytes.assert_called_once_with(draft['id'],'报告.txt',None,candidate='assignment-2')
+        self.wb.artifact_bytes.assert_called_once_with(task['id'],'报告.txt',None,candidate='assignment-2')
         with self.assertRaises(HTTPError) as conflict:
             self.client.open(url+'&version=1')
         self.assertEqual(conflict.exception.code,400)

@@ -1,6 +1,6 @@
 const stations={decision:'待我决定',flight:'进行中',delivery:'已交付',dock:'停靠中'};
 // 行节点按调用 ID 复用，轮询不会收起已展开的回执。
-function callHistory(article, call) {
+export function callHistory(article, call) {
   const panel = document.createElement('section');
   panel.id = 'outer-history';
   article.after(panel);
@@ -52,6 +52,8 @@ function callHistory(article, call) {
                                            : trace.reason || '账本尚无本次提案的采纳记录。'));
           if (trace.dispatch_disposition === 'stale_before_launch') {
             body.append(element('p','后续派工因工单更新在启动前失效。'));
+          } else if (trace.dispatch_disposition === 'stale_after_launch') {
+            body.append(element('p','后续派工因工单更新失效，已保留实际调用记录。'));
           }
           if (proposal?.affected_steps?.length) record(body,'受影响步骤',proposal.affected_steps.map(step=>step+1));
           if (proposal?.retained_artifacts?.length) record(body,'保留成果的文件版本',proposal.retained_artifacts);

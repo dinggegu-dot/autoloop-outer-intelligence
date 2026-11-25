@@ -1,0 +1,75 @@
+{
+  "date": "2026-11-25",
+  "scope": "合成工单，独立本机工作台，真实 Codex",
+  "recovery": {
+    "result": "delivered_from_sealed_receipt",
+    "entry": "隔离工作台普通新单业务接口",
+    "approvals": 1,
+    "worker_actually_restarted": true,
+    "primary_receipt_missing": true,
+    "original_run": 2,
+    "original_run_transitions": ["claimed", "queued", "claimed", "nothing"],
+    "observed_retry_delay_seconds": 299.51,
+    "reexecuted_roles": 0,
+    "receipt_source": "recovery",
+    "candidate_sha256": "b7bc7b6993f71071293c7bc2c1b64513d4cabfdcef13570a24e04b98deea8fc2",
+    "independent_review_run": 3,
+    "independent_checks": ["PASS", "PASS"],
+    "download_before_and_after": [404, 200],
+    "download_sha256": "e932c50c641d1984f18c5e9949a96484844fbfb48e52a045234decbf1e63c3d3"
+  },
+  "verification": {
+    "result": "delivered",
+    "entry": "隔离工作台普通新单业务接口",
+    "authorization_revision": 1,
+    "execute_run": 2,
+    "independent_review_run": 3,
+    "first_candidate_sha256": "55150b4eb615a82cc7c49a8366f6ec196925c37d1b7c95778586f7863eb7aa94",
+    "verified_candidate_sha256": "1c8313a46e06c377b1648fa4d6c8ba2df2ceb5df8dbbc4c8151fbcf5f0b88c32",
+    "checks_before_repair": ["FAIL", "PASS"],
+    "checks_after_repair": ["PASS", "PASS"],
+    "independent_checks": ["PASS", "PASS"],
+    "download_http": 200,
+    "download_sha256": "eb20853afc97319a61650c8e28084db07548e13788fd687276e6baf36b7e00f5"
+  },
+  "budget": {
+    "result": "delivered",
+    "entry": "Chrome 隔离工作台普通新单",
+    "approvals": 1,
+    "budget_extensions": 1,
+    "role_limit_before_and_after": [4, 9],
+    "original_execution_run": 2,
+    "continued_execution_run": 3,
+    "independent_review_run": 4,
+    "continued_roles": ["implementer", "lead"],
+    "deferred_candidate_sha256": "8b091214d7a88ee120b9cdc57d5bd8ca41b3a39eabf1aec33259bd4095d15f4a",
+    "verified_candidate_sha256": "8644acce1c91c512c9c24c38dcebc4501f93618a6783686187acf712e671eecb",
+    "checks_before_and_after": [["FAIL", "PASS"], ["PASS", "PASS"]],
+    "download_matches_archive": true,
+    "download_sha256": "b8e21d59e55632a78a88a23ee42379250f38d4a6cf5848ddc59d2e0e38408dbe"
+  },
+  "retention": {
+    "result": "expected_block_observed",
+    "entry": "隔离工作台普通新单业务接口",
+    "authorization_revision": 1,
+    "operator_kind": "acceptance_test",
+    "execute_run": 2,
+    "first_candidate": {
+      "catalog_sha256": "f43d5880d3ecd658e7aa583bf848bded7f54fb1b971e8754cb06f258d357132e",
+      "checks": ["FAIL", "PASS"]
+    },
+    "repaired_candidate_with_retention_fault": {
+      "catalog_sha256": "d923c709ea6814ff2f55d99026f49089be52a129a2d241c28f66d00ce29f91dc",
+      "checks": ["PASS", "FAIL"],
+      "protected_fragments_passed": [true, false]
+    },
+    "injected_faults": [
+      "真实执行者完成后将 Daily Tasks 改为 Draft Tasks",
+      "真实执行者修好后将受保护的 task-notes 改为 draft-notes"
+    ],
+    "role_verdict": "repair",
+    "trusted_verification_passed": false,
+    "outer_review_dispatches": 0,
+    "download_http": 404
+  }
+}

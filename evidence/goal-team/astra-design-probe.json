@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "probe": "standalone_app_server_synthetic_design",
+  "workbench_ticket_run": false,
+  "transport": "local_app_server_stdio",
+  "request": {
+    "model": "gpt-6.2-astra",
+    "effort": "high",
+    "sandbox": "read-only",
+    "ephemeral": true,
+    "closed_output_schema": true,
+    "tools_requested": false,
+    "fixture": "P1 lookup checks pass on V1; P2 incremental passes its own check on V2 but regresses P1; P3 has not run. Three orders of pause, duplicate, and late receipt."
+  },
+  "observation": {
+    "requested_model": "gpt-6.2-astra",
+    "model": "gpt-6.2-astra",
+    "effort": "high",
+    "sandbox": "read-only",
+    "approval_policy": "never",
+    "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+    "cli_version": "0.171.0-alpha.13.2",
+    "usage": {
+      "total_tokens": 10242,
+      "input_tokens": 7707,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 2535,
+      "reasoning_output_tokens": 601
+    },
+    "usage_source": "thread/tokenUsage/updated",
+    "session_sha256": "af221a18ccf8ece43185a95c2a68009acf508c2983b3eb99b62b59ab38414e91",
+    "turn_sha256": "ee2dae27de717de7d0a9e9ead2af4e073ee69712b3f867dfd389950e4537f25e",
+    "ephemeral_thread_verified": true
+  },
+  "terminal_status": "completed",
+  "closed_schema_validated": true,
+  "tool_event_count": 0,
+  "design": {
+    "authoritative_state": {
+      "phase": "P1 的验收条件在 V2 上回归失败。P2 尝试 A2 已产出候选，但未获采用。P3 未开始。",
+      "baseline": "正式基线仍是 V1。Q1(V1) 的通过记录保留。V2 的封存字节可保全；封存不等于采用。",
+      "allow_to_publish": "否。Q2(V2) 通过不能抵消 Q1(V2) 失败。"
+    },
+    "invariants": [
+      "派工用短事务：锁定任务行或按版本号条件更新。核对运行态、当前代次、阶段、基线、批准范围及剩余预算。原子登记尝试号或复核号、预留预算、写待发消息。提交后才派工。",
+      "暂停用同一把任务锁或同一版本条件。原子写入暂停态、提升代次、撤销旧派工与复核的提交资格。提交后再请求停机。暂停已落账不表示进程已停止。",
+      "回执按任务、认证来源及原始事件号去重。Hub 重投保留原始身份。相同事件、相同载荷只返回原处理结果；相同事件、不同摘要记冲突并隔离，不覆盖原绑定。换事件号也不能让同一尝试重复推进。",
+      "回执落账须核对运行态、代次、阶段、待结尝试或复核号、基线及候选绑定。实施回执最多登记候选并排入独立复核；不能移动正式基线。迟到消息只作审计。",
+      "等待停机、模型推理、计算摘要、运行检查均在事务外。复核读取不可变快照。采用时另开短事务，重查当前资格和快照摘要；只有该候选的全部必需证据齐备且通过，才原子移动基线并推进阶段。",
+      "恢复使用新代次和新派工号，沿用原批准边界。缺证据不是通过：先补独立快照复验；不能取得可信快照则从 V1 新开尝试。预算不足或修复须越界时停下，不自动扩权。"
+    ],
+    "pause_cases": [
+      {
+        "ordering": "甲：V2 已封存 → 暂停提交 → 旧 Worker 回执 → Hub 重投 → 旧复核完成。",
+        "ledger_effect": "暂停先取得提交权。A2 失去提交资格；后续消息不登记有效实施成功，不推进复核或阶段。重投去重，异摘要另记冲突。",
+        "workspace_effect": "隔离 A2 工作区，保全 V2。未确认旧进程停止前，不复用、清理或原地回滚该目录。正式指针仍指 V1。",
+        "next_action": "确认旧写者已退出或被可靠隔离。恢复后可重新核验封存摘要，以新号登记复核；不得补认旧回执。"
+      },
+      {
+        "ordering": "乙：实施回执提交并登记独立复核 → 暂停提交 → 旧复核结论到达。",
+        "ledger_effect": "保留已提交的 A2 实施记录及 V2 摘要。旧复核号失效，其结论不能转为正式验收。暂停不抹去实施历史。",
+        "workspace_effect": "保留登记所指的只读 V2 和 V1 基线。不把复核中的候选切换为正式工作区。",
+        "next_action": "恢复后对照原登记摘要。字节一致即可发新复核，不必仅因暂停重做实施。对 V2 的复验仍须判 Q1 失败。"
+      },
+      {
+        "ordering": "丙：暂停提交 → 恢复到新代次 → 旧 A2 成功回执到达。",
+        "ledger_effect": "即使任务已恢复运行，旧代次及旧尝试号也不匹配。只记迟到，不结清新尝试，不占用其复核名额。",
+        "workspace_effect": "新尝试使用独立工作区。旧 V2 可只读留存；旧回执不得触发复制、覆盖或切换指针。",
+        "next_action": "按新代次继续。若要利用旧字节，显式绑定其摘要并发新复核；不得把旧事件改挂到新尝试。"
+      }
+    ],
+    "regression_decision": {
+      "earliest_failed_phase": "P1。最早失效的是索引查询契约；首次观察到失效的是 P2 候选 V2。不是撤销 Q1(V1) 的历史结论。",
+      "preserve": [
+        "V1 的封存字节、摘要、P1 记录及 Q1(V1) 原始证据。",
+        "V2 的封存字节、A2 轨迹、增量改动 U，以及 Q2(V2) 通过、Q1(V2) 失败的证据。U 可复用，不预授验收。"
+      ],
+      "must_rerun": [
+        "从 P1 的查询契约着手修复，保留或重放 U，另封修复候选，不改写 V1 或 V2。",
+        "在同一个修复候选上独立执行 Q1 的大小写及精确文件名查询，再执行 Q2 的增量入表检查。两项均须有绑定该摘要的实际结果。",
+        "两项通过且采用事务成功后才开始 P3。最终清单须引用已采用的摘要。"
+      ],
+      "rationale": "回归落点由最早失效的验收条件决定，不由最后写盘的阶段决定。修复查询可能影响增量入表，所以不能沿用 V2 的 Q2 通过信号。"
+    },
+    "tests": [
+      {
+        "name": "暂停先赢",
+        "interleaving": "封存 V2，阻塞 Worker 退出；提交暂停；依次投递 A2 成功、Hub 原样重投、旧复核通过。",
+        "expected": "基线始终为 V1；没有有效复核或 P3 派工。V2 字节不变，旧目录未被复用。"
+      },
+      {
+        "name": "暂停截断复核提交",
+        "interleaving": "提交实施回执；让复核在事务外算完但暂不落账；提交暂停；放行复核提交；恢复并发新复核。",
+        "expected": "实施记录恰好一条。旧复核条件更新影响零行。新复核读取同一 V2，得到 Q2 通过、Q1 失败，不采用。"
+      },
+      {
+        "name": "恢复不复活旧尝试",
+        "interleaving": "暂停；恢复并登记新尝试；两次投递旧 A2 成功；再以同一原始事件号投递另一摘要。",
+        "expected": "旧成功不推进，重复不产生第二次副作用。异摘要触发冲突审计；原绑定、新尝试状态及工作区均不变。"
+      },
+      {
+        "name": "书面通过不构成证据",
+        "interleaving": "封存修复候选 V3；提交写有“Q1、Q2 通过”的旧复核文本，附 Q1(V1) 和 Q2(V2) 的报告，并把外层标签改为 V3。",
+        "expected": "按可信执行记录核对复核号、检查项、实际输入摘要及原始结果，不信文本或外层标签。两份报告均非 V3 证据；拒绝采用，在 V3 上实跑 Q1、Q2。"
+      },
+      {
+        "name": "恢复时证据缺失",
+        "interleaving": "恢复后仅找到候选摘要和一句“通过”，无实际检查记录；尝试直接生成 P3 清单。",
+        "expected": "阻止 P3。若快照可验证且预算允许，发新复核；否则保留 V1，按原授权重试或停下。"
+      }
+    ],
+    "uncertainty": "资料未给出 Q1 失败的代码根因，也未给出剩余预算。能确定的是验收落点在 P1，不能据此断言必须重写 P1 或丢弃 U。"
+  },
+  "elapsed_ms": 62774,
+  "observed_at_utc": "2026-11-24T13:00:35Z",
+  "role_process_state": "stopped",
+  "review": {
+    "method": "Read the synthetic output against the fixture. No application fault test was run by this probe.",
+    "checked": [
+      "Identified the P1 acceptance regression introduced in the P2 candidate and retained the verified V1 baseline.",
+      "Separated candidate preservation from formal adoption in all three pause and receipt interleavings.",
+      "Required distinct authorization generations, exact receipt identity, and evidence bound to the candidate digest.",
+      "Specified five test sequences, including denial of stale approval evidence relabeled for a new candidate."
+    ]
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "synthetic": true,
+  "entry": "普通新单业务 API",
+  "mode": "nonterminal-regression",
+  "runtime": "codex-app-server",
+  "passed": true,
+  "approval_count": 1,
+  "non_terminal": {
+    "failed_checks": {
+      "search-example-alpha": "FAIL",
+      "search-example-z": "FAIL",
+      "search-prefix-order": "FAIL",
+      "search-z-with-match": "FAIL"
+    },
+    "artifact_sha256": "94ff7ff86d55e7c49c1f9af18f37548e0250ac7d403af16b3c4a73c4a18153b6",
+    "step": 1,
+    "third_stage_started": false,
+    "retained_update_sha256": "60497279c91063db48ce42e72f2c5be609456a66dfbe913fa63dad7c543389e9"
+  },
+  "delivery": {
+    "artifact_sha256": "18ec810c4e9d9a67ab1980e0762532972688c403b6095cc301ff3431545cd766",
+    "files": {
+      "search.py": "0dd14d57dd0143cc1b9d353ffa4f51f9a8c41b185bd71fb43257571a83b82d66",
+      "summarize.py": "dfd0aa033430b71eb52411ac50b33f0e455f3aada1d2e5e782c14935fbb9517d",
+      "update.py": "60497279c91063db48ce42e72f2c5be609456a66dfbe913fa63dad7c543389e9"
+    },
+    "level": "goal"
+  },
+  "checks": {
+    "search-example-alpha": "PASS",
+    "search-example-z": "PASS",
+    "search-prefix-order": "PASS",
+    "search-z-with-match": "PASS",
+    "update-example-single-add": "PASS",
+    "update-example-merge": "PASS",
+    "update-single-add-order": "PASS",
+    "update-duplicates-in-lists": "PASS",
+    "summarize-example-mixed": "PASS",
+    "summarize-example-empty": "PASS",
+    "summarize-last-dot": "PASS",
+    "summarize-one-filename": "PASS"
+  },
+  "dispatches": [
+    {
+      "run": 1,
+      "phase": "plan",
+      "stage": 1
+    },
+    {
+      "run": 2,
+      "phase": "execute",
+      "stage": 1
+    },
+    {
+      "run": 3,
+      "phase": "review",
+      "stage": 1
+    },
+    {
+      "run": 4,
+      "phase": "execute",
+      "stage": 2
+    },
+    {
+      "run": 5,
+      "phase": "review",
+      "stage": 2
+    },
+    {
+      "run": 6,
+      "phase": "coordinate",
+      "stage": 2
+    },
+    {
+      "run": 7,
+      "phase": "repair",
+      "stage": 2
+    },
+    {
+      "run": 8,
+      "phase": "review",
+      "stage": 2
+    },
+    {
+      "run": 9,
+      "phase": "execute",
+      "stage": 3
+    },
+    {
+      "run": 10,
+      "phase": "review",
+      "stage": 3
+    }
+  ],
+  "coordinator": {
+    "run": 6,
+    "model": "gpt-6.2-sol",
+    "tools": [
+      {
+        "evidence_sha256": "101ddd393ccbdac1943f6f2fe7afb6953965b35671e03c620c58ed6d21ecc1ab",
+        "name": "read_plan_versions",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "d01e1156b86f0f6fc7e898099538e05f306ea08de73114943b4636124945d11f",
+        "name": "read_verified_artifacts",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "b19d87bbc439e7fe870adf532e17eface2a36ef6c35298e855f3b8f93fb9096f",
+        "name": "read_failure_evidence",
+        "status": "completed"
+      },
+      {
+        "evidence_sha256": "d3412f05be52a1b6f442cf5708f0e51a37d70aef3e91d1e9750a39e5285e29bd",
+        "name": "read_remaining_budget",
+        "status": "completed"
+      }
+    ],
+    "action": "REPAIR",
+    "reason": "当前候选的四项搜索验收均出现 JSON 输出不符。update.py 的四项验收均已在两次隔离运行中通过。已有独立验过的 search.py 版本可用于恢复，修复和复验可沿用现有计划。剩余预算为 3482 秒，最低复验预算为 82 秒。",
+    "plan_change": "核对当前 search.py 的 SHA-256 与步骤 0 的已验版本 0dd14d57dd0143cc1b9d353ffa4f51f9a8c41b185bd71fb43257571a83b82d66。有版本差异时恢复已验版本。若版本一致或恢复后仍失败，检查验收命令实际调用的脚本、参数和 JSON 输出，定位并修复搜索回归。保留 update.py 的指定版本，并对合并后的候选重新运行步骤 0 和 1 的全部八项验收。",
+    "preserve": [
+      {
+        "path": "update.py",
+        "sha256": "60497279c91063db48ce42e72f2c5be609456a66dfbe913fa63dad7c543389e9"
+      }
+    ],
+    "verify_next": [
+      "search-example-alpha",
+      "search-example-z",
+      "search-prefix-order",
+      "search-z-with-match",
+      "update-example-single-add",
+      "update-example-merge",
+      "update-single-add-order",
+      "update-duplicates-in-lists"
+    ]
+  },
+  "formal_chrome_dsh_gui": false,
+  "download_validated": true
+}

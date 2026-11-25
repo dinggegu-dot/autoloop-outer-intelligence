@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "case": "W5-blind-real-api-independent-review",
+  "result": "PASS",
+  "synthetic_inputs": true,
+  "reviewed_at_utc": "2026-11-24T13:38:23.825+00:00",
+  "ticket_ref_sha256": "2b9ff406731708c25592761fc13e5890b0edaddc550f4915fe4d8ea0aba22496",
+  "entry": {
+    "surface": "普通新单的本机鉴权工单 API",
+    "source": "web",
+    "operator_kind": "acceptance_test",
+    "formal_chrome_validated": false,
+    "dsh_validated": false
+  },
+  "ledger": {
+    "approval_count": 1,
+    "mandate_revision": 1,
+    "plan_revision": 1,
+    "preference_event_count": 1,
+    "preference_options": 3,
+    "ballot_event_count": 1,
+    "lock_http_success_count": 2,
+    "signoff_count": 1,
+    "signoff_operator_kind": "acceptance_test",
+    "status": "completed"
+  },
+  "blind_comparison": {
+    "case_count": 8,
+    "rated_count": 0,
+    "unrated_count": 8,
+    "owner_judgments": false,
+    "quality_conclusion": null,
+    "position_balance": [
+      4,
+      4
+    ],
+    "manifest_digest": "ada661d2b8a596b8bb54bdbfcc29edc9681f85bcc880c80299205d6eda75f2f7",
+    "mapping_commitment": "e1ac558bd1b37e8c76b2e57ce7cbbe368732fbdac0a312b1d2ed2feb4a16a136",
+    "ballot_digest": "0fb7c936ac3ce53c84a0602f745db13fc9a7f755c083bb4275bc19c726429123",
+    "frozen_outputs_match_both_actual_call_receipts": true,
+    "trial_ballot_all_choices_empty": true
+  },
+  "verification": {
+    "blind_projection_pass": 1,
+    "human_review_inconclusive": 9,
+    "verifier_evidence_digests_recomputed": true
+  },
+  "runtime": {
+    "worker_runs": [
+      {
+        "run": 1,
+        "phase": "plan",
+        "role_turns": 0,
+        "transport": "done"
+      },
+      {
+        "run": 2,
+        "phase": "execute",
+        "role_turns": 5,
+        "transport": "done"
+      },
+      {
+        "run": 3,
+        "phase": "execute",
+        "role_turns": 4,
+        "transport": "done"
+      },
+      {
+        "run": 4,
+        "phase": "review",
+        "role_turns": 0,
+        "transport": "done"
+      }
+    ],
+    "codex_app_server_role_turns": 9,
+    "confirmed_role_model": "gpt-6.2-sol",
+    "role_process_records_stopped": true,
+    "comparison_model_wall": {
+      "baseline": {
+        "role_turns": 1,
+        "model_wall_ms": 19091,
+        "reported_tokens": {
+          "input_tokens": 8274,
+          "output_tokens": 426,
+          "cached_input_tokens": 0,
+          "total_tokens": 8700
+        }
+      },
+      "team": {
+        "role_turns": 3,
+        "model_wall_ms": 54545,
+        "reported_tokens": {
+          "input_tokens": 24514,
+          "output_tokens": 1454,
+          "cached_input_tokens": 0,
+          "total_tokens": 25968
+        }
+      },
+      "team_minus_baseline_ms": 35454
+    },
+    "elapsed_ms": {
+      "intake_to_approval": 84417,
+      "approval_to_candidate_offer": 185624,
+      "intake_to_trial_signoff": 271578,
+      "trial_preference_wait": 379,
+      "manifest_registration_to_test_ballot": 979,
+      "test_ballot_to_signoff": 14
+    },
+    "reported_usage_source": "thread/tokenUsage/updated",
+    "billing": "unknown",
+    "human_relays_recorded_by_test_harness": 0
+  },
+  "delivery": {
+    "file": "blind.json",
+    "bytes": 4459,
+    "file_sha256": "55d41ae882add63b72ff0b2cc98c269926dab016b76f04228aa7b667382cb52e",
+    "archive_manifest_sha256": "92114b4eaf94de0d967d653d429de740e9d51d0ff89c263c442059471b2bc0bf",
+    "pre_ballot_download_http_status": 409,
+    "after_trial_signoff_download_http_status": 200,
+    "matches_original_http_download_digest": true,
+    "sealed_and_verified_bytes_match": true,
+    "only_anonymous_projection_in_archive": true
+  },
+  "source_evidence_sha256": {
+    "original_trial_report": "72b649e120fa019bda2f88d9488174c66d36006dcc99075c527dbaebc7932e14",
+    "workbench_database": "2d7c892bc472ef05413d42dec9f7ad4e99274c342f12bcb926c8836844526904",
+    "http_log": "17eb056cedc805501d000dd1790c2128aca386de6ef9adace5cd6363a10aa0a3"
+  },
+  "limits": [
+    "真实模型与 Worker 完成技术流程。试验操作员选过前置样例，锁定的对照评阅票为空票，签收也是试验操作。八例均未评，没有真人签收与胜平负结论。",
+    "各臂耗时是归属该路线的实际模型轮次墙钟之和。整单耗时包含共用接单、计划、前置样例、独立验收与试验操作员等待。",
+    "本次只读重算签收归档字节并对照原运行记录的 HTTP 下载摘要，未新发下载请求、启动模型或操作界面。"
+  ]
+}

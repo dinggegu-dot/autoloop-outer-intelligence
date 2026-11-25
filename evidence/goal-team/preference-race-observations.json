@@ -1,0 +1,36 @@
+{
+  "case": "F4 阶段回执与 F3 抢答实际协议验证",
+  "entry": "普通新单业务 API",
+  "runtime": "codex-app-server",
+  "synthetic": true,
+  "whole_trial_passed": false,
+  "late_preference": {
+    "run": 2,
+    "actual_late_report": true,
+    "answerable_question": false
+  },
+  "late_report_file_sha256": "24550ea75c14a79689af91770b095eb72d37dada03df1a9d57172316887fa4f1",
+  "late_report_matches_bound_ledger": true,
+  "waiting_card": {
+    "old_revision": 1,
+    "current_revision": 2,
+    "same_question_and_candidate": true,
+    "old_while_paused": 409,
+    "old_after_resume": 409
+  },
+  "cross_channel": {
+    "successful_submissions": 1,
+    "accepted_source": "dsh",
+    "wrong_ticket": 409,
+    "unpaired_dsh": 403,
+    "replay_same_event": true,
+    "different_payload_same_key": 409,
+    "operator_kind": "acceptance_test"
+  },
+  "effective_approval_events": 1,
+  "effective_preference_events": 1,
+  "single_post_preference_dispatch": true,
+  "final_artifact_verified": false,
+  "blocked": "Problem: 执行角色未提交可交外层核验的候选",
+  "native_chrome_dsh_gui": false
+}

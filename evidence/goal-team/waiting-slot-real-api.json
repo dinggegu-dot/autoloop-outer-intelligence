@@ -1,0 +1,36 @@
+{
+  "synthetic": true,
+  "passed": true,
+  "same_workbench_hub_and_worker": true,
+  "first_ticket": {
+    "state": "awaiting_preference",
+    "option_count": 3,
+    "owner_answer_received": false,
+    "approval_count": 1,
+    "active_assignments": 0,
+    "candidate_sha256": "09dc1dc2ab44b32be627dbc6dd52dd21ceb86a9254d29c4fc0b50d9325c81fcf"
+  },
+  "second_ticket": {
+    "state": "completed",
+    "approval_count": 1,
+    "approved_after_first_question": true,
+    "dispatches": [
+      {
+        "phase": "plan",
+        "run": 3
+      },
+      {
+        "phase": "execute",
+        "run": 4
+      },
+      {
+        "phase": "review",
+        "run": 5
+      }
+    ],
+    "archive_sha256": "003528552342603caf2ca0a1d5b54ca202eea9de55cbde8b5a6de6b25bdee03e",
+    "download_matches": true
+  },
+  "entry": "普通新单业务 API",
+  "formal_chrome_dsh_gui": false
+}

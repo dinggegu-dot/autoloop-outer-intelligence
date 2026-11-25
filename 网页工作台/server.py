@@ -44,10 +44,24 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(json.dumps(payload, ensure_ascii=False).encode(), 'application/json; charset=utf-8', status, headers)
 
     def do_POST(self):
-        if (not self.local() or not self.session()
-                or self.headers.get('Origin') != 'http://' + self.headers['Host']
-                or not hmac.compare_digest(self.headers.get('X-Odyssey-CSRF', ''), self.server.csrf)):
+        path = urlsplit(self.path).path
+        dsh = path.startswith('/api/outer-dsh/')
+        if dsh:
+            token = getattr(self.server, 'dsh_bridge_token', '')
+            expected = 'Bearer ' + token
+            if (not self.local() or self.client_address[0] != '127.0.0.1' or not token
+                    or not hmac.compare_digest(self.headers.get('Authorization', '').encode(), expected.encode())):
+                return self.json_response({'error':'DSH 工单通道尚未配对'}, 403)
+        elif (not self.local() or not self.session()
+              or self.headers.get('Origin') != 'http://' + self.headers['Host']
+              or not hmac.compare_digest(self.headers.get('X-Odyssey-CSRF', ''), self.server.csrf)):
             return self.json_response({'error':'请从本机工作台重新打开后操作'}, 403)
+        from superagent.outer_intake import operator_kind
+        operator_secret = getattr(self.server,'trial_operator_token','')
+        provided = self.headers.get('X-Odyssey-Trial-Operator', '')
+        if provided and (not operator_secret or not hmac.compare_digest(provided.encode(), operator_secret.encode())):
+            return self.json_response({'error':'试验操作身份无法确认'},403)
+        context = operator_kind.set('acceptance_test' if provided else 'owner')
         try:
             size = int(self.headers.get('Content-Length', 0))
             if not 0 < size <= 48000 or self.headers.get_content_type() != 'application/json':
@@ -55,7 +69,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(size))
             if not isinstance(body, dict):
                 raise Problem('请求格式无效')
-            path = urlsplit(self.path).path
+            if dsh:
+                return self.dsh_command(path.removeprefix('/api/outer-dsh/'), body)
             if path.startswith('/api/afr/'):
                 panel = getattr(self.server,'afr_panel',None)
                 if panel is None:
@@ -65,7 +80,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/outer/'):
                 from outer_channels import dispatch
                 cmd = path.removeprefix('/api/outer/')
-                if cmd not in ('submit','select','get','calls','call','event','approve','pause','resume','stop','accept_artifact','return_artifact'):
+                if cmd not in ('submit','select','get','calls','call','event','approve','pause','resume','stop','accept_artifact','return_artifact','answer_preference','extend_team_budget','lock_blind_ballot'):
                     raise Problem('接口不存在',404)
                 if not workbench.outer_enabled:
                     raise Problem('当前实例未启用智能接单',404)
@@ -91,6 +106,31 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response({'error':'请求格式无效'}, 400)
         except (OSError, sqlite3.Error, KeyError):
             self.json_response({'error':'任务服务暂不可用，请刷新核对'}, 503)
+        finally:
+            operator_kind.reset(context)
+
+    def dsh_command(self, command, body):
+        from outer_channels import dispatch
+        from outer_workbench import create_task
+
+        workbench = self.server.workbench
+        service = workbench.outer()
+        if command == 'submit' and 'goal' in body:
+            return self.json_response(create_task(workbench, {**body, 'workflow':'outer'}, source='dsh'), 201)
+        if command == 'download':
+            service.get(body['ticket_id'], 'owner')
+            relative = body.get('path')
+            if not isinstance(relative, str) or not isinstance(body.get('candidate'), str):
+                raise Problem('下载须指定原单、作品版本和文件名')
+            workbench.require_public_artifact(body['ticket_id'], body['candidate'])
+            path, content = workbench.artifact_bytes(body['ticket_id'], relative, candidate=body['candidate'])
+            return self.respond(content, 'application/octet-stream', headers=[
+                ('Content-Disposition', "attachment; filename*=UTF-8''"+quote(path.name, safe=''))
+            ])
+        if command not in ('list','get','event','submit','approve','pause','resume','stop','answer_preference',
+                           'accept_artifact','return_artifact','extend_team_budget','lock_blind_ballot'):
+            raise Problem('接口不存在',404)
+        return self.json_response(dispatch(service, 'dsh', command, body))
 
     def do_GET(self):
         if not self.local():
@@ -110,6 +150,7 @@ class Handler(BaseHTTPRequestHandler):
             from outer_channels import dispatch
             try:
                 return self.json_response({'enabled':True,'workbench_entry':wb.outer_workbench_entry,
+                                           'goal_team_enabled':getattr(wb,'outer_goal_team',False),
                                            'drafts':dispatch(wb.outer(),'web','list',{})})
             except (Problem,sqlite3.Error):
                 return self.json_response({'error':'暂时无法读取目标草案'},503)
@@ -122,6 +163,26 @@ class Handler(BaseHTTPRequestHandler):
                     if focus:self.server.workbench.store.get(focus)
                     if route.endswith('/stream'):return self.stream_tasks(focus)
                     return self.json_response(self.server.workbench.snapshot(focus))
+                draft = re.fullmatch(r'/api/tasks/(wb-[a-f0-9]{32})/draft-preview', route)
+                if draft:
+                    from outer_channels import OWNER
+
+                    if not self.server.workbench.outer_enabled:
+                        raise Problem('当前实例未启用智能接单', 404)
+                    try:
+                        params = parse_qs(urlsplit(self.path).query, keep_blank_values=True, max_num_fields=5)
+                    except ValueError:
+                        raise Problem('初稿预览参数无效') from None
+                    required = {'question_id', 'question_revision', 'candidate_digest', 'draft_sha256'}
+                    if (not required <= params.keys() or params.keys() - required - {'path'}
+                            or any(len(values) != 1 for values in params.values())
+                            or not re.fullmatch(r'[1-9][0-9]{0,9}', params['question_revision'][0])):
+                        raise Problem('初稿预览参数无效')
+                    return self.json_response(self.server.workbench.outer().draft_preview(
+                        draft[1], params['question_id'][0], int(params['question_revision'][0]),
+                        params['candidate_digest'][0], params['draft_sha256'][0],
+                        relative=params.get('path', [None])[0], actor_id=OWNER,
+                    ))
                 match = re.fullmatch(r'/api/tasks/(wb-[a-f0-9]{32})/(artifact|preview)', route)
                 if match:
                     params = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
@@ -130,6 +191,7 @@ class Handler(BaseHTTPRequestHandler):
                     candidate = params.get('candidate', [None])[0]
                     if candidate is not None and (not candidate or 'version' in params or match[2] != 'artifact'):
                         raise Problem('候选归档只支持按交付编号下载')
+                    self.server.workbench.require_public_artifact(match[1],candidate)
                     if match[2]=='preview':
                         return self.json_response(self.server.workbench.preview(match[1],relative,version))
                     options = {'candidate': candidate} if candidate is not None else {}
@@ -159,7 +221,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = body.replace(b'<html lang="zh-CN">', b'<html lang="zh-CN" data-local-art="on">', 1)
             return self.respond(body, 'text/html; charset=utf-8')
         files = {path: 'index.html' for path in ('/', '/index.html', '/workbench')}
-        for name in ('style.css','app.js','outer.js','intake_dialog.js','cover.css','cover.js',
+        for name in ('style.css','app.js','outer.js','goal_team.js','goal_team.css','intake_dialog.js','cover.css','cover.js',
                      'world.css','odyssey.css','kingdoms.js','globe.js','kingdom_relief.js','travel_art.js',
                      'vendor/three.module.js','vendor/three.core.js','task_presentation.js','journey.js'):
             files['/'+name] = name
@@ -248,6 +310,7 @@ if __name__ == '__main__':
     parser.add_argument('--goal-contract',type=Path, help='目标试点默认验收契约 JSON')
     parser.add_argument('--goal-team',action='store_true', help='启用隔离多工作包路线')
     parser.add_argument('--outer-intelligence',action='store_true',help='在隔离目标试点启用版本化智能接单')
+    parser.add_argument('--outer-goal-team',action='store_true',help='只在合成隔离目录启用全 GPT 工单')
     parser.add_argument('--outer-workbench-entry',action='store_true',help='允许从普通建单表单选择目标试点')
     parser.add_argument('--odyssey-assets',type=Path,default=(ROOT/'assets/odyssey' if (ROOT/'assets/odyssey').is_dir() else None),help='本机原版画册目录，仅开放已知地图素材')
     parser.add_argument('--afr-root',type=Path,help='AFR v1 CLI 所在仓库绝对路径')
@@ -276,6 +339,14 @@ if __name__ == '__main__':
             server.csrf = secrets.token_urlsafe(32)
             server.serve_forever()
         raise SystemExit(0)
+    dsh_token = os.environ.pop('AUTOLOOP_DSH_BRIDGE_TOKEN', '') if args.outer_goal_team else ''
+    trial_token = os.environ.pop('AUTOLOOP_TRIAL_OPERATOR_TOKEN', '') if args.outer_goal_team else ''
+    if args.outer_goal_team and (
+            not args.outer_intelligence or not args.goal_pilot or args.port == 8765 or not args.runtime
+            or Path('/private/tmp') not in args.runtime.resolve().parents
+            or not (args.runtime.resolve().parent/'.goal-team-pilot').is_file()
+            or any(token and not re.fullmatch(r'[0-9a-f]{64}', token) for token in (dsh_token, trial_token))):
+        parser.error('目标模式须使用独立合成试点目录和有效的 DSH 配对设置')
     outer_model = None
     if args.outer_model_timeout is not None:
         if not args.outer_intelligence or not 1 <= args.outer_model_timeout <= 120:
@@ -317,6 +388,9 @@ if __name__ == '__main__':
                                     goal_enabled=args.goal_pilot, goal_contract=goal_contract,goal_team=args.goal_team,
                                     outer_enabled=args.outer_intelligence, outer_model=outer_model,
                                     outer_workbench_entry=args.outer_workbench_entry)
+        server.workbench.outer_goal_team = args.outer_goal_team
+        server.dsh_bridge_token = dsh_token
+        server.trial_operator_token = trial_token
         server.odyssey_assets = args.odyssey_assets.resolve() if args.odyssey_assets else None
         server.task_actions = threading.Lock()
         server.afr_panel = afr_panel
@@ -333,6 +407,8 @@ if __name__ == '__main__':
         server.session_token = secrets.token_urlsafe(32)
         server.csrf = secrets.token_urlsafe(32)
         if args.outer_intelligence:
+            from superagent.outer_intake import OUTER_WORKERS
+
             outer = server.workbench.outer()
             def outer_loop():
                 while True:
@@ -341,7 +417,8 @@ if __name__ == '__main__':
                     except Exception as error:
                         print('智能判断待核对',type(error).__name__,flush=True)
                     time.sleep(1)
-            threading.Thread(target=outer_loop,daemon=True).start()
+            for _ in range(OUTER_WORKERS):
+                threading.Thread(target=outer_loop,daemon=True).start()
         def reconcile_loop():
             while True:
                 try:

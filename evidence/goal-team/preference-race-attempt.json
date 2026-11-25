@@ -1,0 +1,23 @@
+{
+  "synthetic": true,
+  "fixture": "preference-race",
+  "entry": "隔离普通新单业务 API",
+  "trial_completed": false,
+  "isolated_supervisor_terminal": true,
+  "stage_reached": "intake",
+  "observed_calls": [
+    {
+      "role": "intake_assessor",
+      "state_at_isolated_shutdown": "failed",
+      "error": "timeout"
+    },
+    {
+      "role": "intake_assessor",
+      "state_at_isolated_shutdown": "running",
+      "error": null
+    }
+  ],
+  "worker_assignments": 0,
+  "formal_listener_same": true,
+  "next_verification": "等待外层模型服务恢复，重新从本脚本运行暂停、跨端并发和归档校验。"
+}
