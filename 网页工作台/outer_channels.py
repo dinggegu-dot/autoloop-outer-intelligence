@@ -1,7 +1,8 @@
 """已鉴权的看板与本人私聊共用的命令和确认内容。"""
 import json
 import re
-from workbench import Problem
+from superagent.goal_team_records import public_coordination_decision, public_progress
+from workbench import Problem, is_blind_goal
 
 OWNER = 'owner'
 TICKET = re.compile(r'wb-[0-9a-f]{32}')
@@ -15,6 +16,22 @@ EXECUTION_STATUS = {'created':'已创建','planning':'正在规划','queued':'�
                     'reviewing':'正在验收','stopping':'正在停办','blocked':'受阻','budget_exhausted':'预算已用完',
                     'paused':'已暂停','completed':'已完成','rejected':'已拒绝',
                     'awaiting_artifact_review':'待人工签收', 'awaiting_preference':'待选样例'}
+RUNNING_PHASE = {
+    'plan':('正在规划','正在制定本单执行计划。'),
+    'replan':('正在重新规划','正在根据本轮反馈调整执行计划。'),
+    'execute':('正在执行','执行器在已批准的范围内推进。'),
+    'repair':('正在修复','执行器正在处理已发现的问题。'),
+    'review':('正在独立核验','正在核对本版产物与已批准的验收条件。'),
+    'coordinate':('正在协调','正在核对阻塞原因、可用预算与授权范围。'),
+    'package':('正在执行工作包','执行器正在推进已派发的工作包。'),
+    'assemble':('正在汇总工作包','正在汇总已完成的工作包。'),
+}
+INNER_REPAIR_STATUS = {
+    'repairing':('执行者正在返修','正在根据核验发现的问题修改本版产物。'),
+    'rechecking':('负责人正在复验新版','正在复查返修后的版本。'),
+    'waiting':('等待内层返修','原版和问题已保存，等待下一轮返修。'),
+    'waiting_review':('等待负责人复验','返修新版已保存，等待负责人复验。'),
+}
 
 def dispatch(service, source, command, body):
     """身份来自本机 session 或已经验证的桥签名，调用方不能指定 actor。"""
@@ -93,7 +110,15 @@ def journey(draft):
     phase = execution.get('status') or draft.get('execution_status')
     flow = execution.get('goal_execution') or {}
     outcome = flow.get('outcome') or draft.get('outcome')
+    progress = draft if 'execution_phase' in draft else public_progress(execution)
+    work_phase, repair_status = progress.get('execution_phase'), progress.get('inner_repair_status')
+    edit_blocked = draft.get('requirements_edit_blocked')
+    stale = draft.get('observation_stale') or execution.get('observation_stale')
+    can_modify = (state not in ('PAUSED','STOPPED','AWAITING_CLARIFICATION') and not draft.get('question')
+                  and phase not in ('paused','stopping','awaiting_artifact_review','awaiting_preference')
+                  and not stale and not edit_blocked)
     decision_items = []
+    next_step = None
     label = STATUS.get(state,state)
     station, instruction = 'flight', '系统正在整理目标及验收条件。'
     if state == 'STOPPED' or (state == 'PAUSED' and phase == 'stopping'):
@@ -117,19 +142,25 @@ def journey(draft):
             station,instruction = 'delivery','已完成独立验收，可查看归档交付。'
         elif phase in ('blocked','budget_exhausted') or outcome == 'AWAITING_REVIEW':
             station = 'decision'
-            instruction = execution.get('error') or '请核对阻塞原因与授权范围，再决定如何调整。'
-            recent = {entry.get('kind'): entry for entry in flow.get('decisions', [])[-2:]}
-            if recent.keys() == {'coordinated','blocked'}:
-                proposal = recent['coordinated'].get('proposal') or {}
-                if proposal.get('action') in ('REQUEST_APPROVAL','BLOCKED'):
-                    label = '需确认变更' if proposal['action'] == 'REQUEST_APPROVAL' else '协调后受阻'
-                    instruction = proposal.get('reason') or instruction
-                    decision_items = [dict(label=k, text=v) for k,v in (
-                        ('建议调整',proposal.get('plan_change')), ('待确认的风险',proposal.get('remaining_risk')),
-                        ('你的下一步','选择「修改要求」写明你的决定。新版目标和验收条件就绪后，再批准执行。')
-                    ) if v]
+            error = draft.get('execution_error') or (execution.get('error') if not is_blind_goal(execution) else None)
+            instruction = error or '请核对阻塞原因与当前授权。'
+            proposal = (draft.get('coordination_decision') if 'coordination_decision' in draft
+                        else public_coordination_decision(execution))
+            if proposal:
+                label = '需确认变更' if proposal['action'] == 'REQUEST_APPROVAL' else '协调后受阻'
+                instruction = proposal.get('reason') or instruction
+                decision_items = [dict(label=k, text=v) for k,v in (
+                    ('建议调整',proposal.get('plan_change')), ('待确认的风险',proposal.get('remaining_risk'))
+                ) if v]
+                if can_modify:
+                    next_step = '修改要求后，核对新版目标与验收条件，再决定是否批准。'
+            next_step = edit_blocked or next_step
         elif phase in ('paused','rejected','stopping'):
             station,instruction = 'dock','查看本单最新执行记录。'
+        elif phase in ('queued','executing') and repair_status in INNER_REPAIR_STATUS:
+            label,instruction = INNER_REPAIR_STATUS[repair_status]
+        elif phase in ('planning','executing','reviewing') and work_phase in RUNNING_PHASE:
+            label,instruction = RUNNING_PHASE[work_phase]
         else:
             instruction = '执行器在已批准的范围内推进。'
     elif state in ('AWAITING_APPROVAL','AWAITING_CLARIFICATION','VERIFICATION_GAP','NEEDS_ATTENTION'):
@@ -137,9 +168,11 @@ def journey(draft):
         instruction = {
             'AWAITING_APPROVAL':'请核对本版交付条件与预算。批准后将开始执行。',
             'AWAITING_CLARIFICATION':(draft.get('question') or {}).get('question_text') or '请补充关键条件。',
-            'VERIFICATION_GAP':'当前证据不足以证明交付。请补充可验证的条件。',
-            'NEEDS_ATTENTION':draft.get('error') or '请核对失败原因并补充要求。',
+            'VERIFICATION_GAP':'当前证据不足以证明交付。',
+            'NEEDS_ATTENTION':draft.get('error') or '请核对失败原因。',
         }[state]
+        if state in ('VERIFICATION_GAP','NEEDS_ATTENTION'):
+            next_step = ('补充可验证的条件或说明需要调整的要求。' if can_modify else edit_blocked)
     can_approve = (state == 'AWAITING_APPROVAL' or label == '待批准新版') and (
         not draft.get('task_id') or phase in ('paused','completed','rejected'))
     if state == 'AWAITING_APPROVAL' and not can_approve:
@@ -160,7 +193,8 @@ def journey(draft):
                  (phase == 'paused' and draft.get('status_before_pause') == 'AUTHORIZED'))
     terminal = state == 'STOPPED' or state == 'AUTHORIZED' and phase in ('completed','rejected')
     can_review = state == 'AUTHORIZED' and phase == 'awaiting_artifact_review'
-    return dict(station=station,label=label,instruction=instruction,decision_items=decision_items,approve=can_approve,
+    return dict(station=station,label=label,instruction=instruction,next=next_step,decision_items=decision_items,
+                phase=work_phase,inner_repair_status=repair_status,modify=bool(can_modify),approve=can_approve,
                 artifact_review=can_review, pause=not terminal and state != 'PAUSED' and phase != 'stopping' and not can_review,
                 resume=can_resume,stop=not terminal and phase != 'stopping' and not can_review)
 
@@ -219,6 +253,8 @@ def card(draft):
     view = journey(draft)
     title = (draft.get('goal_contract') or {}).get('goal_statement') or draft.get('summary') or '目标工单'
     lines = [view['instruction'], f"工单 {draft['id']} · v{draft['revision']} · 目标 v{draft['goal_revision']} · 验收 v{draft['acceptance_revision']}"]
+    if view['next'] and view['next'] != view['instruction']:
+        lines.append(view['next'])
     actions = []
     lines.extend(item['label']+' · '+item['text'] for item in view['decision_items'])
     if view['approve'] or status == 'AWAITING_APPROVAL':
@@ -264,12 +300,14 @@ def card(draft):
         actions.append(('outer_stop','确认停止此单'))
     if draft.get('execution'):
         execution=draft['execution']
-        lines.append(f"执行状态 {EXECUTION_STATUS.get(execution['status'],execution['status'])} · 计划 v{execution['version']}")
+        execution_label = view['label'] if view['station'] == 'flight' and status == 'AUTHORIZED' else (
+            EXECUTION_STATUS.get(execution['status'],execution['status']))
+        lines.append(f"执行状态 {execution_label} · 计划 v{execution['version']}")
         for item in execution.get('artifacts',[])[:8]:
             path = item if isinstance(item,str) else item.get('path') if isinstance(item,dict) else None
             if path:
                 lines.append('交付文件 '+str(path)[:180])
-    if not view['artifact_review'] and status not in ('PAUSED','STOPPED','AWAITING_CLARIFICATION'):
+    if view['modify']:
         goal=draft.get('goal_contract') or {}
         binding['requirements']=[{'id':r['requirement_id'],'label':r['description']} for key in
             ('deliverables','required_capabilities','nonfunctional_requirements','constraints','assumptions','out_of_scope')
@@ -278,7 +316,7 @@ def card(draft):
     actions.append(('outer_status','看进度'))
     if status == 'VERIFICATION_GAP':
         lines.extend((draft.get('acceptance_contract') or {}).get('verification_gaps',[]))
-    if not view['artifact_review'] and status not in ('PAUSED','STOPPED','AWAITING_CLARIFICATION'):
+    if view['modify']:
         lines.append('回复本卡可补充资料或提出修改要求。')
     artifact_lines = []
     artifact_review_card(draft, artifact_lines, binding, actions, view)

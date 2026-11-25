@@ -11,7 +11,10 @@ import uuid
 from workbench import Problem, TASK_RE, now, is_blind_goal, omit_call_payloads
 
 from .goal_checks import _SECRET
-from .goal_team_records import PROFILE, observation_stale, profile, project, public_preference, role_limit
+from .goal_team_records import (
+    PROFILE, observation_stale, profile, project, public_coordination_decision, public_preference,
+    public_progress, role_limit,
+)
 from .outer_model import ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, CodexOuterModel, ModelFailure, role_invoke
 
 
@@ -365,6 +368,7 @@ class OuterIntake:
 
     def get(self, ticket_id, actor_id, *, tenant='default', request_feedback=False):
         actor, tenant = self._owner(actor_id, tenant)
+        task = {}
         with self.store.connect() as db:
             ticket = self._ticket(db, ticket_id, actor, tenant)
             if request_feedback:
@@ -381,7 +385,7 @@ class OuterIntake:
                 raw_task = db.execute('SELECT body FROM tasks WHERE id=?', (ticket['task_id'],)).fetchone()
                 if raw_task is None:
                     raise Problem('工单执行记录暂不可用', 409)
-                ticket['execution'] = project(omit_call_payloads(json.loads(raw_task[0])))
+                task = json.loads(raw_task[0])
                 previous = []
                 for gen,reviews,delivery in db.execute("""SELECT revision,json_extract(body,'$.goal_execution.artifact_reviews'),
                         json_extract(body,'$.goal_delivery') FROM outer_revisions WHERE ticket=? AND kind='execution_archive'
@@ -392,10 +396,25 @@ class OuterIntake:
                     previous.extend(dict(mandate_revision=gen,**{k:r.get(k) for k in (
                         'sequence','state','assignment','artifact_sha256','files','reason')}) for r in records)
                 if previous: ticket['prior_deliveries']=previous
-        if ticket.get('execution') and is_blind_goal(ticket['execution']):
+            self._project_action_state(db, ticket, task)
+        if is_blind_goal(task):
             ticket['blind_review'] = self.workbench.blind_review().get(ticket_id,actor_id=actor,tenant=tenant)
             ticket['blind_history'] = self.workbench.blind_review().history(ticket_id,actor_id=actor,tenant=tenant)
+        if task:
+            ticket['execution'] = project(omit_call_payloads(task), blind_review=ticket.get('blind_review'))
         return ticket
+
+    def _project_action_state(self, db, ticket, task):
+        state = task.get('goal_execution') or {}
+        status = task.get('status')
+        ticket.update(public_progress(task), coordination_decision=public_coordination_decision(task),
+                      observation_stale=observation_stale(state))
+        if status in ('blocked','budget_exhausted') and not is_blind_goal(task):
+            ticket['execution_error'] = task.get('error')
+        if ((ticket['status'] in ('NEEDS_ATTENTION','VERIFICATION_GAP')
+             or status in ('blocked','budget_exhausted'))
+                and not all(self._remaining(db, ticket).values())):
+            ticket['requirements_edit_blocked'] = '已达到外层模型预算。'
 
     def _draft_preview_handoff(self, ticket_id, actor, tenant, expected):
         from .goal_engine import digest
@@ -490,8 +509,8 @@ class OuterIntake:
                              last_request_error=row[2],
                              last_business_at=max(draft['updated_at'],
                                                   (state.get('decisions') or [{}])[-1].get('at', '')),
-                             observation_stale=observation_stale(state),
                              pending_preference=public_preference(state, task.get('status'), brief=True))
+                self._project_action_state(db, draft, task)
                 if is_blind_goal(task):
                     draft['blind_status'] = self.workbench.blind_review().brief(db,draft,task)
                 if task.get('status') == 'completed' and task.get('goal_delivery'):
@@ -639,10 +658,10 @@ class OuterIntake:
             ]
         return context
 
-    def _remaining(self, db, ticket, event):
+    def _remaining(self, db, ticket, event=None):
         if ticket:
             rows = db.execute('SELECT result FROM outer_invocations WHERE ticket=? OR (event=? AND ticket IS NULL)',
-                              (ticket['id'], event['id'])).fetchall()
+                              (ticket['id'], event['id'] if event else None)).fetchall()
         else:
             rows = db.execute('SELECT result FROM outer_invocations WHERE event=?', (event['id'],)).fetchall()
         tokens = 0

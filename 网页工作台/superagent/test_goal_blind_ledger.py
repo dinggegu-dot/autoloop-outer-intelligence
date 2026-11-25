@@ -86,6 +86,10 @@ class BlindLedgerTest(unittest.TestCase):
                        heldout=heldout, baseline=baseline, team=team, origins=self.origins)
         return self.ledger.register(**{**request, **changes})
 
+    def record_repair(self, candidate, issue):
+        self.store.change(self.ticket['id'], lambda task: task['goal_execution']['assignments'].append(dict(
+            id=candidate, phase='execute', state='settled', inner_repairs=[dict(status='passed', issue=issue)])))
+
     def lock(self, **changes):
         request = dict(ticket_id=self.ticket['id'], revision=self.ticket['revision'],
                        experiment_id=self.public['manifest']['experiment_id'], manifest_digest=self.public['manifest_digest'],
@@ -183,7 +187,10 @@ class BlindLedgerTest(unittest.TestCase):
             self.lock()
 
     def test_directory_and_returned_lock_keep_separate_views(self):
+        from outer_channels import dispatch
+
         ticket_id = self.ticket['id']
+        self.record_repair(self.candidate, '旧版返修记录')
         self.register()
         self.assertEqual(self.intake.list('owner')[0]['blind_status'], 'awaiting_ballot')
         self.assertEqual(self.intake.get(ticket_id,'owner')['blind_history'], [])
@@ -196,6 +203,35 @@ class BlindLedgerTest(unittest.TestCase):
         self.assertEqual(draft['blind_history'][0]['experiment_id'], result['experiment_id'])
         earlier = self.ledger.get(ticket_id,result['experiment_id'],actor_id='owner')
         self.assertEqual(earlier['result']['counts']['ties'], 1)
+        candidate = uuid4().hex
+        self.offer(self.public, candidate)
+        self.record_repair(candidate, '新版返修记录')
+        historic = dispatch(self.intake, 'web', 'get', {'ticket_id':ticket_id, 'experiment_id':result['experiment_id']})
+        self.assertEqual(historic['blind_review']['status'], 'locked')
+        self.assertIs(historic['blind_review']['current'], False)
+        self.assertNotIn('新版返修记录', str(historic['execution']))
+
+    def test_public_repair_history_restored_for_current_lock_and_completion(self):
+        ticket_id = self.ticket['id']
+        marker = '同版返修及复验记录'
+        self.record_repair(self.candidate, marker)
+        self.register()
+        self.assertNotIn(marker, str(self.intake.get(ticket_id, 'owner')['execution']))
+        locked = self.lock()
+        self.assertIn(marker, str(self.intake.get(ticket_id, 'owner')['execution']))
+
+        # 即使并发读到自称当前的锁票，摘要也必须与返回给界面的任务快照一致。
+        ledger = self.workbench.blind_review()
+        for binding in ('candidate','artifact_sha256'):
+            with patch.object(ledger, 'get', return_value={**locked, binding:'older'}):
+                self.assertNotIn(marker, str(self.intake.get(ticket_id, 'owner')['execution']))
+
+        self.intake.decide_artifact(ticket_id, 'accept', locked['ticket_revision'], self.candidate,
+                                    self.checkpoint['digest'], '', 'signoff', actor_id='owner', source='web')
+        with patch.object(ledger, 'get', return_value=None):
+            detail = self.intake.get(ticket_id, 'owner')
+        self.assertEqual(detail['execution']['status'], 'completed')
+        self.assertIn(marker, str(detail['execution']))
 
     def test_public_workbench_does_not_project_unlocked_route_fingerprints(self):
         task = self.store.get(self.ticket['id'])
@@ -208,6 +244,33 @@ class BlindLedgerTest(unittest.TestCase):
         first, arms = omit_call_payloads(task)['goal_execution']['assignments']
         self.assertEqual(first['role_calls'], [{'id':'initial-sample'}])
         self.assertEqual(arms, {'report':{}})
+
+    def test_new_progress_projection_does_not_expose_blind_repair_or_plan(self):
+        from outer_channels import dispatch
+        from superagent.goal_team_records import PROFILE
+
+        ticket_id = self.ticket['id']
+        marker = '可识别来源的内部策略'
+
+        def stage(task):
+            task.update(status='executing', phase='execute')
+            state = task['goal_execution']
+            state['outer']['mandate']['execution_profile'] = PROFILE
+            record = dict(status='repairing', issue=marker)
+            state.update(stage='execute', team_pending_repair={'repair_record':record}, assignments=[dict(
+                id='blind-arm', phase='execute', state='dispatched', transport='claimed', team_review_mode='review',
+                inner_repairs=[record], repair_continuation={'finding':marker}, role_calls=[dict(
+                    sequence=1, role='lead', writable=False, status='completed', action='done', summary=marker)])])
+
+        self.store.change(ticket_id, stage)
+        brief = dispatch(self.intake, 'web', 'list', {})[0]
+        detail = dispatch(self.intake, 'web', 'get', {'ticket_id':ticket_id})
+        self.assertEqual(brief['journey'], detail['journey'])
+        self.assertEqual((detail['execution_phase'],detail['inner_repair_status'],detail['journey']['label']),
+                         ('execute',None,'正在执行'))
+        self.assertNotIn(marker, str(detail))
+        self.assertEqual(detail['execution']['team_activity'], [])
+        self.assertIn(marker, str(self.store.get(ticket_id)))
 
     def test_generation_uses_the_same_required_case_keys_with_distinct_role_receipts(self):
         root = self.store.root
