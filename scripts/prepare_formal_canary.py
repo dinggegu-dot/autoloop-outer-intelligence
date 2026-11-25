@@ -57,15 +57,17 @@ def frontend(formal, front):
     # 插在旧提交按钮后，保留旧表单的默认回车操作。
     html = replace_once(html, dialog, '''</span></button><!--OUTER-CANARY-BEGIN--><div class="wb-actions">
 <button id="outer-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成索引试单</button>
+<button id="outer-team-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成简报试单</button>
 <a href="/workbench">查看智能试单</a></div><!--OUTER-CANARY-END--></form></dialog>''')
     tasks = replace_once((formal / "tasks.js").read_text(), """    if (working) return;
     working = true;
     const button = form.querySelector('[type=submit]');""", """    if (working) return;
-    if (event.submitter?.id === 'outer-canary-submit') {
+    if (['outer-canary-submit','outer-team-canary-submit'].includes(event.submitter?.id)) {
       working = true;
       event.submitter.disabled = true;
       try {
-        const result = await post('/api/tasks', {workflow:'outer',fixture:'filename-index-v2'});
+        const fixture = event.submitter.id === 'outer-team-canary-submit' ? 'goal-team-brief-v1' : 'filename-index-v2';
+        const result = await post('/api/tasks', {workflow:'outer',fixture});
         const target = new URL('/workbench', location.origin);
         if (result.ticket_id) target.searchParams.set('goal', result.ticket_id);
         else target.searchParams.set('outer_event', result.event_id);
@@ -90,6 +92,10 @@ def frontend(formal, front):
         'src="/app.js"', 'src="/outer-canary/app.js"').replace('<form id="new">', '<form id="new" hidden>')
     write(ui / "index.html", candidate)
     app = replace_once((BOARD / "app.js").read_text(), "    form.hidden=!outer.workbench_entry;\n    byId('outer-opt-in').hidden=!outer.workbench_entry;\n", "")
+    app = replace_once(app, "launch.hidden=false;launch.textContent", "launch.hidden=true;launch.textContent")
+    app = replace_once(app, "if(new URLSearchParams(location.search).has('new'))launch.click();", "")
+    app = replace_once(app, "request,renewSession,initial:outer,callHistory,",
+                       "request,renewSession,initial:outer,callHistory,limitedCanary:true,")
     app = app.replace("'/api/tasks", "'/api/outer-canary/tasks").replace("'/api/outer'", "'/api/outer-canary/drafts'")
     write(ui / "app.js", app)
     outer = (BOARD / "outer.js").read_text().replace("'/api/tasks/", "'/api/outer-canary/tasks/").replace(
@@ -116,7 +122,11 @@ def frontend(formal, front):
     outer = replace_once(outer, "'发布一个目标，开始第一段航程。'", "'请在普通新单入口提交合成索引试单。'")
     outer = replace_once(outer, "by('map-link').href=chosen?'/?trip='+encodeURIComponent(chosen):'/';", "by('map-link').href='/';")
     write(ui / "outer.js", outer)
-    shutil.copy2(BOARD / "style.css", ui / "style.css")
+    team = (BOARD / "goal_team.js").read_text().replace("'/api/tasks/", "'/api/outer-canary/tasks/").replace(
+        "'/api/outer/'", "'/api/outer-canary/'").replace("'/api/outer'", "'/api/outer-canary/drafts'")
+    write(ui / "goal_team.js", team)
+    for name in ("style.css", "goal_team.css", "task_presentation.js"):
+        shutil.copy2(BOARD / name, ui / name)
 
 
 def backend(app):
@@ -135,13 +145,14 @@ def backend(app):
             proof = response_proof(os.environ['AUTOLOOP_CANARY_GATEWAY_KEY'], self.canary_nonce, status, body)
             self.send_header('X-Odyssey-Canary-Proof', proof)
         for key, value in headers:""")
-    server = replace_once(server, "            path = urlsplit(self.path).path", """            path = urlsplit(self.path).path
-            from outer_canary import SYNTHETIC_ORDER, valid_command
+    server = replace_once(server, "            if dsh:\n                return self.dsh_command", """            from outer_canary import SYNTHETIC_ORDER, TEAM_ORDER, valid_command
             if path == '/api/tasks':
-                if body != SYNTHETIC_ORDER:
-                    raise Problem('灰度后台仅接收内置合成索引工单', 409)
+                if body not in (SYNTHETIC_ORDER, TEAM_ORDER):
+                    raise Problem('灰度后台仅接收内置合成工单', 409)
             elif not path.startswith('/api/outer/') or not valid_command(path.removeprefix('/api/outer/'), body):
-                raise Problem('灰度后台未开放此操作', 400)""")
+                raise Problem('灰度后台未开放此操作', 400)
+            if dsh:
+                return self.dsh_command""")
     approval = "                return self.json_response(dispatch(workbench.outer(),'web',cmd,body))"
     server = replace_once(server, approval, """                if cmd == 'approve':
                     current = workbench.outer().get(body.get('ticket_id'), 'owner')
@@ -149,7 +160,23 @@ def backend(app):
                     if not criteria or any(c.get('verification_type') != 'DETERMINISTIC' for c in criteria):
                         raise Problem('合成索引灰度只接受确定性验收', 409)
                 return self.json_response(dispatch(workbench.outer(),'web',cmd,body))""")
+    server = replace_once(server, "    if args.outer_goal_team and (\n", """    # 只有签名网关后的专用灰度进程可用持久 side runtime。
+    signed_canary = (args.runtime is not None and args.hub_home is not None
+                     and re.fullmatch(r'[a-f0-9]{64}', os.environ.get('AUTOLOOP_CANARY_GATEWAY_KEY', ''))
+                     and args.runtime.resolve() == ROOT.parent / 'runtime/workbench'
+                     and args.hub_home.resolve() == ROOT.parent / 'runtime/hub'
+                     and (ROOT.parent / 'runtime/.goal-pilot').is_file())
+    if args.outer_goal_team and (
+""")
+    server = replace_once(server, """            or Path('/private/tmp') not in args.runtime.resolve().parents
+            or not (args.runtime.resolve().parent/'.goal-team-pilot').is_file()""", """            or (not signed_canary and (Path('/private/tmp') not in args.runtime.resolve().parents
+                or not (args.runtime.resolve().parent/'.goal-team-pilot').is_file()))
+            or (signed_canary and (dsh_token or trial_token))""")
     write(app / "server.py", server)
+    workbench = (app / "outer_workbench.py").read_text()
+    workbench = replace_once(workbench, "    team_enabled = getattr(workbench, 'outer_goal_team', False)",
+                             "    team_enabled = getattr(workbench, 'outer_goal_team', False) and 'team_review_mode' in body")
+    write(app / "outer_workbench.py", workbench)
     shutil.copy2(REPO / "scripts/formal_outer_canary_wire.py", app)
     shutil.copy2(REPO / "scripts/formal_outer_canary.py", app / "outer_canary.py")
     verifier = Path("验收样例/目标驱动CSV")
