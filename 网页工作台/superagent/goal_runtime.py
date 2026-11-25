@@ -703,6 +703,10 @@ def prepare_outer_execution(assignment):
         'steps[].checks 只填写对应的 criterion_id。每个阶段包含至少一项必需验收，'
         '全部必需验收项必须出现在计划中，每项只在一个阶段。'
     )
+    if context.get('ticket_team') and (context.get('approved_goal_contract') or {}).get('withdrawn_requirements'):
+        context['contract_instruction'] += (
+            'withdrawn_requirements 是本人明确撤回的历史要求，不是当前工作或验收要求。'
+            '旧目标摘要、原话和补充资料即使仍提到这些要求，也不恢复它们。操作边界仍按本次授权。')
     if phase == 'plan':
         from superagent.goal_team_blind import required_blind
         if required_blind(contract):

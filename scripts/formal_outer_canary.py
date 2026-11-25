@@ -149,6 +149,7 @@ FIELD_CHECKS = {
     "text": lambda v: valid_text(v, 6000),
     CONSENT: lambda v: v is True,
     "replace_requirement_ids": valid_requirements,
+    "withdraw_requirement_ids": valid_requirements,
     "intent": lambda v: v in ("supplement", "change"),
     "additional_minutes": lambda v: type(v) is int and v in (0, 15, 30, 60),
     "additional_roles": lambda v: type(v) is int and v in (0, 5, 10),
@@ -168,7 +169,7 @@ def valid_command(command, body):
     if command in {"pause", "resume", "stop"} and "goal_revision" in body:
         fields = CONTRACT_FIELDS
     optional = {"approve": {"require_signoff"}, "answer_preference": {CONSENT},
-                "submit": {"question_id", "replace_requirement_ids", "intent"}}.get(command, set())
+                "submit": {"question_id", "replace_requirement_ids", "withdraw_requirement_ids", "intent"}}.get(command, set())
     if not fields <= body.keys() <= fields | optional:
         return False
     values = ((key, value) for key, value in body.items()
@@ -180,6 +181,9 @@ def valid_command(command, body):
     if command == "answer_preference":
         return not body["question_id"].startswith("q-")
     if command == "submit" and "question_id" in body and not body["question_id"].startswith("q-"):
+        return False
+    if command == "submit" and "withdraw_requirement_ids" in body and (
+            body.get("intent") != "change" or "question_id" in body or "replace_requirement_ids" in body):
         return False
     if command == "submit" and body.get("intent") == "supplement" and ("question_id" in body or "replace_requirement_ids" in body):
         return False

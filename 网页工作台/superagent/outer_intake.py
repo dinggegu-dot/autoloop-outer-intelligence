@@ -42,6 +42,7 @@ _FORBIDDEN = ['network_tools', 'send', 'publish', 'install', 'payment', 'write_o
 _ACTIONS = {'CREATE_DRAFT', 'ATTACH_TO_TICKET', 'ANSWER_CLARIFICATION', 'PROPOSE_CHANGE',
             'REQUEST_TICKET_SELECTION', 'ANSWER_STATUS', 'IGNORE', 'ESCALATE'}
 _PROTECTED_SOURCES = {'USER_EXPLICIT', 'USER_CONFIRMED'}
+_SUGGESTION_SOURCES = {'MODEL_PROPOSED', 'CONTEXT_DERIVED'}
 _IMPACTS = {'deliverables', 'functionality', 'acceptance', 'permissions', 'cost', 'irreversible'}
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS outer_events(
@@ -113,6 +114,10 @@ def _verbatim_clause(description, source):
     expected = normalize(description)
     return bool(expected) and (expected == normalize(source) or any(
         expected == normalize(clause) for clause in _CLAUSE_BREAKS.split(source)))
+
+
+def _literal_requirement(text):
+    return ' '.join(text.split()).strip('。！？；，、：.!?;,:').casefold()
 
 
 def _revision(number, name):
@@ -268,7 +273,7 @@ class OuterIntake:
 
     def submit(self, *, source, source_event_id, actor_id, text, source_thread_id=None, tenant='default',
                ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None,
-               workbench_request=None, goal_team=False, allow_model_input=False,
+               withdraw_requirement_ids=None, workbench_request=None, goal_team=False, allow_model_input=False,
                route_team=False, change_request=False):
         identity = self._source(source, source_event_id, actor_id, tenant, source_thread_id)
         _string(text, '原始需求', 6000)
@@ -279,18 +284,23 @@ class OuterIntake:
             raise Problem('团队工单须在网页确认本单资料范围后登记', 409)
         if question_id is not None:
             question_id = _string(question_id, '澄清问题编号', _MAX_SOURCE_ID)
-        if replace_requirement_ids is not None:
-            if (not isinstance(replace_requirement_ids, list) or len(replace_requirement_ids) > 12
-                    or any(not isinstance(item, str) for item in replace_requirement_ids)
-                    or len(set(replace_requirement_ids)) != len(replace_requirement_ids)):
-                raise Problem('请选择有效的旧要求替换项')
+        for ids in (replace_requirement_ids, withdraw_requirement_ids):
+            if ids is None:
+                continue
+            if (not isinstance(ids, list) or len(ids) > 12 or any(not isinstance(item, str) for item in ids)
+                    or len(set(ids)) != len(ids)):
+                raise Problem('请选择有效的旧要求条目')
             _revision(expected_ticket_revision, '工单版本')
+        if withdraw_requirement_ids is not None and (
+                not withdraw_requirement_ids or replace_requirement_ids is not None or question_id or not change_request):
+            raise Problem('请单独选择并明确撤回建议，或另行替换要求')
         with self._transaction() as db:
             linked = self._thread(db, source, tenant, thread)
             requested = ticket_id
             ticket_id = ticket_id or linked
             if workbench_request is not None:
-                if source not in ('web', 'dsh') or ticket_id or thread or question_id or replace_requirement_ids is not None:
+                if (source not in ('web', 'dsh') or ticket_id or thread or question_id
+                        or replace_requirement_ids is not None or withdraw_requirement_ids is not None):
                     raise Problem('工作台试点入口仅用于新建工单', 409)
                 if db.execute('SELECT 1 FROM tasks WHERE request_id=?', (source_event_id,)).fetchone():
                     raise Problem('同一个请求编号不能切换执行路线', 409)
@@ -299,6 +309,7 @@ class OuterIntake:
                 'type': 'message', 'text': text, 'ticket_id': requested,
                 'expected_ticket_revision': expected_ticket_revision, 'question_id': question_id,
                 'replace_requirement_ids': replace_requirement_ids,
+                **({'withdraw_requirement_ids': withdraw_requirement_ids} if withdraw_requirement_ids else {}),
                 **({'change_request': True} if change_request is True else {}),
                 **({'allow_model_input': True} if allow_model_input is True else {}),
                 **({'force_new': True, 'workbench_request': workbench_request} if workbench_request is not None else {}),
@@ -308,7 +319,7 @@ class OuterIntake:
                 return self._event_view(row, True)
             if linked and requested and linked != requested:
                 raise Problem('会话与指定工单不一致', 409)
-            if (question_id or replace_requirement_ids) and not ticket_id:
+            if (question_id or replace_requirement_ids or withdraw_requirement_ids) and not ticket_id:
                 raise Problem('澄清或替换要求必须关联有效工单', 409)
             if route_team:
                 ticket = self._new_ticket(db, row, routed=True)
@@ -329,7 +340,7 @@ class OuterIntake:
                 question = ticket.get('question')
                 card = self._card(db, source, tenant, thread) if linked else None
                 card_question = card['question_id'] if card else None
-                explicit_decision = question_id or card_question or replace_requirement_ids or change_request
+                explicit_decision = question_id or card_question or replace_requirement_ids or withdraw_requirement_ids or change_request
                 team = ticket.get('ticket_team')
                 if team:
                     if source != 'web' and not linked:
@@ -362,12 +373,56 @@ class OuterIntake:
                     raise Problem('澄清问题已更新，请重新查看', 409)
                 if question and not selected_question:
                     raise Problem('请从当前澄清问题提交答案', 409)
-                # 入队时绑定解析后的正式版本，不能用更新后的问题解释旧回复。
-                db.execute('UPDATE outer_events SET result=? WHERE id=?',
-                           (_json({'binding': {'revision': ticket['revision'],
-                                               'question_id': question['question_id'] if question else None}}), row['id']))
+                if withdraw_requirement_ids:
+                    self._withdraw_suggestions(db, row, ticket, withdraw_requirement_ids)
+                else:
+                    # 入队时绑定解析后的正式版本，不能用更新后的问题解释旧回复。
+                    db.execute('UPDATE outer_events SET result=? WHERE id=?',
+                               (_json({'binding': {'revision': ticket['revision'],
+                                                   'question_id': question['question_id'] if question else None}}), row['id']))
             row = db.execute('SELECT * FROM outer_events WHERE id=?', (row['id'],)).fetchone()
             return self._event_view(row)
+
+    def _withdraw_suggestions(self, db, event, ticket, required_ids):
+        prior = ticket.get('goal_contract')
+        if not ticket.get('ticket_team') or not prior:
+            raise Problem('当前工单没有可撤回的团队建议', 409)
+        selected = set(required_ids)
+        removed = [
+            dict(item, field=field, withdrawn_by=event['id'])
+            for field in _FIELDS for item in prior.get(field, ())
+            if item['requirement_id'] in selected and item['source'] in _SUGGESTION_SOURCES
+        ]
+        if len(removed) != len(selected):
+            raise Problem('只可撤回当前版本中由模型或上下文提出的建议', 409)
+        if db.execute("""SELECT 1 FROM outer_events WHERE ticket=? AND id<>?
+                         AND role IS NOT NULL AND state IN ('PENDING','RUNNING') LIMIT 1""",
+                      (ticket['id'], event['id'])).fetchone():
+            raise Problem('本单仍有待处理的修改，请核对最新条目后再撤回', 409)
+        goal = {**prior, **{
+            field: [item for item in prior.get(field, ()) if item['requirement_id'] not in selected]
+            for field in _FIELDS
+        }}
+        goal.update(revision=ticket['goal_revision']+1, status='DRAFT', created_at=now(), created_by='owner',
+                    source_refs=list(dict.fromkeys([*prior['source_refs'], event['id']])),
+                    withdrawn_requirements=[*prior.get('withdrawn_requirements', []), *removed],
+                    changes={field:{'added':[],'removed':[item['description'] for item in removed if item['field']==field]}
+                             for field in dict.fromkeys(item['field'] for item in removed)})
+        self._record_revision(db, ticket['id'], 'goal', goal['revision'], goal)
+        ticket.update(goal_contract=goal, goal_revision=goal['revision'], acceptance_contract=None,
+                      revision=ticket['revision']+1, status='ASSESSING', error='')
+        ticket['relevant_thread_refs'].append(event['id'])
+        if ticket['task_id']:
+            ticket['approval_terms'] = {
+                **ticket['approval_terms'],
+                'workspace': str(self.store.workspace(ticket['id'], generation=ticket['mandate_revision']+1)),
+            }
+        self._save(db, ticket)
+        if not goal['deliverables']:
+            self._needs_attention(db,event,ticket,'撤回后缺少交付物，请在原单写明仍需交付什么')
+        else:
+            db.execute("UPDATE outer_events SET role='acceptance_designer',result=? WHERE id=?",
+                       (_json({'binding':{'revision':ticket['revision']}}), event['id']))
 
     def _attach_subscription(self, db, event, ticket):
         message = json.loads(event['body'])
@@ -1084,8 +1139,17 @@ class OuterIntake:
         replacements = set(json.loads(event['body']).get('replace_requirement_ids') or ())
         goal = dict(ticket_id=ticket['id'], goal_statement=statement, revision=ticket['goal_revision'] + 1,
                     source_refs=sorted(source_keys), created_at=now(), created_by='intake_assessor', status='DRAFT')
+        withdrawn = []
         if ticket.get('ticket_team'):
             goal['workflow_profile'] = ROUTER_TEAM
+            withdrawn = [*prior.get('withdrawn_requirements', ()), *(
+                dict(item, field=field, withdrawn_by=event['id'])
+                for field in _FIELDS for item in prior.get(field, ())
+                if item['requirement_id'] in replacements and item['source'] in _SUGGESTION_SOURCES
+            )]
+            if withdrawn:
+                goal['withdrawn_requirements'] = withdrawn
+        withdrawn_text = {_literal_requirement(item['description']) for item in withdrawn}
         for field in _FIELDS:
             requirements = raw[field] + (result['assumptions'] if field == 'assumptions' else [])
             if len(requirements) > 12:
@@ -1094,6 +1158,11 @@ class OuterIntake:
             normalized = []
             for item in requirements:
                 description = _string(item['description'], '目标条目', 500)
+                if (_literal_requirement(description) in withdrawn_text
+                        and not (item['source'] in _PROTECTED_SOURCES
+                                 and event['id'] in item['source_refs']
+                                 and _verbatim_clause(description, untrusted['current_message']))):
+                    continue
                 if any(row['description'] == description for row in normalized):
                     continue
                 if description in previous:

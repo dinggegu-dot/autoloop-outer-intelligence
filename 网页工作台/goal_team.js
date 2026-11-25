@@ -784,6 +784,11 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     copy(box,'登记的完成标准',row.original_request?.acceptance || row.workbench_acceptance || row.workbench_request?.acceptance);
     for (const [field,label] of Object.entries({deliverables:'交付物',required_capabilities:'必需能力',nonfunctional_requirements:'质量要求',constraints:'限制',assumptions:'假设',out_of_scope:'范围外'}))
       textList(box,label,goal[field]);
+    if (row.ticket_team && goal.withdrawn_requirements?.length) {
+      const withdrawn=details('已撤回的模型建议','withdrawn-requirements');
+      textList(withdrawn,null,goal.withdrawn_requirements.map(item=>item.description));
+      box.append(withdrawn);
+    }
     const criteria=el('div'); criteria.id='goal-section-criteria'; box.append(criteria);
     textList(criteria,'机器验收',accept.criteria?.filter(item=>item.verifier_id!=='human-review').map(item=>[item.description,[item.verifier_id,item.verifier_version].filter(Boolean).join(' '),'预期 '+renderValue(item.expected_result)].filter(Boolean).join(' · ')));
     textList(criteria,'本人验收',accept.human_review_requirements);
@@ -937,7 +942,10 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       return;
     }
     copy(parent,'原话',original);
-    const scope='团队会使用本单原话整理目标和验收条件。执行前仍需在原单批准。';
+    const acceptance=row.original_request?.acceptance;
+    copy(parent,'登记的完成标准',acceptance);
+    const scope=acceptance ? '团队会读取本单原话和登记的完成标准。执行前仍需在原单批准。' :
+      '团队会使用本单原话整理目标和验收条件。执行前仍需在原单批准。';
     parent.append(el('p',scope,'goal-muted'));
     const feedback=actionStatus(parent);
     parent.append(writeButton('允许把本单原话交给团队','goal-authorize-model-input',()=>{
@@ -1314,12 +1322,20 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const box=details('开发发布回执','development-delivery');
     box.id='goal-section-development-delivery';
     const summary=box.querySelector('summary');
-    const label=status==='live' && !(receipt?.merge && receipt?.ship) ? '线上验证待核对' : labels[status];
+    const checked=authorization?.artifact_match?.files_checked;
+    const matched=authorization?.artifact_match?.mapping==='same_path' && Number.isInteger(checked) && checked>0;
+    let label=labels[status];
+    if (status==='live') {
+      if (!(receipt?.merge && receipt?.ship)) label='线上验证待核对';
+      else if (!matched) label='该 PR 已上线，线上验证通过';
+    }
     if (label) summary.append(el('small',label,'goal-chip'));
     if (authorization) {
       copy(box,'合并请求',authorization.repo+' #'+authorization.number);
       copy(box,'授权范围',authorization.mode==='release'?'合并与发布':'仅独立审查');
       copy(box,'审查提交',authorization.head);
+      copy(box,'与本单交付的关系',matched ? '已核对 '+checked+' 个已验文件。' :
+        '人工绑定，尚无 PR 文件与本单验收版本一致的核对记录。');
     }
     if (receipt?.merge) copy(box,'合并提交',receipt.merge);
     if (receipt?.ship) copy(box,'Ship 运行',String(receipt.ship));
@@ -1506,26 +1522,31 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const update=details(row.ticket_team?'变更目标或验收要求':'补充或修改要求','revisions',section==='revisions'); update.id='goal-section-revisions';
     const draft=getDraft(row.id+'/changes/'+row.revision);
     const contract=row.goal_contract || {};
-    const replaceable=['deliverables','required_capabilities','nonfunctional_requirements','constraints','assumptions','out_of_scope']
-      .flatMap(key=>contract[key] || []).filter(item=>['USER_EXPLICIT','USER_CONFIRMED'].includes(item.source));
-    const choices=[];
-    if(replaceable.length){
-      const replace=details('选择要替换的原要求','replace');
-      for(const item of replaceable){
+    const requirements=['deliverables','required_capabilities','nonfunctional_requirements','constraints','assumptions','out_of_scope']
+      .flatMap(key=>contract[key] || []);
+    const suggested=item=>['MODEL_PROPOSED','CONTEXT_DERIVED'].includes(item.source);
+    const replaceable=requirements.filter(item=>['USER_EXPLICIT','USER_CONFIRMED'].includes(item.source) || row.ticket_team && suggested(item));
+    function requirementChoices(box,items,selection,key) {
+      const choices=[];
+      for (const item of items) {
         const label=el('label',null,'goal-optional-signoff');
         const selected=el('input');selected.type='checkbox';selected.value=item.requirement_id;
-        selected.checked=(draft.data.replacing || []).includes(selected.value);
-        selected.onchange=()=>draft.save({replacing:choices.filter(option=>option.checked).map(option=>option.value)});
-        choices.push(selected);label.append(selected,el('span',item.description));replace.append(label);
+        selected.checked=(selection.data[key] || []).includes(selected.value);
+        selected.onchange=()=>selection.save({[key]:choices.filter(option=>option.checked).map(option=>option.value)});
+        const text=suggested(item)?'建议 · '+item.description:item.description;
+        choices.push(selected);label.append(selected,el('span',text));box.append(label);
       }
-      update.append(replace);
+      return ()=>choices.filter(option=>option.checked).map(option=>option.value);
     }
+    const replace=details('选择要替换的原要求','replace');
+    const selectedReplacements=requirementChoices(replace,replaceable,draft,'replacing');
+    if (replaceable.length) update.append(replace);
     const {group,field}=input(row.ticket_team?'目标或验收要求要怎么改？':'希望补充或修改什么？',draft,'text','goal-revision-text',{required:true});
     update.append(group);
     const feedback=actionStatus(update);
     update.append(writeButton(row.ticket_team?'提交变更':'提交本单要求','goal-submit-revision',()=>{
       if (!field.value.trim()) { feedback.textContent='请填写要求。'; field.focus(); return; }
-      const replace_requirement_ids=choices.filter(option=>option.checked).map(option=>option.value);
+      const replace_requirement_ids=selectedReplacements();
       const text=field.value;
       const submit=(consent={})=>perform(row,'submit',{text,...consent,...(row.ticket_team?{intent:'change'}:{}),
         replace_requirement_ids:replace_requirement_ids.length?replace_requirement_ids:undefined},
@@ -1537,6 +1558,24 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       } else if(replacement)approveAction('确认替换原要求',replacement,'确认替换',submit);
       else submit();
     }));
+    const suggestions=row.ticket_team ? requirements.filter(suggested) : [];
+    if (suggestions.length) {
+      const withdrawal=details('撤回模型建议','withdraw-requirements');
+      const withdrawn=getDraft(row.id+'/withdraw/'+row.revision);
+      withdrawal.id='goal-withdraw-requirements';
+      const selectedWithdrawals=requirementChoices(withdrawal,suggestions,withdrawn,'withdrawing');
+      const status=actionStatus(withdrawal);
+      withdrawal.append(writeButton('撤回所选建议','goal-submit-withdrawal',()=>{
+        const withdraw_requirement_ids=selectedWithdrawals();
+        if (!withdraw_requirement_ids.length) { status.textContent='请先勾选要撤回的建议。'; return; }
+        const text='撤回所选模型建议';
+        const submit=consent=>perform(row,'submit',{text,intent:'change',withdraw_requirement_ids,...consent},
+          status,'撤回请求已登记。',withdrawn);
+        askModelInputConsent('团队会收到撤回 '+withdraw_requirement_ids.length+' 项建议的请求，并重新整理本单的目标和验收条件。',
+          '同意并撤回',submit);
+      }));
+      update.append(withdrawal);
+    }
     parent.append(update);
   }
   function tabNav(row) {

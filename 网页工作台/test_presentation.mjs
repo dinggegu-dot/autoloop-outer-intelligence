@@ -477,6 +477,26 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   assert.equal(ui.events[0].path,'/api/outer/authorize_model_input');
   assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,allow_model_input:true});
  });
+ await t.test('Router 原单可明确撤回模型建议，保留本人原要求',async t=>{
+  const row={...ticket,ticket_team:{id:ticket.id},goal_contract:{constraints:[
+   {source:'MODEL_PROPOSED',requirement_id:'suggestion',description:'模型建议开展联网验证'},
+   {source:'USER_EXPLICIT',requirement_id:'user',description:'本人要求保留标题'},
+  ]}};
+  const ui=await mount(t,row,{panel:'revisions'});
+  const form=ui.control('withdraw-requirements');
+  assert.deepEqual(form.querySelectorAll('input').map(option=>option.value),['suggestion']);
+  const [suggestion]=form.querySelectorAll('input');
+  suggestion.checked=true;suggestion.onchange();
+  ui.control('submit-withdrawal').onclick();
+  assert.equal(ui.events.length,0);
+  assert.equal(ui.confirm.textContent,'同意并撤回');
+  ui.confirm.onclick();
+  await flushGoalUI();
+  const {request_id,...payload}=ui.events[0].body;
+  assert.ok(request_id);
+  assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,text:'撤回所选模型建议',
+   intent:'change',withdraw_requirement_ids:['suggestion'],allow_model_input:true});
+ });
  await t.test('直启工作台的 Router 原单也逐次确认补充外发',async t=>{
   const ui=await mount(t,{...ticket,ticket_team:{id:ticket.id}},{panel:'feedback',formalModelInputConsent:false});
   ui.fill('supplement-text','隔离测试补充');
@@ -492,7 +512,8 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   const ui=await mount(t,{...ticket,development_delivery:{status:'live',authorization,
    receipt:{source:'agent-autoloop-delivery',status:'live',merge:'b'.repeat(40),ship:27}}},{panel:'artifacts'});
   const release=ui.control('section-development-delivery');
-  assert.ok(release.querySelector('small').textContent.includes('线上验证通过'));
+  assert.equal(release.querySelector('small').textContent,'该 PR 已上线，线上验证通过');
+  assert.ok(release.querySelectorAll('p').some(item=>item.textContent.includes('人工绑定')));
   assert.equal(release.querySelector('button'),undefined);
  });
  await t.test('单有上线状态缺少 Ship 时标为待核对',async t=>{

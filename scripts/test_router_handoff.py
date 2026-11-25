@@ -18,6 +18,10 @@ class RouterHandoffTest(unittest.TestCase):
         self.assertTrue(valid_command('select', selection))
         self.assertTrue(valid_command('select', dict(selection, ticket_id=action['ticket_id'])))
         self.assertFalse(valid_command('select', dict(selection, ticket_id='foreign')))
+        withdraw = dict(action, intent='change', text='撤回推断', withdraw_requirement_ids=['req-'+'b'*32])
+        self.assertTrue(valid_command('submit', withdraw))
+        self.assertFalse(valid_command('submit', dict(withdraw, intent='supplement')))
+        self.assertFalse(valid_command('submit', dict(withdraw, replace_requirement_ids=['req-'+'a'*32])))
         for intent in ('change', 'supplement'):
             self.assertTrue(valid_command('submit', dict(action, intent=intent, text='合成补充')))
         self.assertFalse(valid_command('submit', dict(action, intent='supplement', text='资料',

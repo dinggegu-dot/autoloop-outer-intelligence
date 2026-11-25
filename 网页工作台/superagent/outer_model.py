@@ -318,8 +318,12 @@ class CodexTicketTeamModel(CodexOuterModel):
                     '不进行跨工单匹配，不执行实施或扩大权限。只返回规定 JSON。\n')
         instructions = (
             '以用户要求的交付与行为为合同。除非明确要求，不把建议的实施次序、技术选型、文件路径'
-            '或临时标记提升为正式用户要求。' if role == 'intake_assessor' else
+            '或临时标记提升为正式用户要求。withdrawn_requirements 已由本人撤回或替换，旧摘要及历史消息里即使'
+            '有同义文字也不得恢复为现行要求。只接受本轮本人明确重新提出的现行要求。'
+            if role == 'intake_assessor' else
             '验收面向独立可观察的交付与行为。需要固定接口才能用可信验证器时，将接口列为测试约定。'
+            '只使用 goal_contract 的现行要求。withdrawn_requirements 是历史，不得据此增加或重述硬性验收，'
+            '也不得因此放宽剩余条款和 policy 的执行边界。'
             '在 team_review_mode 为 review_and_decide 时检查是否有两个独立可验收的阶段成果。'
             '同一产物的两个测试用例不代表两个阶段。不能分别验收时登记验收缺口。'
         )

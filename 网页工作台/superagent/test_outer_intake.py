@@ -224,6 +224,60 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertNotIn('allow_model_input', draft)
         self.assertEqual(self.intake.pending_team_tickets(), [])
 
+    def test_router_withdraws_only_selected_suggestions_and_preserves_previous_authorization(self):
+        event, _ = self.router_new()
+        ticket_id = event['ticket_id']
+        examples = [
+            ('constraints', '禁止联网', 'MODEL_PROPOSED'),
+            ('nonfunctional_requirements', '不得采集个人信息', 'CONTEXT_DERIVED'),
+            ('required_capabilities', '提供交互能力', 'MODEL_PROPOSED'),
+        ]
+
+        def propose(role, context, schema):
+            result = self.model(role, context, schema)
+            if role == 'intake_assessor':
+                for field, description, source in examples:
+                    result['goal_draft'][field].append(dict(description=description, source=source,
+                                                           source_refs=[context['event_id']]))
+            return result
+
+        self.intake.team_model = propose
+        self.intake.drain_ticket(ticket_id, limit=2)
+        approved = self.approve(self.intake.get(ticket_id, 'owner'))
+        goal = approved['goal_contract']
+        selected = [goal[field][0]['requirement_id'] for field, _, _ in examples]
+        protected = goal['deliverables'][0]
+        old_execution = self.store.get(ticket_id)['goal_execution']['outer']
+        request = dict(source='web', source_event_id='withdraw-router-suggestions', actor_id='owner',
+                       text='撤回所选建议', ticket_id=ticket_id, expected_ticket_revision=approved['revision'],
+                       allow_model_input=True, change_request=True)
+        with self.assertRaisesRegex(Problem, '只可撤回'):
+            self.intake.submit(**request, withdraw_requirement_ids=[protected['requirement_id']])
+        accepted = self.intake.submit(**request, withdraw_requirement_ids=selected)
+        self.assertEqual(accepted['state'], 'PENDING')
+        self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 1)
+        draft = self.intake.get(ticket_id, 'owner')
+        self.assertEqual(draft['status'], 'AWAITING_APPROVAL')
+        current = draft['goal_contract']
+        self.assertEqual(current['deliverables'], [protected])
+        self.assertEqual({row['requirement_id'] for row in current['withdrawn_requirements']}, set(selected))
+        for field, _, _ in examples:
+            self.assertEqual(current[field], [])
+        self.assertEqual(self.model.calls[-1][0], 'acceptance_designer')
+        self.assertEqual(self.model.calls[-1][1]['goal_contract']['withdrawn_requirements'],
+                         current['withdrawn_requirements'])
+        self.assertEqual(self.store.get(ticket_id)['goal_execution']['outer'], old_execution)
+        self.assertIn('network_tools', draft['approval_terms']['forbidden_operations'])
+        self.assertTrue(self.intake.submit(**request, withdraw_requirement_ids=selected)['duplicate'])
+        self.intake.submit(source='web',source_event_id='additional-change',actor_id='owner',
+                           text='另外交付一份合成说明',ticket_id=ticket_id,expected_ticket_revision=draft['revision'],
+                           allow_model_input=True,change_request=True)
+        self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 2)
+        current = self.intake.get(ticket_id, 'owner')['goal_contract']
+        for field, _, _ in examples:
+            self.assertEqual(current[field], [])
+        self.assertIn(protected, current['deliverables'])
+
     def test_router_selected_remote_material_records_original_source_without_authorization(self):
         first, _ = self.router_new()
         ticket = first['ticket_id']
