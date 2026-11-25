@@ -1,77 +1,38 @@
 # 目标漫游局 · Autoloop V2
 
-从飞书发来一个目标，在桌面看到同一张工单。Autoloop 把目标整理成可批准的方案，让执行器交付文件，再逐项检查验收条件。研究任务可接入 AFR，在本机知识库查资料，并把每轮读过的版本和引文留在工单里。
+Autoloop 让你把一个目标交给工作台，在同一张工单上批准、看稿、提意见和收成果。外层负责记录授权、安排执行和独立验收。内层用 Codex 会话完成眼前这一步，按需要找顾问提案、请执行者修改，再由负责人复验。其他有授权且有执行名额的工单可以继续推进。
 
-[浏览 V2 源码](https://github.com/dinggegu-dot/autoloop-outer-intelligence/tree/867f138e0601ed9bb26d49268c4f33992f94c9b9) · [本机启动与回滚](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/operations/pilot.md) · [架构与实验边界](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/architecture/architecture-alignment.md) · [配套知识库 AFR](https://github.com/dinggegu-dot/atom-flow-research)
+## 一张工单，两层分工
 
-## 从哪里开始
+[![Autoloop 工作台与 Codex 两层协作流程](docs/assets/workbench-two-layer.svg)](docs/assets/workbench-two-layer.svg)
 
-| 想做什么 | 入口 | 可以看到什么 |
+图中每个编号都有对应的实现说明。可以查到流转条件、源代码和原单里留下的证据。[逐环节实现说明](docs/architecture/workbench-two-layer.md)
+
+## 正式工作台怎么用
+
+| 想做什么 | 到哪里操作 | 能核对什么 |
 | --- | --- | --- |
-| 交代或修改任务 | 本人飞书私聊、桌面工单簿 | 目标、方案版本、验收条件、预算与批准记录 |
-| 查看进度 | 王国地图 | 每站对应当前工单的一步，点开可看实际记录 |
-| 弄清一次模型判断 | 工单的外层模型调用 | 实际输入、返回、耗时、已上报用量及失败原因 |
-| 验收交付 | 工单成果与签收 | 候选文件、逐项验收和历史版本；含人工验收条件的工单等待本人签收 |
-| 研究一组资料 | 工单下的 AFR 研究执行 | 已读材料、固定版本、引用和未决问题，可沿同一工单追问 |
+| 提交目标 | 「新建工单」选择「使用 Codex 团队」，确认本单允许发送的文字后登记 | 原话、可交付成果、验收条件和批准预算 |
+| 处理要你决定的事 | 首页「待我决定」 | 普通工单和 Codex 工单的等待原因、下一步，以及原单对应位置 |
+| 看方案、初稿和返修 | 「进度」看审稿与返修。待定方向时，从原单首区点「查看这版初稿」 | 双方方案、顾问发现的问题、给执行者的清单、前后版本和复验 |
+| 看系统为什么重新派工 | 原单「决定与记录」展开「角色、工具与派工记录」 | 目标协调读过哪些本单证据、要修哪一步、保留什么、接下来复验什么 |
+| 签收或下载 | 原单「成果与验收」 | 机器检查、需要本人核对的条款、签收或退回的版本、已验归档 |
 
-## 一张工单怎样完成
+## 当前版本
 
-```mermaid
-flowchart LR
-    A["提交目标"] --> B["形成可验收方案"]
-    B --> C{"本人决定"}
-    C -->|"修改"| B
-    C -->|"批准本版"| D["执行与文件交付"]
-    D --> E{"独立验收"}
-    E -->|"有缺口"| F["记录原因与修复建议"]
-    F -->|"授权内修复"| D
-    F -->|"需要新授权"| C
-    E -->|"通过"| G{"含人工验收条件？"}
-    G -->|"是"| H["本人核对并签收或退回"]
-    G -->|"否"| I["自动结案"]
-    H -->|"签收"| I
-    H -->|"退回"| F
-```
+2026-11-25，正式本机工作台 **8765** 已上线统一待办、角色协作证据和交付预览。Chrome 从首页进入已有的合成索引原单，核对了 **8/8** 机器验收和两个归档文件。真实多角色简报、两版退回签收及 Worker 重启后的协作恢复有各自的隔离验收记录。[本次发布](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/15#issuecomment-7160223953) · [已部署的源码 903fb0c](https://github.com/dinggegu-dot/autoloop-outer-intelligence/tree/903fb0c19badc8479127be882b4ff8603b53afd4) · [隔离简报记录](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/evidence/goal-team/authorized-workbench-live.json)
 
-## 系统结构
+这张图展示的是正式的**工作台与 Codex** 路线。飞书工单接续、DSH 隔离实验和 AFR 研究交接都有各自的连接和验收范围。[运行方式与边界](docs/architecture/workbench-two-layer.md#d3-运行方式和其他入口) · [AFR 研究交接记录](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/docs/testing/afr-integration.md) · [配套知识库 AFR](https://github.com/dinggegu-dot/atom-flow-research)
 
-```mermaid
-flowchart TD
-    Map["网页 · 地图与工单簿"] --> Ticket["工单、版本与事件记录"]
-    Chat["飞书私聊与原卡"] --> Bridge["身份与卡片版本校验"] --> Ticket
-    Ticket --> Roles["外层判断 · 结构化 Codex 调用"]
-    Roles --> Decision["程序校验建议、状态与预算"]
-    Decision --> Worker["Hub / Worker · 规划、执行、验收"]
-    Worker --> Ticket
-    Worker --> Research["受控研究执行"]
-    Research --> Tools["AFR 本机检索与定版读取"]
-    Tools --> Vault["Obsidian 知识库"]
-    Research --> Receipts["研究轮次、引用和未决问题"] --> Ticket
-```
+## 本机浏览源码
 
-**Intake Assessor** 判断目标和归属，**Acceptance Designer** 拟定验收契约，**Goal Coordinator** 在执行或验收遇到缺口时提出下一步建议。三个角色使用不同的提示和结构化输出契约。程序核对建议能否执行，本人的批准绑定具体版本。[角色实现与调用证据](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/architecture/architecture-alignment.md)
+可运行的 V2 代码在 `codex/v2-outer-intelligence`。具备仓库访问权和本机 Python 3 时，可用独立临时目录打开网页预览。
 
-## 快速开始
-
-`main` 提供项目导览。可运行的 V2 候选代码位于 `codex/v2-outer-intelligence`。以下命令适用于具备仓库访问权的本机 Python 3 环境，会为预览建立独立的临时目录。
-
-```sh
+~~~sh
 git clone --branch codex/v2-outer-intelligence https://github.com/dinggegu-dot/autoloop-outer-intelligence.git
 cd autoloop-outer-intelligence
 preview=$(mktemp -d)
-python3 -B 网页工作台/server.py --port 8765 --runtime "$preview/workbench" --hub-home "$preview/hub"
-```
+python3 -B 网页工作台/server.py --port 8875 --runtime "$preview/workbench" --hub-home "$preview/hub"
+~~~
 
-打开 <http://127.0.0.1:8765/>。如果该端口已运行正式工作台，可将预览端口改为 8875。地图可独立浏览；启用模型执行、Worker 和本人飞书桥需要另外配置。本机私用画册与新版精细近景属于本机部署，候选分支自带可分发的程序地标。[地图实现](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/网页工作台/kingdom_relief.js) · [试点配置](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/operations/pilot.md)
-
-## 源码与验证
-
-| 关注点 | 从这里读 |
-| --- | --- |
-| 产品目标与验收范围 | [产品说明](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/product/PRD-v2-outer-loop.md) · [验收矩阵](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/testing/acceptance-matrix.md) |
-| 授权与执行 | [接单与版本](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/网页工作台/superagent/outer_intake.py) · [执行协调](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/网页工作台/superagent/goal_runtime.py) |
-| 双端接续 | [共用状态与动作](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/网页工作台/outer_channels.py) · [飞书桥](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/飞书工作入口/outer_bridge.py) |
-| 研究工具与同单追问 | [研究执行循环](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/scripts/afr_research_agent.py) · [AFR 联调记录](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/testing/afr-integration.md) |
-| 工程维护 | [回归入口](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/scripts/check.py) · [当前进度与开放问题](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/progress/v2-status.md) · [V2 候选 PR](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/4) |
-
-研究联调使用过两轮合成材料。报告与引文已有桌面核对记录，该试点工单的最终系统验收达到时间预算后停止。复验时应分别检查文件是否可读、引文是否可回查、工单是否结案。[完整运行证据](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/867f138e0601ed9bb26d49268c4f33992f94c9b9/docs/testing/afr-integration.md)
+打开 <http://127.0.0.1:8875/> 浏览候选界面。正式团队入口、模型执行、Worker 和飞书桥根据各自手册配置。[试点启动](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/docs/operations/pilot.md) · [正式升级与回退](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/docs/operations/formal-outer-canary.md) · [回归入口](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/scripts/check.py) · [长期架构与验收边界](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/docs/architecture/architecture-alignment.md)
