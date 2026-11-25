@@ -33,6 +33,7 @@ COORDINATOR_SCHEMA = {
 }
 COORDINATOR_SCHEMA["required"] = list(COORDINATOR_SCHEMA["properties"])
 
+ROUTER_TEAM = "router-team-v1"
 SCOPED_COORDINATOR = "scoped-v1"
 SCOPED_COORDINATOR_TOOLS = (
     "read_failure_evidence", "read_verified_artifacts", "read_plan_versions", "read_remaining_budget",
@@ -259,6 +260,59 @@ def needs_human_signoff(contract):
     )
 
 
+def _add_html_signoffs(requirements, criteria, gaps):
+    """HTML 结构不能证明原需求所写的正文或业务质量。"""
+    structural = {}
+    reviewed = set()
+    for row in criteria:
+        if not row["required"]:
+            continue
+        if row["verifier_id"] == "html-document":
+            for key in row["requirement_ids"]:
+                structural.setdefault(key, set()).update(row["source_refs"])
+        if _is_human_criterion(row):
+            reviewed.update(row["requirement_ids"])
+
+    used = {row["criterion_id"] for row in criteria}
+    for requirement in requirements:
+        key = requirement["requirement_id"]
+        if key not in structural or key in reviewed:
+            continue
+        if len(criteria) >= MAX_CRITERIA:
+            gaps.append(f"{key} 只有 HTML 结构检查，需留出验收项核对实际内容")
+            continue
+        criterion_id = next(
+            f"html-content-{index}" for index in range(1, MAX_CRITERIA + 1)
+            if f"html-content-{index}" not in used
+        )
+        used.add(criterion_id)
+        criteria.append({
+            "criterion_id": criterion_id,
+            "requirement_ids": [key],
+            "description": "请按原要求核对 HTML 实际内容：" + requirement["description"],
+            "required": True,
+            "verification_type": "HUMAN_REVIEW",
+            "verifier_id": "human-review",
+            "verifier_version": 1,
+            "test_spec": {},
+            "expected_result": None,
+            "evidence_required": True,
+            "human_review_required": True,
+            "source_refs": sorted(structural[key]),
+            "environment": None,
+        })
+
+
+def implementation_criterion(row):
+    interface = {key: value for key, value in row["test_spec"].items() if key not in ("args", "files")}
+    if row["verifier_id"] == "html-document":
+        # HTML 的元素 ID、标题是产物必须实现的接口；CLI 测试和盲评数据仍留在验证侧。
+        interface.update(row["expected_result"])
+    return {key: row[key] for key in ("criterion_id", "requirement_ids", "description", "required", "verifier_id")} | {
+        "interface": interface,
+    }
+
+
 def compile_proposal(goal, proposal):
     """接受受限模型建议，重新计算覆盖，保留任何无法通过程序验证的必要项。"""
     if not isinstance(goal, dict) or not isinstance(proposal, dict):
@@ -341,6 +395,8 @@ def compile_proposal(goal, proposal):
             "human_review_required": human_required or kind != "DETERMINISTIC",
             "source_refs": _list_of_strings(criterion.get("source_refs", [])), "environment": availability,
         })
+    if goal.get("workflow_profile") == ROUTER_TEAM:
+        _add_html_signoffs(items, criteria, gaps)
     signoff_rows = [row for row in criteria if row["required"] and _is_human_criterion(row)]
     mapped_human = {key for row in signoff_rows for key in (row["criterion_id"], row["description"])}
     if not set(human) <= mapped_human:

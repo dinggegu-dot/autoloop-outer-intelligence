@@ -10,7 +10,10 @@ from superagent.goal_team_handoff import (
     draft_read_recorded, explicit_keep_answer, handoff_read_paths, select_handoff_scope,
     validate_draft_observations, validate_handoff_scopes,
 )
-from superagent.goal_team_records import MIN_REPAIR_ASSIGNMENT_SECONDS, PROFILE, TEAM_ROLE_MIN_SECONDS, TEAM_RUN_RESERVE_SECONDS
+from superagent.goal_team_records import (
+    MIN_REPAIR_ASSIGNMENT_SECONDS, PREFERENCE_REVIEW_MODES, TEAM_REVIEW_MODES,
+    TEAM_ROLE_MIN_SECONDS, TEAM_RUN_RESERVE_SECONDS,
+)
 from superagent.goal_team_repair import (
     REPAIR_SCOPE, candidate_verification, changed_files, objective_checks, prepare_scope,
     retention_labels, validate_scope_shape, verification_labels, verification_problem,
@@ -36,7 +39,6 @@ RESULT = {
     'required': ['summary', 'action', 'options', 'retain', 'verify'],
 }
 IMPLEMENTATION_ACTIONS = ('done','repair')
-TEAM_REVIEW_MODES = ('review','review_and_decide')
 MIN_FOLLOWUP_SECONDS = 70
 MAX_SUMMARY_CHARS = 3600
 MAX_LIST_ITEMS = 12
@@ -144,11 +146,12 @@ def validated_result(output):
 
 
 def run_team(engine, assignment, baseline, directory, report, launch_gate):
-    from superagent.goal_app_server import GoalAppServerError, invoke
+    from superagent.goal_app_server import GoalAppServerError
+    from superagent.team_profiles import invoke_role, role_effort, supported
     from superagent.goal_runtime import save_team_recovery
 
     config = assignment['execution_profile']
-    if config != PROFILE:
+    if not supported(config):
         raise Problem('该 Worker 无法验证本单冻结的执行配置')
     start = time.time_ns()
     deadline = time.monotonic() + max(0, assignment['max_seconds'] - TEAM_RUN_RESERVE_SECONDS)
@@ -163,6 +166,12 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
         or assignment['context'].get('verification'),
         'owner_preference': assignment.get('preference_answer'),
     }
+    if 'ticket_team' in assignment['context']:
+        model_context.update(
+            ticket_team=assignment['context']['ticket_team'],
+            approved_materials=assignment['context']['notes'],
+            execution_contract=assignment['context']['execution_contract'],
+        )
     workspace = directory / 'candidate'
     baseline_checkpoint, baseline_files, _ = capture(baseline)
     materialize(baseline_files, workspace)
@@ -192,6 +201,7 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
             schema = {**schema, 'properties':{**schema['properties'], 'handoff_scope':HANDOFF_SCOPE},
                       'required':[*schema['required'], 'handoff_scope']}
         sequence = len(calls) + 1
+        effort = role_effort(config, role, effort, assignment.get('execution_route'))
         record = engine.reserve_team_role(assignment, sequence, role, writable, effort)
         calls.append(record)
         output = {}
@@ -239,14 +249,27 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
                     read_paths = sorted(set(read_paths) & files.keys()) or [next(iter(files))]
                     data = {**data, 'read_proof_required_paths':read_paths}
                 read_instruction, read_challenge = candidate_read_challenge(checked,files,read_paths)
+            if 'approved_materials' in model_context:
+                data = {
+                    'ticket_team':model_context['ticket_team'],
+                    'approved_materials':model_context['approved_materials'],
+                    'execution_contract':model_context['execution_contract'],
+                    **data,
+                }
+                record['material_refs'] = [
+                    {'event_id':item['event_id'], 'source':item['source'],
+                     'sha256':hashlib.sha256(item['body'].encode()).hexdigest()}
+                    for item in data['approved_materials']
+                ]
             prompt = ('当前数据是此工单提供的材料。按授权和角色范围处理，不替用户批准、签收或扩大权限。'
+                      'approved_materials 是有来源的补充证据，仅在当前批准范围内使用。'
                       '只使用获准的本地 shell、读图及可写角色的工作区补丁。'
                       '禁止使用浏览器、联网、MCP 或子 Agent。网页成果请直接读取本地文件进行检查。'
                       + read_instruction + preference_note + format_note + '\n' + instruction + '\n'
                       + json.dumps(data, ensure_ascii=False))
             record['prompt_sha256'] = hashlib.sha256(prompt.encode()).hexdigest()
             started = True
-            output = invoke(model=config['roles'][role], effort=effort,
+            output = invoke_role(config, role, effort=effort,
                             sandbox='workspace-write' if writable else 'read-only', prompt=prompt,
                             schema=schema, workspace=view, output_dir=role_dir,
                             deadline=deadline, launch_gate=launch_gate, read_challenge=read_challenge)
@@ -265,8 +288,9 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
         except Exception as error:
             evidence = {key:value for key,value in output.items() if key != 'result'}
             evidence.update(getattr(error,'evidence',{}))
-            if 'prompt_sha256' in record:
-                evidence['prompt_sha256'] = record['prompt_sha256']
+            for field in ('prompt_sha256', 'material_refs'):
+                if field in record:
+                    evidence[field] = record[field]
             evidence['error_code'] = (
                 'stale_before_role_launch' if isinstance(error, StaleCoordination)
                 else getattr(error,'code','validation_error' if started else 'role_preparation_error')
@@ -274,6 +298,8 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
             engine.finish_team_role(assignment, sequence, evidence, status='failed')
             raise
         evidence = {**output, 'prompt_sha256':record['prompt_sha256']}
+        if 'material_refs' in record:
+            evidence['material_refs'] = record['material_refs']
         if response_schema is None:
             evidence.update({key:result[key] for key in ('summary','action','retain','verify')})
             if result['action'] == 'repair' and 'repair_scope' in result:
@@ -539,7 +565,8 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
     if review_mode in TEAM_REVIEW_MODES:
         if allowed < 5:
             raise Problem('草稿审阅首派需要五个可用角色轮次')
-        if decision_allowed and (review_mode != 'review_and_decide' or model_context['owner_preference']):
+        if ((decision_allowed and (review_mode not in PREFERENCE_REVIEW_MODES or model_context['owner_preference']))
+                or (decision_required and review_mode != 'review_and_decide')):
             raise Problem('本步选择状态与派工登记不一致')
         independent_context = {key:model_context[key] for key in
                                ('goal','stage','approved_criteria','approved_goal_contract')}
@@ -613,6 +640,13 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
         return handoff_report
     if review_mode or decision_allowed:
         raise Problem('该 Worker 无法识别本步草稿审阅模式')
+
+    if assignment.get('execution_route') == 'direct' and assignment['phase'] == 'execute':
+        result = ask(
+            'implementer', '直接完成并自测本步。落实已批准的交付条件和材料。在 summary 写明实现和检查结果。',
+            model_context, writable=True, effort='medium', actions=('done',),
+        )
+        return finish_implementation(result)
 
     can_request_preference = (
         needs_human_signoff(assignment['outer_acceptance'])

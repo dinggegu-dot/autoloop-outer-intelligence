@@ -693,10 +693,10 @@ def prepare_outer_execution(assignment):
         keys = None  # 最后一步返工可以修复最终复验发现的前序回归。
     if keys is not None and phase in ('execute','repair') and instructions.get('schema_version')==2:
         keys.update(instructions['verification_items'])
+    from superagent.outer_verification import implementation_criterion
     context['approved_criteria'] = [
-        {key: row[key] for key in ('criterion_id','requirement_ids','description','required','verifier_id')}
-        | {'interface':{key:value for key,value in row['test_spec'].items() if key not in ('args','files')}}
-        for row in contract['criteria'] if keys is None or row['criterion_id'] in keys
+        implementation_criterion(row) for row in contract['criteria']
+        if keys is None or row['criterion_id'] in keys
     ]
     context['contract_instruction'] = (
         '按已批准目标和验收项实现真实行为。最终验收会在隔离环境复跑全部验收项。'
@@ -714,6 +714,13 @@ def prepare_outer_execution(assignment):
                 '按真实依赖安排至少两个阶段，每阶段有独立且不同的已批准验收条款。'
                 '把前置文件放在第一阶段，第二阶段要有可供本人选择方向的明确产物。'
                 '仅按实际交付依赖拆分阶段。')
+        elif assignment.get('plan_route_required'):
+            context['contract_instruction'] += (
+                '单一交付物优先安排一步，只在有独立新产物或真实依赖时拆分。'
+                '在本轮规划同时选择 execution_route。目标和做法明确、可逆且无实质取舍时用 direct。'
+                '有多种会影响结果的做法、重要风险或用户明确要求比较方案时用 compare。'
+                'comparison_steps 只列确需两份独立方案的阶段序号，从 1 开始，其他机械步骤直接做；direct 时填空数组。'
+                'route_reason 用一句话说明本单为何需要或不需要比较。每步产生可审阅的新稿，终验由工作台安排。')
     if phase == 'replan':
         context['contract_instruction'] += '仅调整后续阶段的实施方案，保持现有阶段顺序和验收项不变。'
     if instructions.get('schema_version')==2:
