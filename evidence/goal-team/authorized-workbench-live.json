@@ -1,0 +1,903 @@
+{
+  "schema_version": 1,
+  "scope": "isolated_signed_gateway_synthetic_order",
+  "operator": "acceptance_test",
+  "tool_execution": "real_codex_and_workbench",
+  "status": "completed",
+  "ticket_sha256": "d61d73e6821d9489228180c0cae60cdce1c3749d9f4c1cb17561a08b50b06eb5",
+  "initial_model_input_consent": true,
+  "first_stage": {
+    "archive_sha256": "78b3d894d6716902ed8edf55bbba6e8f730597e7909329408f80c6d6a6108449",
+    "file_sha256": {
+      "stable-outline.html": "a0f5dcad144ea4a9988a6ca57485b63f97155175a690f5e607cd1cce9642ca2c"
+    },
+    "run": 3,
+    "checks": [
+      {
+        "criterion_id": "stable-outline-html",
+        "verifier_id": "html-document",
+        "status": "PASS",
+        "evidence_ref": "sha256:e7a02fc92ed9e08c7be1e297b457358ed1757e9a8382118cc88a55870e0361d9"
+      }
+    ]
+  },
+  "budget": {
+    "initial_approval_count": 1,
+    "mandate_revisions": [
+      1,
+      2
+    ],
+    "goal_revision": 1,
+    "acceptance_revision": 1,
+    "roles_before": 1,
+    "roles_after": 11,
+    "minutes_added": 0,
+    "resumed_run": 4,
+    "resumed_stage": 2,
+    "completed_stage_reran": false
+  },
+  "preference": {
+    "consent": true,
+    "run": 5,
+    "marker": "Bring a notebook."
+  },
+  "artifact_return": {
+    "consent": true,
+    "returned_version": 1,
+    "accepted_version": 2,
+    "marker": "Bring a pencil."
+  },
+  "verified_outline_retained_byte_for_byte": true,
+  "artifact_versions": [
+    {
+      "version": 1,
+      "state": "returned",
+      "archive_sha256": "a2a7dc01c946339d6d1f9e819796057323c73e637b817475d186a58537951f6d",
+      "file_sha256": {
+        "stable-brief.html": "881fa09748dd069b4c6b29d12d76aefeb8d54fca0080bf41e32393dc36836573",
+        "stable-outline.html": "a0f5dcad144ea4a9988a6ca57485b63f97155175a690f5e607cd1cce9642ca2c"
+      },
+      "markers": {
+        "notebook": true,
+        "pencil": false
+      },
+      "verified_by": {
+        "run": 6,
+        "checks": [
+          {
+            "criterion_id": "stable-outline-html",
+            "verifier_id": "html-document",
+            "status": "PASS",
+            "evidence_ref": "sha256:5893d961ce8d6f6d0f19d61df113eca46dc6a1f69a8342546fd35e888be03147"
+          },
+          {
+            "criterion_id": "stable-brief-html",
+            "verifier_id": "html-document",
+            "status": "PASS",
+            "evidence_ref": "sha256:448c4343e26afdfa043e18cad114bc3207937d9b6fe257f23ae7d1e29bb4d8ba"
+          }
+        ]
+      },
+      "signed_gateway_download_matches": true
+    },
+    {
+      "version": 2,
+      "state": "accepted",
+      "archive_sha256": "9f346acd0b3c6f3bf89be289ac4f95fd6de21dc14d19987e774b420d24fff77e",
+      "file_sha256": {
+        "stable-brief.html": "4d78378d6f47938c3ede9b89e672f3fccf5b3cd2d209973b5903f3c506ed55bf",
+        "stable-outline.html": "a0f5dcad144ea4a9988a6ca57485b63f97155175a690f5e607cd1cce9642ca2c"
+      },
+      "markers": {
+        "notebook": false,
+        "pencil": true
+      },
+      "verified_by": {
+        "run": 8,
+        "checks": [
+          {
+            "criterion_id": "stable-outline-html",
+            "verifier_id": "html-document",
+            "status": "PASS",
+            "evidence_ref": "sha256:7ff15c7662e0bb5647a583b1cb10a7fd080ac18e07353974698e5fdc138d6285"
+          },
+          {
+            "criterion_id": "stable-brief-html",
+            "verifier_id": "html-document",
+            "status": "PASS",
+            "evidence_ref": "sha256:06b3b1d2d8114c021e21fcaf3a30e7a18c68acda384cc17893e523aaa34bdd05"
+          }
+        ]
+      },
+      "signed_gateway_download_matches": true
+    }
+  ],
+  "models": {
+    "plan": {
+      "run": 1,
+      "requested_model": "gpt-6.2-sol",
+      "model": "gpt-6.2-sol",
+      "sandbox": "read-only",
+      "approval_policy": "never",
+      "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+      "cli_version": "0.171.0-alpha.13.2",
+      "effort": "medium",
+      "usage_source": "thread/tokenUsage/updated",
+      "elapsed_ms": 14452,
+      "session_sha256": "ffaf9c001311f4526e9a86088fce09a3fa1e4546df05a802b49e7667006044aa",
+      "turn_sha256": "b1fd4b90ceb4a441db354442d45e11da02ea2aeae179a09a69280e5d9d4c32bb",
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 21504,
+        "input_tokens": 32821,
+        "output_tokens": 353,
+        "reasoning_output_tokens": 62,
+        "total_tokens": 33174
+      },
+      "tool_counts": {
+        "shell": 2
+      },
+      "tool_calls": [
+        {
+          "name": "shell",
+          "status": "completed",
+          "exit_code": 0,
+          "settled": true,
+          "paired": true
+        },
+        {
+          "name": "shell",
+          "status": "completed",
+          "exit_code": 0,
+          "settled": true,
+          "paired": true
+        }
+      ]
+    },
+    "outer_calls": [
+      {
+        "role": "intake_assessor",
+        "state": "accepted",
+        "model": "gpt-6.2-sol",
+        "elapsed_ms": 16521,
+        "effort": "low",
+        "session_sha256": "dc4d8831794c18997f0268d4e7110faebd208417b213ee518b6a056df84f97c1",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "input_tokens": 13593,
+          "output_tokens": 565,
+          "reasoning_output_tokens": 0
+        },
+        "tool_counts": {},
+        "tool_calls": []
+      },
+      {
+        "role": "acceptance_designer",
+        "state": "accepted",
+        "model": "gpt-6.2-sol",
+        "elapsed_ms": 18445,
+        "effort": "medium",
+        "session_sha256": "1710ca756457c7a222f4eb8258fbc339f8b628813e8df13391b98dfe706ab06b",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "input_tokens": 15172,
+          "output_tokens": 682,
+          "reasoning_output_tokens": 0
+        },
+        "tool_counts": {},
+        "tool_calls": []
+      }
+    ],
+    "role_calls": [
+      {
+        "run": 2,
+        "phase": "execute",
+        "stage": 1,
+        "role": "lead",
+        "sequence": 1,
+        "writable": true,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "approval_policy": "never",
+        "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "medium",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 32737,
+        "session_sha256": "2d2e6470cee872214559d485633a2b6d1a206594f1028878dc445b04301a8378",
+        "turn_sha256": "20623b8e638157f1b179057bd11e94283a59d1b3676c5411ed96b83d0707f790",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 46208,
+          "input_tokens": 57438,
+          "output_tokens": 999,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 58437
+        },
+        "tool_counts": {
+          "apply_patch": 1,
+          "shell": 4
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "apply_patch",
+            "status": "completed",
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 4,
+        "phase": "execute",
+        "stage": 2,
+        "role": "lead",
+        "sequence": 1,
+        "writable": false,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "approval_policy": "never",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "medium",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 32704,
+        "session_sha256": "ac86cdf004a22ad25b97425c95d9e5cd9789df85422db1a273eb1ecaf48df0b3",
+        "turn_sha256": "7f9fe810af9b09c5f4d3c2ab2978c2759db6d051c54468dda6fe7e6c135d6b8b",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 27520,
+          "input_tokens": 46107,
+          "output_tokens": 785,
+          "reasoning_output_tokens": 67,
+          "total_tokens": 46892
+        },
+        "tool_counts": {
+          "shell": 3
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 4,
+        "phase": "execute",
+        "stage": 2,
+        "role": "advisor",
+        "sequence": 2,
+        "writable": false,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "approval_policy": "never",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "medium",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 45722,
+        "session_sha256": "7b60480b098a2d9127d4d8b211f01160dc7bd3b1b11c19600e95bb363cf7167c",
+        "turn_sha256": "de7bf6fdbaff2f66ad030bc1dac11f1241a4e9cf65d82010ed4215ff8a18aa9e",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 36352,
+          "input_tokens": 56513,
+          "output_tokens": 1575,
+          "reasoning_output_tokens": 119,
+          "total_tokens": 58088
+        },
+        "tool_counts": {
+          "shell": 5
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 4,
+        "phase": "execute",
+        "stage": 2,
+        "role": "lead",
+        "sequence": 3,
+        "writable": true,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "approval_policy": "never",
+        "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "medium",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 61761,
+        "session_sha256": "502c9bc6428d936a2b103bc16676aa5bfb938e839b5a187f49637e724ed37d49",
+        "turn_sha256": "cdbb99324136056f583dcd0b1176150f94996c1e0b4c949d8d1bc59aaaf1ae68",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 48128,
+          "input_tokens": 78139,
+          "output_tokens": 2370,
+          "reasoning_output_tokens": 53,
+          "total_tokens": 80509
+        },
+        "tool_counts": {
+          "apply_patch": 1,
+          "shell": 4
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "apply_patch",
+            "status": "completed",
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 4,
+        "phase": "execute",
+        "stage": 2,
+        "role": "advisor",
+        "sequence": 4,
+        "writable": false,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "approval_policy": "never",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "medium",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 38128,
+        "session_sha256": "7a5ac82c0f45b4eb397abfa74a74241c351c8ed05ab91e11256a578c6b0cad55",
+        "turn_sha256": "ebef23e3125ca34d11bbe2f34359d6d0fc0ef505e83706f8b172f466b075c0ee",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 29312,
+          "input_tokens": 40886,
+          "output_tokens": 1285,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 42171
+        },
+        "tool_counts": {
+          "shell": 3
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 4,
+        "phase": "execute",
+        "stage": 2,
+        "role": "lead",
+        "sequence": 5,
+        "writable": false,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "approval_policy": "never",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "medium",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 62295,
+        "session_sha256": "3e794f0cba85ff6b0c1e3e7b3b6bb7993187dd83e9eb98b53032df992e3e99c2",
+        "turn_sha256": "1019fcda9c41b7da4be7c4219233a22ead9ae1db9897b5e90bd699fe56098090",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 23296,
+          "input_tokens": 49670,
+          "output_tokens": 2424,
+          "reasoning_output_tokens": 37,
+          "total_tokens": 52094
+        },
+        "tool_counts": {
+          "shell": 3
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 5,
+        "phase": "execute",
+        "stage": 2,
+        "role": "implementer",
+        "sequence": 1,
+        "writable": true,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "approval_policy": "never",
+        "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "high",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 72393,
+        "session_sha256": "94f718372c7da3e242b4c826d57a06b9db55f1f7616e2fa8e23e74d260343d52",
+        "turn_sha256": "5a2ce9030d37d5eaa8ea3610ddf68e04e80adfa3711fc0a38e182ab744184ae2",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 58112,
+          "input_tokens": 92335,
+          "output_tokens": 3025,
+          "reasoning_output_tokens": 30,
+          "total_tokens": 95360
+        },
+        "tool_counts": {
+          "apply_patch": 1,
+          "shell": 4
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "apply_patch",
+            "status": "completed",
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 5,
+        "phase": "execute",
+        "stage": 2,
+        "role": "lead",
+        "sequence": 2,
+        "writable": false,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "approval_policy": "never",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "high",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 68130,
+        "session_sha256": "3cd41bbde232cb90d63997056f936409a0ccad74574d50cdb47a600d505d57de",
+        "turn_sha256": "e9d4a72fd601c21a558496d6ac9407a924163e5682b8cf49d7dc3a91ef9bfb7c",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 106496,
+          "input_tokens": 127907,
+          "output_tokens": 2687,
+          "reasoning_output_tokens": 70,
+          "total_tokens": 130594
+        },
+        "tool_counts": {
+          "shell": 5
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 7,
+        "phase": "repair",
+        "stage": 2,
+        "role": "lead",
+        "sequence": 1,
+        "writable": false,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "approval_policy": "never",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "high",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 19885,
+        "session_sha256": "f1791f5e51c912d4d86104873ecbba109eb86ce72b5b63585f38518eb474cb06",
+        "turn_sha256": "e021a0fd4db362bd02643a5b6f02f9dbdd8f70f7f41895ba87f197f7e836c60b",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 8832,
+          "input_tokens": 27698,
+          "output_tokens": 632,
+          "reasoning_output_tokens": 178,
+          "total_tokens": 28330
+        },
+        "tool_counts": {
+          "shell": 2
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 7,
+        "phase": "repair",
+        "stage": 2,
+        "role": "implementer",
+        "sequence": 2,
+        "writable": true,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "workspace-write",
+        "approval_policy": "never",
+        "permission_digest": "78d8c8b952adf821abd0f7fb9c103cf3384700614add1c52b603e2581d62d5e5",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "high",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 60207,
+        "session_sha256": "0d7c76494bb1855e12835f122455f4b4208911999555a57f887ad5937cf04f69",
+        "turn_sha256": "e6d1e4f9d955e52a8c9dfcc7b267f107cfb16e31adb169f7cabc983a968d5fb4",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 76928,
+          "input_tokens": 91045,
+          "output_tokens": 2205,
+          "reasoning_output_tokens": 148,
+          "total_tokens": 93250
+        },
+        "tool_counts": {
+          "apply_patch": 1,
+          "shell": 5
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "apply_patch",
+            "status": "completed",
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      },
+      {
+        "run": 7,
+        "phase": "repair",
+        "stage": 2,
+        "role": "lead",
+        "sequence": 3,
+        "writable": false,
+        "requested_model": "gpt-6.2-sol",
+        "model": "gpt-6.2-sol",
+        "sandbox": "read-only",
+        "approval_policy": "never",
+        "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+        "cli_version": "0.171.0-alpha.13.2",
+        "effort": "high",
+        "status": "completed",
+        "usage_source": "thread/tokenUsage/updated",
+        "elapsed_ms": 69261,
+        "session_sha256": "b44ab3c3e12a1f38beec5781585f9be8af67925f7a9f54c7c83a131f7d440a95",
+        "turn_sha256": "a459c1aa741514c49e92c9c913f8d99269d29c21f2f5131a4594b795850e68b5",
+        "usage": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 82432,
+          "input_tokens": 110347,
+          "output_tokens": 2508,
+          "reasoning_output_tokens": 133,
+          "total_tokens": 112855
+        },
+        "tool_counts": {
+          "shell": 5
+        },
+        "tool_calls": [
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "failed",
+            "exit_code": 1,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          },
+          {
+            "name": "shell",
+            "status": "completed",
+            "exit_code": 0,
+            "settled": true,
+            "paired": true
+          }
+        ]
+      }
+    ]
+  },
+  "release_operator_observations": {
+    "source": "isolated_signed_gateway_requests_and_chrome",
+    "create_without_consent_http": 409,
+    "create_with_false_consent_http": 409,
+    "create_with_string_consent_http": 409,
+    "create_with_attachment_http": 400,
+    "unsigned_side_request_http": 403,
+    "cancelled_preference_retained_draft": true,
+    "signoff_returned_v1_with_current_ticket_revision_http": 409,
+    "chrome_v2_signoff": true,
+    "chrome_download_hash_match_messages": 2,
+    "personal_skills_rejection_reproduced_before_fix": true
+  },
+  "date": "2026-11-25",
+  "code_commit": "7bd6fc1"
+}

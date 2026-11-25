@@ -14,9 +14,11 @@
 
 团队运行进程使用侧服务内的独立运行目录。现有 Codex 登录通过受信启动器接入，个人技能及 MCP 配置保留在个人环境。
 
+上线候选在隔离环境使用 Chrome 从普通入口提交合成工作坊简报。复查演练可用 `scripts/run_authorized_goal_pilot.py` 启动已隔离的工作台源码和现有 Codex 登录。演练只为指定合成工单把初始角色额度设为一轮，以验证追加预算能从已验成果续办。独立机器终验和人工签收各自有记录。[自定义工单实测](../../evidence/goal-team/authorized-workbench-live.json) · [Codex 超时恢复实测](../../evidence/goal-team/codex-review-timeout-recovered.json)
+
 ## 升级和回退
 
-从已合并的干净检出运行下列命令。原始恢复点是安装索引灰度前保存三份原入口和原 LaunchAgent 的目录。升级先核对主、侧服务都已排空，再保存现役程序及两侧账本。
+从已合并的干净检出运行下列命令。原始恢复点是安装索引灰度前保存三份原入口和原 LaunchAgent 的目录。安排切换窗口，期间暂停建单、批准及恢复工单，直至主、侧服务通过检查。升级先核对两侧都已排空，再保存现役程序及两侧账本。
 
 ```sh
 python3 -B scripts/deploy_formal_canary.py --upgrade /路径/原始恢复点 --target-sha 完整提交SHA
@@ -27,6 +29,12 @@ python3 -B scripts/deploy_formal_canary.py --upgrade /路径/原始恢复点 --t
 ```sh
 python3 -B scripts/deploy_formal_canary.py --rollback-upgrade /路径/本次升级恢复点
 ```
+
+回到上一版后，升级期间创建的自定义工单用于查询原单、审计记录和下载已签收成果。在恢复新版前，暂停对这些工单批准、续办或作出方向选择。若有自定义工单必须继续，优先在保留本版文字授权与工作区限制的版本上修复。上一版网关支持内置模板和固定操作，自定义建单、自由意见、退回和追加预算需要新版网关。
+
+回退后如需运行旧固定合成试单，先核对上一版使用的 Codex 登录仍有效。升级恢复点保存程序和账本，Codex 登录由现有运行环境管理。
+
+独立复核在副本执行了程序回退、账本与归档核对。恢复后的旧程序可通过签名处理器读取原单及归档，试验中的 LaunchAgent 停启使用模拟。[隔离回退记录](../../evidence/goal-team/authorized-workbench-rollback.json)
 
 ## 安装与验证
 

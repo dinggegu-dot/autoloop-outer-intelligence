@@ -1,0 +1,22 @@
+{
+  "program_swap": "actual rollback_upgrade and replace_code",
+  "launchd": "simulated stop/start; socket bind denied",
+  "old_handler": "actual restored code in Python subprocess, signed requests without network",
+  "sqlite_identity": {
+    "main": 3,
+    "side": {
+      "tasks": 3,
+      "outer_tickets": 3,
+      "outer_events": 12,
+      "runs": 1
+    }
+  },
+  "retained_fixture_archives": 2,
+  "recovery_digest_file_groups": 2,
+  "source_unchanged": true,
+  "result": "PASS",
+  "synthetic": true,
+  "date": "2026-11-25",
+  "baseline": "a3b76db",
+  "candidate": "7bd6fc1"
+}
