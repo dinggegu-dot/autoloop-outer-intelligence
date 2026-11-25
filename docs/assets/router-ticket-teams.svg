@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1700" viewBox="0 0 1280 1700" role="img" aria-labelledby="figtitle desc" xml:lang="zh-CN"><title id="figtitle">Autoloop 两层结构确认稿</title><desc id="desc">外层只有 Router 调度。新任务按名额分派，各自绑定内层团队。订阅自动将后续消息送回相应工单。简单任务直接实施与验收。下方展开复杂工单的双方案、实物审稿、本人选择、执行、复验与返修、独立验收和结果回传。开发工单仅按既有授权合并发布。</desc><defs><marker id="arr-edge" markerUnits="userSpaceOnUse" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" orient="auto"><path d="M1 1 L11 6 L1 11 Z" fill="#4d6775"/></marker><marker id="arr-green" markerUnits="userSpaceOnUse" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" orient="auto"><path d="M1 1 L11 6 L1 11 Z" fill="#116a58"/></marker><marker id="arr-rust" markerUnits="userSpaceOnUse" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" orient="auto"><path d="M1 1 L11 6 L1 11 Z" fill="#a44b32"/></marker><marker id="arr-blue" markerUnits="userSpaceOnUse" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" orient="auto"><path d="M1 1 L11 6 L1 11 Z" fill="#285c9b"/></marker></defs><g font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<rect x="0" y="0" width="1280" height="1700" rx="0" fill="#f8fafb" stroke="none" stroke-width="1.5"/>
+<text x="42" y="68" font-size="46" font-weight="700" fill="#193442" text-anchor="start">Autoloop 的两层分工</text>
+<text x="44" y="106" font-size="23" font-weight="400" fill="#465f6a" text-anchor="start">外层安排多张工单，每张工单交给自己的内层团队。</text>
+<rect x="1094" y="36" width="148" height="42" rx="21" fill="#edf2f5" stroke="#ccdbe2" stroke-width="1.5"/>
+<text x="1168" y="64" font-size="18" font-weight="700" fill="#405969" text-anchor="middle">工单团队</text>
+<rect x="36" y="133" width="1208" height="306" rx="17" fill="#ffffff" stroke="#d4e1e5" stroke-width="1.5"/>
+<rect x="37" y="134" width="1206" height="59" rx="16" fill="#e8f0f6" stroke="none" stroke-width="1.5"/>
+<rect x="37" y="172" width="1206" height="21" rx="0" fill="#e8f0f6" stroke="none" stroke-width="1.5"/>
+<text x="60" y="172" font-size="28" font-weight="700" fill="#284d63" text-anchor="start">外层  ·  Router 安排任务</text>
+<text x="1218" y="171" font-size="18" font-weight="400" fill="#465f6a" text-anchor="end">新工单分派，原工单按订阅续接</text>
+<path d="M299 238 H354" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M299 349 H354" fill="none" stroke="#116a58" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arr-green)"/>
+<path d="M698 238 H810 M810 221 V301" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="810" cy="238" r="3.7" fill="#4d6775"/>
+<path d="M810 221 H897" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M810 301 H897" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M698 349 H1049 V333" fill="none" stroke="#116a58" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arr-green)"/>
+<rect x="62" y="206" width="237" height="64" rx="11" fill="#f5f8fa" stroke="#abc1ce" stroke-width="1.5"/>
+<text x="77" y="233" font-size="22" font-weight="700" fill="#193442" text-anchor="start">你提出新需求</text>
+<text x="77" y="257" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">可以同时提交多件事</text>
+<rect x="356" y="206" width="342" height="64" rx="11" fill="#e8f1fc" stroke="#7396c4" stroke-width="1.5"/>
+<text x="371" y="233" font-size="22" font-weight="700" fill="#285c9b" text-anchor="start">Router 接单、分派</text>
+<text x="371" y="257" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">识别任务，按可用名额派单</text>
+<rect x="62" y="317" width="237" height="64" rx="11" fill="#f5f8fa" stroke="#abc1ce" stroke-width="1.5"/>
+<text x="77" y="344" font-size="21" font-weight="700" fill="#193442" text-anchor="start">B 的后续消息</text>
+<text x="77" y="368" font-size="16" font-weight="400" fill="#465f6a" text-anchor="start">你的补充、测试或评审结果</text>
+<rect x="356" y="317" width="342" height="64" rx="11" fill="#e8f5ef" stroke="#78ad98" stroke-width="1.5"/>
+<text x="371" y="344" font-size="22" font-weight="700" fill="#116a58" text-anchor="start">按工单订阅直达</text>
+<text x="371" y="368" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">消息回到 B，接着原进度做</text>
+<rect x="899" y="193" width="298" height="61" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="914" y="220" font-size="21" font-weight="700" fill="#116a58" text-anchor="start">工单 A · 活动简报</text>
+<text x="914" y="244" font-size="16" font-weight="400" fill="#465f6a" text-anchor="start">A 的内层团队</text>
+<rect x="899" y="273" width="298" height="60" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="914" y="300" font-size="21" font-weight="700" fill="#116a58" text-anchor="start">工单 B · 修报名表</text>
+<text x="914" y="324" font-size="16" font-weight="400" fill="#465f6a" text-anchor="start">B 的内层团队，下方展开</text>
+<text x="62" y="415" font-size="18" font-weight="400" fill="#465f6a" text-anchor="start">一张工单等你拍板时，其他有可用名额的工单可以继续。</text>
+<rect x="36" y="457" width="1208" height="99" rx="14" fill="#edf4f1" stroke="#cfdfda"/>
+<text x="60" y="493" font-size="22" font-weight="700" fill="#195f50">负责人先看任务</text>
+<text x="278" y="491" font-size="21" fill="#193442">简单任务　→　执行者直接做、自测　→　本单验收</text>
+<text x="278" y="531" font-size="21" fill="#193442">有实质取舍　→　负责人和只读顾问各提一案　→　按下图推进</text>
+<g transform="translate(0,112)">
+<rect x="36" y="464" width="1208" height="971" rx="17" fill="#ffffff" stroke="#d4e1e5" stroke-width="1.5"/>
+<rect x="37" y="465" width="1206" height="59" rx="16" fill="#e5f1eb" stroke="none" stroke-width="1.5"/>
+<rect x="37" y="503" width="1206" height="21" rx="0" fill="#e5f1eb" stroke="none" stroke-width="1.5"/>
+<text x="60" y="503" font-size="28" font-weight="700" fill="#195f50" text-anchor="start">内层  ·  复杂任务的审稿路线</text>
+<text x="1218" y="502" font-size="18" font-weight="400" fill="#465f6a" text-anchor="end">每张工单各有自己的团队、资料和进度</text>
+<rect x="60" y="541" width="208" height="756" rx="11" fill="#f1f5fb" stroke="none" stroke-width="1.5"/>
+<text x="164" y="577" font-size="24" font-weight="700" fill="#285c9b" text-anchor="middle">你</text>
+<rect x="281" y="541" width="303" height="756" rx="11" fill="#f0f7f3" stroke="none" stroke-width="1.5"/>
+<text x="432.5" y="577" font-size="24" font-weight="700" fill="#116a58" text-anchor="middle">负责人 · 6.2 Sol</text>
+<rect x="597" y="541" width="292" height="756" rx="11" fill="#fbf7f0" stroke="none" stroke-width="1.5"/>
+<text x="743" y="577" font-size="24" font-weight="700" fill="#93521e" text-anchor="middle">只读顾问 · 6.2 Astra</text>
+<rect x="902" y="541" width="318" height="756" rx="11" fill="#f6f3fa" stroke="none" stroke-width="1.5"/>
+<text x="1061" y="577" font-size="24" font-weight="700" fill="#6a4e93" text-anchor="middle">执行者 · 6.2 Sol</text>
+<path d="M432 674 V699" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M559 642 H742 V699" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M432 760 V790" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M742 760 V823 H561" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M432 853 V885" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M559 918 H616" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M742 949 V1013 H561" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M306 1013 H257" fill="none" stroke="#285c9b" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-blue)"/>
+<path d="M432 1045 V1068 H1060 V1096" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<text x="736" y="1058" font-size="16" font-weight="700" fill="#4d6775" text-anchor="start">无需本人决定</text>
+<path d="M164 1045 V1217" fill="none" stroke="#285c9b" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="164" cy="1128" r="3.7" fill="#285c9b"/>
+<path d="M164 1128 H926" fill="none" stroke="#285c9b" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-blue)"/>
+<text x="320" y="1117" font-size="16" font-weight="700" fill="#285c9b" text-anchor="start">选定方向后修改</text>
+<path d="M164 1217 H303" fill="none" stroke="#285c9b" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-blue)"/>
+<text x="175" y="1206" font-size="16" font-weight="700" fill="#285c9b" text-anchor="start">沿用现稿</text>
+<path d="M1061 1161 V1180 H432 V1192" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M559 1225 H926" fill="none" stroke="#a44b32" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arr-rust)"/>
+<text x="674" y="1215" font-size="16" font-weight="700" fill="#a44b32" text-anchor="start">发现本步问题</text>
+<path d="M1061 1257 V1280 H494 V1259" fill="none" stroke="#a44b32" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arr-rust)"/>
+<text x="687" y="1272" font-size="16" font-weight="700" fill="#a44b32" text-anchor="start">新版回来再验</text>
+<path d="M382 1257 V1335" fill="none" stroke="#116a58" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-green)"/>
+<text x="394" y="1315" font-size="16" font-weight="700" fill="#116a58" text-anchor="start">复验通过</text>
+<rect x="306" y="611" width="253" height="63" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="321" y="638" font-size="22" font-weight="700" fill="#116a58" text-anchor="start">接手整张工单</text>
+<text x="321" y="662" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">读原话与补充，明确验收条件</text>
+<rect x="306" y="700" width="253" height="61" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="321" y="727" font-size="22" font-weight="700" fill="#116a58" text-anchor="start">提出一份方案</text>
+<text x="321" y="751" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">写明依据与取舍</text>
+<rect x="619" y="700" width="247" height="61" rx="11" fill="#fcf2e5" stroke="#caa378" stroke-width="1.5"/>
+<text x="634" y="727" font-size="20.5" font-weight="700" fill="#93521e" text-anchor="start">独立提出另一份方案</text>
+<text x="634" y="751" font-size="16" font-weight="400" fill="#465f6a" text-anchor="start">读同一份需求和必要背景</text>
+<rect x="306" y="791" width="253" height="62" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="321" y="818" font-size="21" font-weight="700" fill="#116a58" text-anchor="start">对比方案，给出建议</text>
+<text x="321" y="842" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">说明采纳和舍弃的理由</text>
+<rect x="306" y="886" width="253" height="63" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="321" y="913" font-size="22" font-weight="700" fill="#116a58" text-anchor="start">做出初稿或样例</text>
+<text x="321" y="937" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">保存可查阅的实际版本</text>
+<rect x="619" y="886" width="247" height="63" rx="11" fill="#fcf2e5" stroke="#caa378" stroke-width="1.5"/>
+<text x="634" y="913" font-size="22" font-weight="700" fill="#93521e" text-anchor="start">看稿并指出问题</text>
+<text x="634" y="937" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">意见对应到实际文件</text>
+<rect x="306" y="981" width="253" height="64" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="321" y="1008" font-size="21.5" font-weight="700" fill="#116a58" text-anchor="start">列出修改与保留项</text>
+<text x="321" y="1032" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">定接口、改动范围与复验办法</text>
+<rect x="74" y="981" width="181" height="64" rx="11" fill="#eaf1ff" stroke="#85a9dd" stroke-width="1.5"/>
+<text x="89" y="1008" font-size="21" font-weight="700" fill="#285c9b" text-anchor="start">看稿、定方向</text>
+<text x="89" y="1032" font-size="16" font-weight="400" fill="#465f6a" text-anchor="start">需要你拍板时</text>
+<rect x="929" y="1097" width="264" height="64" rx="11" fill="#f1ecfa" stroke="#ae97ca" stroke-width="1.5"/>
+<text x="944" y="1124" font-size="21" font-weight="700" fill="#6a4e93" text-anchor="start">按清单修改、自测</text>
+<text x="944" y="1148" font-size="16" font-weight="400" fill="#465f6a" text-anchor="start">提交一个可核对的候选版本</text>
+<rect x="306" y="1193" width="253" height="64" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="321" y="1220" font-size="21.5" font-weight="700" fill="#116a58" text-anchor="start">打开实际版本复验</text>
+<text x="321" y="1244" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">核对改动与保留项</text>
+<rect x="929" y="1193" width="264" height="64" rx="11" fill="#fff1eb" stroke="#cb9885" stroke-width="1.5"/>
+<text x="944" y="1220" font-size="22" font-weight="700" fill="#a44b32" text-anchor="start">本步返修</text>
+<text x="944" y="1244" font-size="16.5" font-weight="400" fill="#465f6a" text-anchor="start">修好后交负责人再验</text>
+<path d="M559 1369 H616" fill="none" stroke="#116a58" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-green)"/>
+<path d="M866 1369 H926" fill="none" stroke="#116a58" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-green)"/>
+<rect x="306" y="1336" width="253" height="64" rx="11" fill="#ebf5f0" stroke="#81b39f" stroke-width="1.5"/>
+<text x="321" y="1363" font-size="21" font-weight="700" fill="#116a58" text-anchor="start">本单独立验收</text>
+<text x="321" y="1387" font-size="15.5" font-weight="400" fill="#465f6a" text-anchor="start">按约定核对，必要时请你签收</text>
+<rect x="619" y="1336" width="247" height="64" rx="11" fill="#126752" stroke="#126752" stroke-width="1.5"/>
+<text x="634" y="1363" font-size="22" font-weight="700" fill="#ffffff" text-anchor="start">交付已验版本</text>
+<text x="634" y="1387" font-size="16" font-weight="400" fill="#e4f6ed" text-anchor="start">从原工单查看或下载</text>
+<rect x="929" y="1336" width="264" height="64" rx="11" fill="#e8f1fc" stroke="#7396c4" stroke-width="1.5"/>
+<text x="944" y="1363" font-size="21" font-weight="700" fill="#285c9b" text-anchor="start">回报 Router</text>
+<text x="944" y="1387" font-size="16" font-weight="400" fill="#465f6a" text-anchor="start">登记结果，更新工单状态</text>
+<rect x="36" y="1453" width="1208" height="109" rx="17" fill="#ffffff" stroke="#d4e1e5" stroke-width="1.5"/>
+<rect x="37" y="1454" width="1206" height="59" rx="16" fill="#eef1f5" stroke="none" stroke-width="1.5"/>
+<rect x="37" y="1492" width="1206" height="21" rx="0" fill="#eef1f5" stroke="none" stroke-width="1.5"/>
+<text x="60" y="1492" font-size="28" font-weight="700" fill="#344e5c" text-anchor="start">开发工单的上线流程</text>
+<text x="1218" y="1491" font-size="18" font-weight="400" fill="#465f6a" text-anchor="end">仅在本单已获相应授权时执行</text>
+<text x="92" y="1545" font-size="19" font-weight="700" fill="#193442" text-anchor="start">开合并请求</text>
+<text x="295" y="1545" font-size="19" font-weight="700" fill="#193442" text-anchor="start">独立审查</text>
+<text x="499" y="1545" font-size="19" font-weight="700" fill="#193442" text-anchor="start">自动检查</text>
+<text x="713" y="1545" font-size="19" font-weight="700" fill="#193442" text-anchor="start">合并</text>
+<text x="901" y="1545" font-size="19" font-weight="700" fill="#193442" text-anchor="start">发布</text>
+<text x="1077" y="1545" font-size="19" font-weight="700" fill="#193442" text-anchor="start">核实线上结果</text>
+<path d="M211 1539 H270" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M395 1539 H471" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M592 1539 H679" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M773 1539 H864" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+<path d="M957 1539 H1046" fill="none" stroke="#4d6775" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arr-edge)"/>
+</g></g></svg>
