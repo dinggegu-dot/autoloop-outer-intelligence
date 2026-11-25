@@ -9,7 +9,7 @@ export function callHistory(article, call) {
   const status = element('p', '');
   status.setAttribute('role', 'status');
   panel.append(heading, status);
-  const roles = {intake_assessor:'Intake Assessor', acceptance_designer:'Acceptance Designer', goal_coordinator:'Goal Coordinator'};
+  const roles = {intake_assessor:'接单研判', acceptance_designer:'验收设计', goal_coordinator:'目标协调'};
   const states = {accepted:'成功', returned:'已返回提案', running:'调用中', failed:'失败', rejected:'提案未通过', cancelled:'已取消',
     stale:'版本已过期', lease_expired:'领取已过期', missing_receipt:'回执缺失'};
   const actions = {REPAIR:'修复', REPLAN:'重新规划', CONTINUE:'重新验收', BLOCKED:'停办待处理', REQUEST_APPROVAL:'请用户决定'};
@@ -55,9 +55,9 @@ export function callHistory(article, call) {
           } else if (trace.dispatch_disposition === 'stale_after_launch') {
             body.append(element('p','后续派工因工单更新失效，已保留实际调用记录。'));
           }
-          if (proposal?.affected_steps?.length) record(body,'受影响步骤',proposal.affected_steps.map(step=>step+1));
-          if (proposal?.retained_artifacts?.length) record(body,'保留成果的文件版本',proposal.retained_artifacts);
-          if (proposal?.verification_items?.length) record(body,'接下来复验',proposal.verification_items);
+          if (proposal?.affected_steps?.length) body.append(element('p','返工步骤 · '+proposal.affected_steps.map(step=>'第 '+(step+1)+' 步').join('、')));
+          if (proposal?.retained_artifacts?.length) record(body,'保留成果的文件版本',proposal.retained_artifacts.map(a=>a.path+' · '+a.sha256).join('\n'));
+          if (proposal?.verification_items?.length) record(body,'接下来复验',proposal.verification_items.join('\n'));
           if (trace.subsequent_runs.length) {
             body.append(element('h4','同一授权下的后续执行'));
             const runs=element('ol','');body.append(runs);
@@ -70,17 +70,21 @@ export function callHistory(article, call) {
             }
           }
         }
-        if (d.session_id) record(body,'Codex 会话',d.session_id);
+
         if (d.tools?.length) record(body,'工单证据工具与返回摘要',d.tools);
-        record(body,'耗时',d.elapsed_ms == null ? '未记录' : d.elapsed_ms+' ms');
-        record(body,'用量（tokens）',d.usage ?? '未记录');
-        record(body,'失败原因',d.error ?? (['accepted','returned'].includes(d.state) ? '无' : '尚无失败回执'));
-        record(body,'本轮工单快照',d.input);
+        if (d.error) record(body,'失败原因',d.error);
+        const technical=element('details','');
+        technical.append(element('summary','查看会话、用量和模型原始回执'));
+        body.append(technical);
+        if (d.session_id) record(technical,'Codex 会话',d.session_id);
+        record(technical,'耗时',d.elapsed_ms == null ? '未记录' : d.elapsed_ms+' ms');
+        record(technical,'用量（tokens）',d.usage ?? '未记录');
+        record(technical,'本轮工单快照',d.input);
         if (d.request) {
-          record(body,'发送给 Codex 的提示词',d.request.prompt);
-          record(body,'输出 Schema',d.request.output_schema);
-        } else body.append(element('p','此回执仅保存了输入快照。'));
-        record(body,'模型返回'+(d.output_truncated?'（已截断）':''),d.final_message ?? d.output ?? '未记录');
+          record(technical,'发送给 Codex 的提示词',d.request.prompt);
+          record(technical,'输出 Schema',d.request.output_schema);
+        } else technical.append(element('p','此回执仅保存了输入快照。'));
+        record(technical,'模型返回'+(d.output_truncated?'（已截断）':''),d.final_message ?? d.output ?? '未记录');
         loaded = true;
       } catch (error) {
         body.textContent = error.message+'。收起后可重新打开。';

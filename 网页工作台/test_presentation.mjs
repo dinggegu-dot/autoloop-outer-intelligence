@@ -120,7 +120,7 @@ test('团队审稿记录显示真实初稿与三份摘要，锁票前隐藏工�
 test('普通表单仅在启用目标模式时开放团队审稿，切回时保留已选项', async()=>{
  const {mountTeamReviewControl}=await import('./goal_team.js');
  const previous=globalThis.document;
- const createElement=tag=>({tag,children:[],append(...nodes){this.children.push(...nodes);}});
+ const createElement=tag=>({tag,children:[],setAttribute(key,value){this[key]=value;},append(...nodes){this.children.push(...nodes);}});
  globalThis.document={createElement};
  try {
   const anchor={after(node){this.next=node;}};
@@ -134,6 +134,10 @@ test('普通表单仅在启用目标模式时开放团队审稿，切回时保�
   assert.equal(control.hidden,false);
   assert.equal(select.disabled,false);
   assert.equal(select.value,'review_and_decide');
+  assert.equal(control.children[1].hidden,false);
+  select.value='review'; select.onchange();
+  assert.equal(control.children[1].hidden,true);
+  select.value='review_and_decide'; select.onchange();
   sync(false); sync(true);
   assert.equal(select.value,'review_and_decide');
  } finally { globalThis.document=previous; }
@@ -151,6 +155,32 @@ test('原单区分执行者返修、负责人复验与外层独立核验', async
  assert.equal(projectGoalRow(ticket('passed','settled','reviewing')).label,'正在独立核验');
  const blind={criteria:[{required:true,verifier_id:'blind-projection'}]};
  assert.equal(projectGoalRow({...ticket('rechecking'),acceptance_contract:blind}).label,'正在执行');
+});
+
+test('首页按原单当前可用操作分流，优先处理仍在运行的旧版', async()=>{
+ const {projectGoalRow}=await import('./goal_team.js');
+ const row={id:'wb-projection',status:'AUTHORIZED',execution_status:'blocked',
+  journey:{station:'decision',label:'协调后受阻',modify:true,next:'修改要求后重新核对批准版本。'}};
+ assert.deepEqual([projectGoalRow(row).station,projectGoalRow(row).anchor],['decision','revisions']);
+ const fixed=projectGoalRow(row,{allowFreeText:false});
+ assert.deepEqual([fixed.station,fixed.anchor],['unknown','criteria']);
+ assert.doesNotMatch(fixed.next,/修改要求/);
+ const exhausted=projectGoalRow({...row,status:'VERIFICATION_GAP',journey:{...row.journey,modify:false,next:'已达到外层模型预算。'}});
+ assert.equal(exhausted.next,'已达到外层模型预算。');
+ assert.notEqual(exhausted.anchor,'revisions');
+ const pause=projectGoalRow({...row,status:'AWAITING_APPROVAL',journey:{...row.journey,pause:true}});
+ assert.deepEqual([pause.label,pause.anchor],['待暂停旧版','decision']);
+});
+
+test('协调、复验及隐藏的阶段采用同一份公开状态', async()=>{
+ const {projectGoalRow}=await import('./goal_team.js');
+ const row={id:'wb-coordination',status:'AUTHORIZED',execution_status:'reviewing',
+  journey:{station:'flight',phase:'coordinate',label:'正在协调返工'}};
+ assert.equal(projectGoalRow(row).label,'正在协调返工');
+ assert.equal(projectGoalRow({...row,journey:{...row.journey,phase:null,label:'正在核对回执'}}).label,'正在核对回执');
+ const hidden={...row,execution:{status:'executing',goal_execution:{assignments:[{state:'dispatched',inner_repairs:[{status:'repairing'}]}]}},
+  journey:{station:'flight',label:'正在执行',inner_repair_status:null}};
+ assert.equal(projectGoalRow(hidden).label,'正在执行');
 });
 
 test('待办先按已确认截止时间排序，再按等待起点和工单号排序', async()=>{
