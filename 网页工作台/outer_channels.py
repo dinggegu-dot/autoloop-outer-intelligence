@@ -44,14 +44,28 @@ def dispatch(service, source, command, body):
         return service.select_ticket(body['event_id'], body['ticket_id'], actor_id=OWNER,
                                      source=source, source_event_id=body['request_id'])
     if command == 'submit':
+        intent = body.get('intent')
+        if intent is not None and (intent not in ('supplement', 'change') or not body.get('ticket_id')):
+            raise Problem('请选择本工单的补充资料或修改要求')
+        if body.get('withdraw_requirement_ids') and (intent != 'change' or body.get('replace_requirement_ids') or body.get('question_id')):
+            raise Problem('请单独选择要撤回的建议，再确认修改要求')
+        if intent == 'supplement' and (body.get('replace_requirement_ids') or body.get('question_id')):
+            raise Problem('补充资料不能替换要求或代答澄清')
         return service.submit(source=source, source_event_id=body['request_id'], actor_id=OWNER,
                               text=body['text'], source_thread_id=body.get('thread'),
                               ticket_id=body.get('ticket_id'), question_id=body.get('question_id'),
                               expected_ticket_revision=body.get('revision'),
-                              replace_requirement_ids=body.get('replace_requirement_ids'), **consent)
+                              replace_requirement_ids=body.get('replace_requirement_ids'), change_request=intent == 'change',
+                              **({'withdraw_requirement_ids':body['withdraw_requirement_ids']}
+                                 if 'withdraw_requirement_ids' in body else {}), **consent)
     ticket = body['ticket_id']
     if not isinstance(ticket, str) or not TICKET.fullmatch(ticket):
         raise Problem('工单编号无效')
+    if command == 'authorize_model_input':
+        if source != 'web' or not consent:
+            raise Problem('请在本机工作台确认发送本单原话', 403)
+        return service.authorize_model_input(ticket, body['revision'], body['request_id'],
+                                             actor_id=OWNER, source=source)
     if command == 'get':
         draft=service.get(ticket, OWNER,request_feedback=True)
         if body.get('experiment_id') is not None:

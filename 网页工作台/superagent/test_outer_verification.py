@@ -19,7 +19,7 @@ from superagent.goal_runtime import (
     worker,
 )
 from superagent.goal_team_handoff import make_handoff_verification, select_handoff_scope
-from superagent.goal_team_records import PROFILE
+from superagent.goal_team_records import ADAPTIVE_REVIEW, PROFILE, public_preference
 from superagent.goal_team_repair import candidate_verification, objective_checks, prepare_scope
 from superagent.goal_team_run import materialize, seal, sealed_workspace
 from superagent.outer_intake import OuterIntake
@@ -47,6 +47,18 @@ def compile_rows(*criteria, goal_fields=None):
 
 
 class RegistryTests(unittest.TestCase):
+    def test_implementation_contract_exposes_public_html_interface_only(self):
+        expected = {'title':'活动简报','headings':['安排'],'element_ids':['schedule-v1']}
+        html = criterion(verifier_id='html-document', test_spec={'path':'brief.html'}, expected_result=expected)
+        self.assertEqual(registry.implementation_criterion(html)['interface'], {'path':'brief.html', **expected})
+        cli = criterion(verifier_id='python-json-cli',
+                        test_spec={'script':'run.py','args':['hidden-input'],'files':{'fixture.txt':'private'}},
+                        expected_result={'secret-answer':True})
+        self.assertEqual(registry.implementation_criterion(cli)['interface'], {'script':'run.py'})
+        blind = criterion(verifier_id='blind-projection', test_spec={'path':'cases.json'},
+                          expected_result={'case_ids':['Z17']})
+        self.assertEqual(registry.implementation_criterion(blind)['interface'], {'path':'cases.json'})
+
     def test_rejects_paths_arbitrary_shell_and_unregistered_versions(self):
         for proposal in (
             criterion(test_spec={'path':'/private/example.json'}),
@@ -217,10 +229,14 @@ class OuterExecutionTests(unittest.TestCase):
         }
         return self.engine.settle(self.ticket,assignment['id'],assignment['run'],'done',row)
 
-    def plan(self, *stages):
-        return self.finish(self.launch('plan'),{
+    def plan(self, *stages, routing=None):
+        assignment = self.launch('plan')
+        if assignment.get('plan_route_required') and routing is None:
+            routing = {'execution_route':'compare','route_reason':'样例需要比较实质取舍','comparison_steps':[1]}
+        return self.finish(assignment,{
             'summary':'真实实现及独立验收',
             'steps':[{'objective':f'实施阶段 {index}','checks':ids} for index,ids in enumerate(stages,1)],
+            **(routing or {}),
         })
 
     def checkpoint(self, phase='execute'):
@@ -481,6 +497,177 @@ class OuterExecutionTests(unittest.TestCase):
         self.assertEqual(state['stage'],'review',review['error'])
         self.assertNotIn('team_pending_handoff',state)
         self.assertNotIn('team_pending_repair',state)
+
+    def test_router_plan_freezes_comparison_for_the_substantive_stage_only(self):
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion('prep'), criterion('choose'))
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE, workflow_profile=registry.ROUTER_TEAM, team_review_mode=ADAPTIVE_REVIEW))
+        planned = self.plan(['prep'],['choose'], routing={
+            'execution_route':'compare','route_reason':'第二阶段有两个实质可选方向','comparison_steps':[2],
+        })
+        self.assertEqual([row['execution_route'] for row in planned['plan']['steps']],['direct','compare'])
+        first, directory = self.launch_team_stage()
+        self.assertEqual((first['execution_route'],first['role_slots']),('direct',1))
+        directory.mkdir(parents=True)
+
+        def invoke(**options):
+            (options['workspace']/'prep.json').write_text('{"ok":true}')
+            return {'result':{'action':'done','summary':'直接完成准备','options':[],'retain':[],'verify':[]},
+                    'model':MODEL,'session':'test-direct','turn':'test-direct-role',
+                    'started_ns':0,'ended_ns':1_000_000_000}
+
+        with patch('superagent.goal_app_server.invoke', side_effect=invoke) as model:
+            self.assertEqual(self.settle_report(first,execute_assignment(self.store,first,directory,None))['phase'],'review')
+        model.assert_called_once()
+        review = self.launch('review')
+        directory = attempt_file(self.store.root,self.ticket,review['id'],'report.json').parent
+        directory.mkdir(parents=True)
+        self.settle_report(review,execute_assignment(self.store,review,directory,None))
+        next_assignment, _ = self.launch_team_stage()
+        self.assertEqual(next_assignment['execution_route'],'compare')
+        self.assertEqual(next_assignment['team_review_mode'],ADAPTIVE_REVIEW)
+        self.assertGreaterEqual(next_assignment['role_slots'],5)
+
+    def test_router_explicit_comparison_cannot_be_classified_as_direct(self):
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion(),goal_fields={'required_capabilities':[{
+            'requirement_id':'requirement-one','description':'请先对比两种方案，再制作页面。','source':'USER_EXPLICIT',
+        }]})
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE, workflow_profile=registry.ROUTER_TEAM, team_review_mode=ADAPTIVE_REVIEW))
+        result = self.plan(['one'], routing={
+            'execution_route':'direct','route_reason':'模型误判','comparison_steps':[],
+        })
+        self.assertEqual(result['plan']['execution_route'],'compare')
+        self.assertEqual(result['plan']['comparison_steps'],[1])
+        self.assertIn('用户明确要求',result['plan']['route_reason'])
+
+    def test_router_respects_explicit_request_to_skip_comparison(self):
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion(),goal_fields={
+            'goal_statement':'比较不同做法后制作网页',
+            'required_capabilities':[{
+                'requirement_id':'requirement-one','description':'无需比较两种方案，按现成规范直接写。',
+                'source':'USER_EXPLICIT','source_refs':[],
+            }],
+        })
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE, workflow_profile=registry.ROUTER_TEAM, team_review_mode=ADAPTIVE_REVIEW))
+        result = self.plan(['one'],routing={
+            'execution_route':'compare','route_reason':'模型误判','comparison_steps':[1],
+        })
+        self.assertEqual(result['plan']['execution_route'],'direct')
+        assignment,_ = self.launch_team_stage()
+        self.assertEqual((assignment['execution_route'],assignment['role_slots']),('direct',1))
+        self.assertNotIn('team_review_mode',assignment)
+
+    def test_router_adaptive_first_stage_asks_only_when_needed_and_resumes_same_draft(self):
+        intake = OuterIntake(Workbench(self.store))
+        self.authorize(criterion())
+        self.store.change(self.ticket, lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE, workflow_profile=registry.ROUTER_TEAM, team_review_mode=ADAPTIVE_REVIEW))
+        ticket = {'id':self.ticket,'status':'AUTHORIZED','revision':1,'correlation_id':'event',
+                  'goal_revision':1,'acceptance_revision':1,'mandate_revision':1,'task_id':self.ticket}
+        with self.store.connect() as db:
+            db.execute('INSERT INTO outer_tickets VALUES(?,?,?,?,?)',
+                       (self.ticket,'default','owner',json.dumps(ticket),'time'))
+        self.plan(['one'])
+        assignment, directory = self.launch_team_stage()
+        self.assertEqual(assignment['team_review_mode'], ADAPTIVE_REVIEW)
+        self.assertTrue(assignment['team_decision_allowed'])
+        self.assertFalse(assignment['team_decision_required'])
+        self.write_team_handoff(assignment,directory,ask=True)
+        material = {'event_id':'used-before-seal', 'source':'web', 'sha256':'a' * 64}
+        self.store.change(self.ticket, lambda task:current(task)['role_calls'][2].update(material_refs=[material]))
+        task = self.settle_team_from_disk(assignment,'done')
+        question = flow(task)['pending_preference']
+        self.assertEqual((task['status'],question['step']),('awaiting_preference',0))
+        brief = public_preference(flow(task),task['status'],brief=True)
+        self.assertTrue(brief['requires_option'])
+        self.assertNotIn('candidate_digest',brief)
+        answer = intake.answer_preference(
+            self.ticket, 1, question['id'], question['revision'], question['candidate_digest'],
+            {'option_id':'1'}, 'adaptive-choice', actor_id='owner')
+        continuation, directory = self.launch_team_stage()
+        self.assertEqual(continuation['preference_answer']['event'],answer['event_id'])
+        self.assertEqual(continuation['candidate_base']['assignment'],assignment['id'])
+        finished = self.finish_team_stage(continuation,directory)
+        self.assertEqual(finished['status'],'completed')
+        self.assertEqual(finished['goal_delivery']['material_refs'],[material])
+
+    def test_router_drafting_survives_early_and_sealed_review_timeouts(self):
+        from superagent.goal_app_server import GoalAppServerError
+        from superagent.team_profiles import new_team_profile
+
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion())
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=new_team_profile(),workflow_profile=registry.ROUTER_TEAM,
+            team_review_mode=ADAPTIVE_REVIEW,budget_seconds=3600))
+        self.plan(['one'])
+        seen = []
+        material = {'event_id':'original-material','source':'web','body':'原批准材料'}
+        later_material = {'event_id':'later-material','source':'web','body':'封存后才来的资料'}
+        notes = [material]
+
+        def invoke(**options):
+            sequence = len(seen) + 1
+            seen.append((options['model'],options['sandbox']))
+            data = json.loads(options['prompt'].rsplit('\n',1)[-1])
+            self.assertEqual(data['approved_materials'],[material])
+            timing = dict(started_ns=1_000_000_000,ended_ns=2_000_000_000)
+            if sequence in (2,5):
+                raise GoalAppServerError('timeout','模拟角色超时',evidence=timing)
+            result = dict(action='done',summary='可核对的角色回执',options=[],retain=[],verify=[])
+            if sequence == 4:
+                (options['workspace']/'one.json').write_text('{"ok":true}')
+            if sequence == 6:
+                self.assertEqual((options['workspace']/'one.json').read_text(),'{"ok":true}')
+                result['observations'] = [{'path':'one.json','excerpt':'true','issue':'核对字段'}]
+            if sequence == 7:
+                result['verify'] = ['核对布尔内容']
+                result['handoff_scope'] = {'variants':[dict(option_id='',mode='keep',retained=[],
+                                                          changes=[],removed_paths=[])]}
+            challenge = options['read_challenge'] or {}
+            tools = [dict(name='shell',settled=True,paired=True,status='completed',exit_code=0,
+                          candidate_reads=list(challenge.values()))] if challenge else []
+            return dict(result=result,model=options['model'],session=f'role-session-{sequence}',
+                        turn=f'role-turn-{sequence}',tools=tools,**timing)
+
+        attempts = []
+        with (patch('superagent.goal_app_server.invoke',side_effect=invoke),
+              patch.object(GoalEngine,'_authorized_materials',side_effect=lambda task: list(notes))):
+            for completed in (0,1,3,3):
+                assignment,directory = self.launch_team_stage()
+                directory.mkdir(parents=True)
+                (directory/'entered').write_text(str(assignment['run']))
+                self.assertEqual(len(assignment.get('draft_resume',{}).get('calls',())),completed)
+                report = execute_assignment(self.store,assignment,directory,None)
+                save_json(directory/'report.json',report)
+                task = self.settle_team_from_disk(assignment,'done')
+                self.assertEqual(task['status'],'queued',task['error'])
+                attempts.append((directory,report))
+                if completed == 1:
+                    notes.append(later_material)
+
+        self.assertIn('模拟角色超时',attempts[0][1]['error'])
+        self.assertTrue(attempts[1][1]['draft_checkpoint'])
+        self.assertIn('模拟角色超时',attempts[2][1]['error'])
+        self.assertEqual(attempts[3][1]['checkpoint'],attempts[1][1]['checkpoint'])
+        self.assertEqual((attempts[1][0]/'sealed/one.json').read_bytes(),
+                         (attempts[3][0]/'sealed/one.json').read_bytes())
+        self.assertEqual(flow(task)['team_pending_handoff']['base_sha256'],attempts[1][1]['checkpoint']['digest'])
+        self.assertEqual(seen,[
+            ('gpt-6.2-sol','read-only'),('gpt-6.2-astra','read-only'),('gpt-6.2-astra','read-only'),
+            ('gpt-6.2-sol','workspace-write'),('gpt-6.2-astra','read-only'),('gpt-6.2-astra','read-only'),
+            ('gpt-6.2-sol','read-only'),
+        ])
+        continuation,directory = self.launch_team_stage()
+        self.assertEqual(continuation['candidate_base']['artifact_sha256'],attempts[1][1]['checkpoint']['digest'])
+        done = self.finish_team_stage(continuation,directory)
+        self.assertEqual(done['status'],'completed')
+        self.assertEqual(done['goal_delivery']['artifact_sha256'],attempts[1][1]['checkpoint']['digest'])
 
     def test_required_team_decision_rejects_done_handoff(self):
         self.staged_team_plan('review_and_decide','one','two')
@@ -1178,6 +1365,66 @@ class OuterExecutionTests(unittest.TestCase):
         for bad in (b'Numbers', b'<title>wrong</title><div id="numbers"></div>',
                     '<title>数据周报</title><h1>总览</h1><div id="numbers"></div><i id="numbers"></i>'.encode()):
             self.assertEqual(registry._criterion_result(row,{'index.html':bad},{})[0],'FAIL')
+
+    def test_router_materials_require_same_ticket_actor_and_explicit_consent(self):
+        self.authorize(criterion())
+        board = Workbench(self.store, hub=Mock(), goal_enabled=True, outer_enabled=True)
+        board.outer()
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            workflow_profile=registry.ROUTER_TEAM,execution_profile=PROFILE))
+        other = 'wb-' + 'f' * 32
+        with self.store.connect() as db:
+            db.executemany('INSERT INTO outer_tickets VALUES (?,?,?,?,?)', [
+                (self.ticket,'default','owner','{}','now'), (other,'default','owner','{}','now'),
+            ])
+            for identity, ticket, actor, permitted, action, body in (
+                ('approved', self.ticket, 'owner', True, 'ATTACH_TO_TICKET', '已授权补充'),
+                ('unapproved', self.ticket, 'owner', False, 'ATTACH_TO_TICKET', '禁止送给模型'),
+                ('otheractor', self.ticket, 'other', True, 'ATTACH_TO_TICKET', '他人的补充'),
+                ('otherorder', other, 'owner', True, 'ATTACH_TO_TICKET', '他单的补充'),
+                ('otheraction', self.ticket, 'owner', True, 'PROPOSE_CHANGE', '未生效的改目标'),
+            ):
+                db.execute("""INSERT INTO outer_events
+                    (id, source, tenant, source_event_id, actor, ticket, body, state, result, received_at)
+                    VALUES (?, 'web', 'default', ?, ?, ?, ?, 'DONE', ?, 'now')""",
+                    (identity, identity, actor, ticket, json.dumps({'allow_model_input':permitted}),
+                     json.dumps({'action':action})))
+                db.execute('INSERT INTO inbox_notes VALUES (?,?,?,?)',
+                           ('web-'+identity,self.ticket,body,'now'))
+
+        assignment = self.launch('plan')
+        expected = [{'event_id':'approved','source':'web','body':'已授权补充'}]
+        self.assertEqual(assignment['context']['notes'], expected)
+        self.finish(assignment, {'summary':'执行和验收',
+                                 'steps':[{'objective':'实施','checks':['one']}]})
+        self.assertEqual(self.launch('execute')['context']['notes'], expected)
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['acceptance_contract']['criteria'].append({
+            'verifier_id':'blind-projection','required':True,
+        }))
+        self.assertEqual(self.engine._authorized_materials(self.store.get(self.ticket)), [])
+
+    def test_router_html_shell_does_not_complete_content_requirement(self):
+        html = criterion(
+            verifier_id='html-document', test_spec={'path':'brief.html'},
+            expected_result={'title':'活动简报','headings':['活动简报'],'element_ids':['agenda-v1']},
+        )
+        requirement = {'requirement_id':'requirement-one','description':'正文列出两项安排和各自负责人'}
+        self.authorize(html, goal_fields={
+            'workflow_profile':registry.ROUTER_TEAM, 'required_capabilities':[requirement],
+        })
+        contract = flow(self.store.get(self.ticket))['outer']['acceptance_contract']
+        self.assertEqual([row['verifier_id'] for row in contract['criteria']], ['html-document','human-review'])
+        self.assertIn(requirement['description'], contract['human_review_requirements'][0])
+        self.plan([row['criterion_id'] for row in contract['criteria']])
+        (self.workspace/'brief.html').write_text(
+            '<title>活动简报</title><h1>活动简报</h1><main id="agenda-v1"></main>', encoding='utf-8')
+        self.checkpoint()
+        assignment = self.launch('review')
+        report = self.trusted_review(assignment)
+        self.assertEqual([row['status'] for row in report['validation']['checks']], ['PASS','INCONCLUSIVE'])
+        task = self.settle_report(assignment, report)
+        self.assertEqual(task['status'], 'awaiting_artifact_review')
+        self.assertNotIn('goal_delivery', task)
 
     def test_unapproved_revision_and_mandate_workspace_are_rejected(self):
         self.authorize(criterion())

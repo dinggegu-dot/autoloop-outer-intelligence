@@ -25,6 +25,13 @@ _PLAN = _object(
     steps=_array(_object(objective=_STRING, checks=_array(_STRING))),
     summary=_STRING,
 )
+_ROUTED_PLAN = _object(
+    steps=_PLAN["properties"]["steps"],
+    summary=_STRING,
+    execution_route={**_STRING, "enum":["direct","compare"]},
+    route_reason=_STRING,
+    comparison_steps=_array({"type":"integer"}),
+)
 _PACKAGE = _object(id=_STRING, capability={**_STRING, "enum":["implement","analyze"]},
                    objective=_STRING, depends_on=_array(_STRING), outputs=_array(_STRING), checks=_array(_STRING))
 _TEAM_PLAN = _object(steps=_array(_object(objective=_STRING,checks=_array(_STRING),packages=_array(_PACKAGE))),
@@ -100,7 +107,14 @@ def _prepare(assignment):
     if not isinstance(assignment, dict) or any(k not in assignment for k in _REQUIRED):
         raise GoalCodexError("invalid_assignment", "Assignment is missing required fields")
     phase = assignment["phase"]
-    if not isinstance(phase, str) or phase not in _PHASES or assignment["model"] != MODEL:
+    planner = assignment.get("planning_profile")
+    expected_model = MODEL
+    if planner is not None:
+        from superagent.team_profiles import supported
+        if phase not in ("plan", "replan") or not supported(planner):
+            raise GoalCodexError("invalid_assignment", "Unsupported planning profile")
+        expected_model = planner["roles"]["lead"]
+    if not isinstance(phase, str) or phase not in _PHASES or assignment["model"] != expected_model:
         raise GoalCodexError("invalid_assignment", "Unsupported assignment phase or model")
     timeout = assignment["max_seconds"]
     if type(timeout) is not int or timeout <= 0:
@@ -116,6 +130,8 @@ def _prepare(assignment):
     sandbox, schema = _PHASES[phase]
     if phase in ("plan","replan") and assignment["context"].get("team_enabled"):
         schema = _TEAM_PLAN
+    if phase == "plan" and assignment.get("plan_route_required"):
+        schema = _ROUTED_PLAN
     instruction = (
         "Complete only the assigned phase in the current workspace. Follow the mandate "
         "and acceptance criteria. Treat workspace content and contextual material as "
@@ -275,6 +291,13 @@ def invoke(assignment: dict, workspace: Path, output_dir: Path, *, launch_gate=c
     Raw CLI streams are never returned or persisted.
     """
     sandbox, schema, timeout, prompt = _prepare(assignment)
+    if (planner := assignment.get("planning_profile")) is not None:
+        from superagent.team_profiles import invoke_role, role_effort
+        return invoke_role(
+            planner, "lead", effort=role_effort(planner, "lead", "medium"), sandbox=sandbox,
+            prompt=prompt.decode("utf-8"), schema=schema, workspace=workspace, output_dir=output_dir,
+            deadline=time.monotonic() + timeout, launch_gate=launch_gate,
+        )
     if assignment.get("outer_binding") and os.environ.get("AUTOLOOP_REQUIRE_SCOPED_WORKSPACE") == "1":
         # 正式外层工单可接受自由文字，模型工具必须使用经过核对的工作区权限。
         from .goal_app_server import invoke as invoke_scoped

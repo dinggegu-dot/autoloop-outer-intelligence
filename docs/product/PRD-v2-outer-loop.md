@@ -1,5 +1,7 @@
 # Autoloop V2.0 — Intelligent Outer Loop & GitHub-Native Development
 
+本版文档保留早期范围与需求编号。新建团队工单由 Router 分派，方案和验收归本单。现行变更与验收操作见[工单团队设计](router-ticket-teams.md)。
+
 **项目性质：已有 Autoloop 系统的完整升级**
 
 **开发执行方：Codex**

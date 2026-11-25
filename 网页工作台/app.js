@@ -2,7 +2,7 @@
 const byId=id=>document.getElementById(id);
 const scriptURL=document.currentScript.src;
 const form=byId('new'), selector=byId('tasks'), detail=byId('detail');
-let goalTeam, syncTeamReview, outerMounted=false;
+let goalTeam, syncTeamReview, routerEnabled=false, outerMounted=false;
 let selected=new URLSearchParams(location.search).get('task')||'', csrf='', creation='', busy=false;
 const node=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
 const notice=text=>{byId('notice').textContent=text;};
@@ -98,6 +98,15 @@ form.onsubmit=async event=>{
   event.preventDefault();if(busy)return;busy=true;
   try{
     const body=Object.fromEntries(new FormData(form));
+    if (routerEnabled && body.workflow==='outer') {
+      const consent=byId('router-consent');
+      if (!consent.checked) {
+        notice('登记前请确认是否同意将本单填写的文字发送给 Codex。');
+        consent.focus();
+        return;
+      }
+      body.allow_model_input=true;
+    }
     if(body.workflow!=='outer' || !body.team_review_mode)delete body.team_review_mode;
     body.name=body.name.trim() || Array.from(body.goal.trim()).slice(0,80).join('');
     body.request_id=creation||=crypto.randomUUID();
@@ -137,6 +146,12 @@ function syncGoalMode(){
   if(!goalTeam)return;
   const marked=form.elements.workflow.checked && !form.elements.workflow.disabled;
   syncTeamReview?.(marked);
+  const consent=byId('router-consent');
+  const showConsent=marked && routerEnabled;
+  byId('router-consent-field').hidden=!showConsent;
+  consent.disabled=!showConsent;
+  consent.required=showConsent;
+  if (!showConsent) consent.checked=false;
   byId('goal-entry-message').hidden=!marked;
   byId('create-task-submit').textContent=marked?'登记目标':'登记任务';
 }
@@ -158,7 +173,9 @@ async function start(){try{await renewSession();
     byId('execution').hidden=true;
     const enabled=outer.workbench_entry;
     byId('outer-opt-in').hidden=!enabled;form.elements.workflow.disabled=!enabled;
-    byId('outer-opt-in-label').textContent=outer.goal_team_enabled?'目标模式':'目标模式（默认 V2）';
+    routerEnabled=enabled && outer.goal_team_enabled===true;
+    form.elements.workflow.defaultChecked=routerEnabled;
+    byId('outer-opt-in-label').textContent=routerEnabled?'由 Router 分派独立团队':'目标模式';
     if(outer.goal_team_enabled)syncTeamReview=mountTeamReviewControl(byId('outer-opt-in'));
     syncGoalMode();
     if(new URLSearchParams(location.search).has('new'))launch.click();

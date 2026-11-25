@@ -11,7 +11,7 @@ from workbench import Problem
 from .goal_engine import GoalEngine, StaleCoordination
 from .goal_runtime import read_team_recovery
 from .goal_team_handoff import CandidateReadUnproven, candidate_read_challenge, valid_handoff_verification
-from .goal_team_records import PROFILE
+from .goal_team_records import ADAPTIVE_REVIEW, PROFILE
 from .goal_team_repair import candidate_verification, prepare_scope, valid_verification
 from .goal_team_run import run_team
 from .outer_verification import LOCAL_DATA, capture, sha256
@@ -46,6 +46,31 @@ class TeamRunTest(TestCase):
                        'approved_goal_contract':{},'contract_instruction':'完成后独立复验'},
         }
 
+    def test_router_short_path_receives_public_interface_and_attributed_material(self):
+        self.assignment['preference_answer'] = None
+        self.assignment['role_slots'] = 1
+        self.assignment['context'].update(
+            ticket_team={'id':'ticket','workflow_profile':'router-team-v1'},
+            notes=[{'event_id':'attached-event','source':'web','body':'林老师负责签到'}],
+            execution_contract={'plan_revision':1,'scope':['read_workspace','write_workspace']},
+        )
+        self.assignment['context']['approved_criteria'][0]['interface']['element_ids'] = ['schedule-v1']
+
+        def invoke(**options):
+            data = json.loads(options['prompt'].rsplit('\n',1)[-1])
+            self.assertEqual(data['approved_materials'], self.assignment['context']['notes'])
+            self.assertEqual(data['approved_criteria'][0]['interface']['element_ids'], ['schedule-v1'])
+            self.assertEqual(data['execution_contract'], self.assignment['context']['execution_contract'])
+            (options['workspace']/'report.html').write_text('<p id="schedule-v1">林老师负责签到</p>')
+            return dict(result=dict(action='done',summary='完成',options=[],retain=[],verify=[]))
+
+        with patch('superagent.goal_app_server.invoke', side_effect=invoke):
+            report = run_team(self.engine, self.assignment, self.base, self.target, {}, Mock())
+        self.assertIn('report.html', report['checkpoint']['files'])
+        evidence = self.engine.finish_team_role.call_args.args[2]
+        self.assertEqual(evidence['material_refs'][0]['event_id'], 'attached-event')
+        self.assertNotIn('body', evidence['material_refs'][0])
+
     def start_review(self, target, *, gate='required', scenario='valid'):
         draft = '<title>同版初稿</title>\n<p>请保留本句，补全第二段。</p>\n'
         prior = '<title>前一步已验收</title>'
@@ -53,7 +78,8 @@ class TeamRunTest(TestCase):
         self.assignment.update(
             step=1, preference_answer=None, role_slots=5, max_seconds=240,
             plan={'steps':[{'objective':'审批上版'},{'objective':'审阅本步'},{'objective':'补下一步'}]},
-            team_review_mode='review' if gate == 'disabled' else 'review_and_decide',
+            team_review_mode=ADAPTIVE_REVIEW if gate == 'adaptive'
+            else 'review' if gate == 'disabled' else 'review_and_decide',
             team_decision_allowed=gate != 'disabled', team_decision_required=gate == 'required',
         )
         self.assignment['context'].update(
@@ -97,7 +123,7 @@ class TeamRunTest(TestCase):
             if number == 5:
                 self.assertEqual(data['comparison']['summary'],'角色返回的第3份意见')
                 self.assertEqual(data['draft_review']['observations'][0]['issue'],'第二段缺少下一个操作。')
-                expected = {'required':['ask'], 'optional':['done','ask'], 'disabled':['done']}[gate]
+                expected = {'required':['ask'], 'optional':['done','ask'], 'adaptive':['done','ask'], 'disabled':['done']}[gate]
                 self.assertEqual(options['schema']['properties']['action']['enum'],expected)
                 result['verify'] = ['report.html 第二段补上下一步']
                 result['retain'] = ['report.html 保留首段']
@@ -138,7 +164,8 @@ class TeamRunTest(TestCase):
     def test_review_seals_real_draft_and_respects_step_decision_mode(self):
         for gate, scenario, action in (
                 ('disabled','valid','done'), ('required','valid','ask'),
-                ('optional','valid','ask'), ('optional','optional-done','done')):
+                ('optional','valid','ask'), ('optional','optional-done','done'),
+                ('adaptive','valid','ask'), ('adaptive','optional-done','done')):
             with self.subTest(gate=gate,scenario=scenario), TemporaryDirectory() as temporary:
                 target = Path(temporary).resolve()
                 self.engine.reset_mock()

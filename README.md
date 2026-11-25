@@ -1,28 +1,28 @@
-# 目标漫游局 · Autoloop V2
+# 目标漫游局 · Autoloop 工作台
 
-Autoloop 让你把一个目标交给工作台，在同一张工单上批准、看稿、提意见和收成果。外层负责记录授权、安排执行和独立验收。内层用 Codex 会话完成眼前这一步，按需要找顾问提案、请执行者修改，再由负责人复验。其他有授权且有执行名额的工单可以继续推进。
+在工作台交代一件事，Router 为它安排一个团队。以后补资料、看初稿、选方向、签收，都回同一张工单。多件事可以并行。
 
-## 一张工单，两层分工
+## 工单怎样流转
 
-[![Autoloop 工作台与 Codex 两层协作流程](docs/assets/workbench-two-layer.svg)](docs/assets/workbench-two-layer.svg)
+[![Router 分派多张工单，每张工单由自己的团队完成](docs/assets/router-ticket-teams.svg)](docs/assets/router-ticket-teams.svg)
 
-图中每个编号都有对应的实现说明。可以查到流转条件、源代码和原单里留下的证据。[逐环节实现说明](docs/architecture/workbench-two-layer.md)
+负责人先判断任务。简单工作直接制作、自测。有实质取舍时，负责人才请只读顾问各提一案，比较后出稿。遇到影响结果的取舍，团队从原单请你拍板。执行者修改、自测后，负责人复验，团队按本单批准的标准独立验收并归档。[新工单分工、订阅和验收](docs/product/router-ticket-teams.md)
 
 ## 正式工作台怎么用
 
 | 想做什么 | 到哪里操作 | 能核对什么 |
 | --- | --- | --- |
-| 提交目标 | 「新建工单」选择「使用 Codex 团队」，确认本单允许发送的文字后登记 | 原话、可交付成果、验收条件和批准预算 |
+| 提交目标 | 「新建工单」默认由 Router 分派团队，确认本单可发给 Codex 的文字后登记 | 原话、可交付成果、验收条件和批准预算 |
 | 处理要你决定的事 | 首页「待我决定」 | 普通工单和 Codex 工单的等待原因、下一步，以及原单对应位置 |
 | 看方案、初稿和返修 | 「进度」看审稿与返修。待定方向时，从原单首区点「查看这版初稿」 | 双方方案、顾问发现的问题、给执行者的清单、前后版本和复验 |
 | 看系统为什么重新派工 | 原单「决定与记录」展开「角色、工具与派工记录」 | 目标协调读过哪些本单证据、要修哪一步、保留什么、接下来复验什么 |
 | 签收或下载 | 原单「成果与验收」 | 机器检查、需要本人核对的条款、签收或退回的版本、已验归档 |
 
-## 当前版本
+## 上一版正式验收
 
 2026-11-25，正式本机工作台 **8765** 已上线统一待办、角色协作证据和交付预览。Chrome 从首页进入已有的合成索引原单，核对了 **8/8** 机器验收和两个归档文件。真实多角色简报、两版退回签收及 Worker 重启后的协作恢复有各自的隔离验收记录。[本次发布](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/15#issuecomment-7160223953) · [已部署的源码 903fb0c](https://github.com/dinggegu-dot/autoloop-outer-intelligence/tree/903fb0c19badc8479127be882b4ff8603b53afd4) · [隔离简报记录](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/evidence/goal-team/authorized-workbench-live.json)
 
-这张图展示的是正式的**工作台与 Codex** 路线。飞书工单接续、DSH 隔离实验和 AFR 研究交接都有各自的连接和验收范围。[运行方式与边界](docs/architecture/workbench-two-layer.md#d3-运行方式和其他入口) · [AFR 研究交接记录](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/docs/testing/afr-integration.md) · [配套知识库 AFR](https://github.com/dinggegu-dot/atom-flow-research)
+上一版的过程和证据归档在逐环节实现说明中。飞书工单接续、DSH 隔离实验和 AFR 研究交接都有各自的连接和验收范围。[运行方式与边界](docs/architecture/workbench-two-layer.md#d3-运行方式和其他入口) · [AFR 研究交接记录](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/903fb0c19badc8479127be882b4ff8603b53afd4/docs/testing/afr-integration.md) · [配套知识库 AFR](https://github.com/dinggegu-dot/atom-flow-research)
 
 ## 本机浏览源码
 

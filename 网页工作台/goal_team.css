@@ -307,3 +307,6 @@
   .goal-team.has-ticket { grid-template-columns: minmax(260px, .8fr) minmax(0, 2fr); }
   .goal-team.has-ticket .goal-ticket { padding: clamp(18px, 2vw, 30px); }
 }
+
+.goal-router-feedback { border-block-start: 1px solid var(--goal-line); padding-block: 8px; }
+.goal-router-feedback p { margin: 4px 0 0; overflow-wrap: anywhere; }

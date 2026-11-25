@@ -1,24 +1,17 @@
 """全 GPT 内层的授权配置和向后兼容的原单读取。"""
 
 from workbench import is_blind_goal
+from superagent.team_profiles import LEGACY_TEAM as PROFILE
 
 MIN_REPAIR_ASSIGNMENT_SECONDS = 75
 TEAM_ROLE_MIN_SECONDS = 8
 TEAM_RUN_RESERVE_SECONDS = 3
 # 派工使用整秒，并为装载封存文件的开销留出余量。
 MIN_TEAM_ASSIGNMENT_SECONDS = TEAM_ROLE_MIN_SECONDS + TEAM_RUN_RESERVE_SECONDS + 1
-TEAM_REVIEW_MODES = ('review', 'review_and_decide')
+ADAPTIVE_REVIEW = 'adaptive_review'
+TEAM_REVIEW_MODES = ('review', 'review_and_decide', ADAPTIVE_REVIEW)
+PREFERENCE_REVIEW_MODES = ('review_and_decide', ADAPTIVE_REVIEW)
 EXECUTION_PHASES = ('plan','replan','execute','repair','review','coordinate','package','assemble')
-
-PROFILE = {
-    'version': 1,
-    'runtime': 'codex-app-server',
-    'roles': {'lead': 'gpt-6.2-sol', 'advisor': 'gpt-6.2-sol', 'design_advisor': 'gpt-6.2-astra',
-              'implementer': 'gpt-6.2-sol', 'reviewer': 'gpt-6.2-sol'},
-    'max_roles_per_assignment': 5,
-    'max_roles_per_ticket': 30,
-}
-
 
 def profile(state):
     return ((state.get('outer') or {}).get('mandate') or {}).get('execution_profile')
@@ -35,9 +28,9 @@ def public_preference(state, status, *, brief=False):
     record = state.get('pending_preference')
     if not record or record.get('answer') is not None:
         return None
-    keys = ['id', 'revision', 'prompt', 'created_at', 'step']
+    keys = ['id', 'revision', 'prompt', 'created_at', 'step', 'requires_option']
     if not brief:
-        keys += ['candidate_digest', 'options', 'draft_sha256', 'requires_option']
+        keys += ['candidate_digest', 'options', 'draft_sha256']
     public = {key: record[key] for key in keys if key in record}
     handoff = state.get('team_pending_handoff') or {}
     if (not brief and record.get('requires_option') and record.get('draft_sha256')

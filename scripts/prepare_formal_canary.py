@@ -23,7 +23,16 @@ HOME_QUEUE_CSS = """
 .goal-home > button { justify-self:start; }
 #formal-home-decisions .goal-card { border-inline-start:3px solid var(--goal-primary); }
 #formal-home-decisions .goal-chip { background:var(--goal-wait);color:var(--goal-wait-ink); }
-#formal-home-decisions .goal-why dd { white-space:pre-line; }
+#formal-home-decisions .goal-card p { white-space:pre-line; overflow-wrap:anywhere; }
+#task-form-status:empty { display:none; }
+#outer-team-options { display:block; margin:14px 0; padding:0; }
+#outer-team-options label.outer-team-check {
+  display:flex; align-items:flex-start; gap:9px; padding:8px 0; margin:0; min-height:40px; font-size:.875rem !important;
+}
+#outer-team-options input[type="checkbox"] { inline-size:1.1rem; block-size:1.1rem; flex:none; margin:2px 0 0; padding:0; }
+#outer-team-settings > p { font-size:.875rem; margin:0 0 6px; }
+#outer-team-settings > details { margin-block:4px; }
+#outer-team-settings > details summary { cursor:pointer; padding-block:5px; }
 """
 
 
@@ -78,17 +87,17 @@ def frontend(formal, front):
             <span class="goal-count" hidden></span>
           </div>
           <p class="goal-connection" id="formal-home-ordinary-status" role="status">正在读取普通工单待办。</p>
-          <p class="goal-connection" id="formal-home-codex-status" role="status">正在读取 Codex 工单待办。</p>
-          <button type="button" class="goal-button" hidden>重新读取 Codex 工单</button>
+          <p class="goal-connection" id="formal-home-codex-status" role="status">正在读取团队工单待办。</p>
+          <button type="button" class="goal-button" hidden>重新读取团队工单</button>
           <ul class="goal-home-list" hidden></ul>
           <p class="goal-empty" hidden>当前没有需要你决定的工单。</p>
         </section>
         <section id="formal-goal-home" class="goal-team goal-home" aria-labelledby="formal-goal-home-title" hidden>
-          <div class="goal-home-header"><h2 id="formal-goal-home-title" tabindex="-1">Codex 工单</h2>
-            <a class="goal-button" href="/workbench">查看全部 Codex 工单</a>
+          <div class="goal-home-header"><h2 id="formal-goal-home-title" tabindex="-1">团队工单</h2>
+            <a class="goal-button" href="/workbench">查看全部团队工单</a>
           </div>
           <div class="goal-home-groups"></div>
-          <nav class="goal-actions" aria-label="其他 Codex 工单" hidden>
+          <nav class="goal-actions" aria-label="其他团队工单" hidden>
             <a class="goal-button" href="/workbench?station=dock" data-station="dock" hidden>已暂停或停止</a>
             <a class="goal-button" href="/workbench?station=unknown" data-station="unknown" hidden>待核对</a>
           </nav>
@@ -96,8 +105,8 @@ def frontend(formal, front):
         <!--OUTER-HOME-QUEUE-END--><div id="live-tasks">''')
     html = replace_once(html, '<div id="live-approvals">', '''<!--OUTER-HOME-APPROVALS-BEGIN-->
         <section id="formal-goal-approvals" class="goal-team goal-home" aria-labelledby="formal-goal-approvals-title" hidden>
-          <div class="goal-home-header"><h2 id="formal-goal-approvals-title">Codex 工单</h2>
-            <a class="goal-button" href="/workbench?station=decision">查看 Codex 待决定工单</a>
+          <div class="goal-home-header"><h2 id="formal-goal-approvals-title">团队工单</h2>
+            <a class="goal-button" href="/workbench?station=decision">查看待决定的团队工单</a>
           </div>
           <p class="goal-connection" role="status"></p>
         </section>
@@ -106,26 +115,29 @@ def frontend(formal, front):
                      ('</span> 待审批 <span class="nav-count red"', '</span> 普通工单审批 <span class="nav-count red"'),
                      ('aria-label="查看待审批事项"', 'aria-label="查看普通工单审批"')):
         html = replace_once(html, old, new)
+    html = replace_once(html, '写下你想得到的结果。默认由 Codex 规划、执行和独立审核，实施前由你确认方案。',
+                        '写下你想得到的结果，以及怎样算完成。')
     dialog = '</span></button></form></dialog>'
-    # 插在旧提交按钮后，保留旧表单的默认回车操作。
-    html = replace_once(html, dialog, '''</span></button><!--OUTER-CANARY-BEGIN--><div class="wb-actions">
+    # 插在旧提交按钮后，保留表单的默认回车操作。
+    html = replace_once(html, dialog, '''</span></button><!--OUTER-CANARY-BEGIN--><details class="model-fields"><summary>合成试单</summary><div class="wb-actions">
 <button id="outer-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成索引试单</button>
 <button id="outer-team-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成简报试单</button>
-<a href="/workbench">查看 Codex 团队工单</a></div><!--OUTER-CANARY-END--></form></dialog>''')
+</div></details><!--OUTER-CANARY-END--></form></dialog>''')
     html = replace_once(html, '<p class="draft-warning" id="task-form-status">',
                         '''<!--OUTER-TEAM-OPTIONS-BEGIN--><fieldset id="outer-team-options" class="model-fields">
-<legend>任务交给谁</legend>
-<label><input type="checkbox" id="outer-goal-team"> 使用 Codex 团队</label>
+<legend>执行方式</legend>
+<label class="outer-team-check"><input type="checkbox" id="outer-goal-team" checked><span>由 Router 分派独立团队</span></label>
 <div id="outer-team-settings" hidden>
+<p>提交后整理目标与验收条件，批准后开始执行。补充和结果都留在原单。</p>
+<details><summary>审稿设置</summary>
 <label for="outer-team-review-mode">团队审稿</label>
 <select id="outer-team-review-mode">
-<option value="">随任务自动安排</option>
-<option value="review">比较方案并审稿</option>
+<option value="">简单直接做，复杂再比较</option>
+<option value="review">主动比较双方案，由团队判断</option>
 <option value="review_and_decide">分步交付，第 2 步请我定方向</option>
 </select>
-<p class="draft-warning" id="outer-team-review-hint" hidden>请写明至少两步可以分别验收的成果。</p>
-<label><input type="checkbox" id="outer-team-consent"> 允许把本单填写的名称、目标和完成标准发送给 Codex</label>
-<p class="draft-warning">登记后开始研判。执行等你在工单批准。请只填写获准发送的内容。</p>
+<p class="draft-warning" id="outer-team-review-hint" hidden>请写明至少两步可以分别验收的成果。</p></details>
+<label class="outer-team-check"><input type="checkbox" id="outer-team-consent"><span>允许把本单填写的名称、目标和完成标准发送给 Codex</span></label>
 </div></fieldset><!--OUTER-TEAM-OPTIONS-END--><p class="draft-warning" id="task-form-status">''')
     tasks = replace_once((formal / "tasks.js").read_text(), """    if (working) return;
     working = true;
@@ -189,10 +201,14 @@ def frontend(formal, front):
     }
     const button=form.querySelector('[type=submit]');
     if (!button.dataset.defaultText) button.dataset.defaultText=button.textContent;
-    button.textContent=enabled?'登记目标':button.dataset.defaultText;
+    button.textContent=enabled?'提交工单':button.dataset.defaultText;
   };
   teamMode?.addEventListener('change',syncTeamMode);
   node('#outer-team-review-mode')?.addEventListener('change',syncTeamMode);
+  teamConsent?.addEventListener('change',()=>{
+    const status=node('#task-form-status');
+    if (teamConsent.checked && status.textContent.startsWith('登记前请确认')) status.textContent='';
+  });
   for (const name of ['name','goal','acceptance']) {
     form.elements[name].addEventListener('input',()=>{if(teamConsent)teamConsent.checked=false;});
   }
@@ -262,7 +278,7 @@ def frontend(formal, front):
                          "...(name==='approve'?binding:{ticket_id:d.id,revision:d.revision}),...extra,request_id:crypto.randomUUID()")
     outer = replace_once(outer, "by('launch').hidden=false;", "by('launch').hidden=true;")
     outer = replace_once(outer, "if(query.has('new')){composer.showModal();", "if(query.has('new')){")
-    outer = replace_once(outer, "'发布一个目标，开始第一段航程。'", "'请在普通新单入口提交合成索引试单。'")
+    outer = replace_once(outer, "'发布一个目标，开始第一段航程。'", "'请从工单工作台新建工单。'")
     outer = replace_once(outer, "by('map-link').href=chosen?'/?trip='+encodeURIComponent(chosen):'/';",
                          "by('map-link').href='/#tasks';")
     write(ui / "outer.js", outer)
@@ -304,8 +320,12 @@ def backend(app):
                 raise Problem('灰度后台未开放此操作', 400)
             if dsh:
                 return self.dsh_command""")
+    server = replace_once(server, "legacy_fixture = bool(provided and body.get('allow_model_input') is not True)",
+                          "legacy_fixture = body in (SYNTHETIC_ORDER, TEAM_ORDER)")
     approval = "                return self.json_response(dispatch(workbench.outer(),'web',cmd,body))"
-    server = replace_once(server, approval, """                free_text = command_uses_model_input(cmd, body)
+    server = replace_once(server, approval, """                if cmd == 'select' and not workbench.outer().event(body['event_id'], 'owner').get('router_selection'):
+                    raise Problem('请从原工单渠道核对已有事件', 409)
+                free_text = command_uses_model_input(cmd, body)
                 if cmd == 'approve' or free_text:
                     current = workbench.outer().get(body.get('ticket_id'), 'owner')
                     if free_text and current.get('allow_model_input') is not True:
@@ -334,7 +354,7 @@ def backend(app):
     workbench = (app / "outer_workbench.py").read_text()
     workbench = replace_once(workbench, "    team_enabled = getattr(workbench, 'outer_goal_team', False)",
                              "    team_enabled = getattr(workbench, 'outer_goal_team', False) and (\n"
-                             "        'team_review_mode' in body or body.get('allow_model_input') is True)")
+                             "        not legacy_fixture or 'team_review_mode' in body or body.get('allow_model_input') is True)")
     write(app / "outer_workbench.py", workbench)
     shutil.copy2(REPO / "scripts/formal_outer_canary_wire.py", app)
     shutil.copy2(REPO / "scripts/formal_outer_canary.py", app / "outer_canary.py")

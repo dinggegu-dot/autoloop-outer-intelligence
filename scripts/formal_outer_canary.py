@@ -68,6 +68,8 @@ CONTROL_FIELDS = {
     "return_artifact": CONTRACT_FIELDS | {"candidate", "artifact_sha256", "reason", CONSENT},
     "answer_preference": CONTRACT_FIELDS | {"question_id", "question_revision", "candidate_digest", "answer"},
     "submit": VERSION_FIELDS | {"text", CONSENT},
+    "authorize_model_input": VERSION_FIELDS | {CONSENT},
+    "select": {"event_id", "ticket_id", "request_id"},
     "extend_team_budget": VERSION_FIELDS | {"mandate_revision", "additional_minutes", "additional_roles"},
 }
 MAX_REQUEST = 48000
@@ -106,7 +108,7 @@ def valid_custom_order(body):
             and body["workflow"] == "outer" and body[CONSENT] is True
             and canonical_uuid(body["request_id"])
             and body["request_id"] not in (SYNTHETIC_ORDER["request_id"], TEAM_ORDER["request_id"])
-            and body.get("team_review_mode", "review") in ("review", "review_and_decide")
+            and body.get("team_review_mode", "review") in ("adaptive_review", "review", "review_and_decide")
             and all(valid_text(body[key], limit, blank=key != "goal") for key, limit in ORDER_TEXT_LIMITS.items())
             and len(request_bytes(body)) <= MAX_REQUEST)
 
@@ -147,6 +149,8 @@ FIELD_CHECKS = {
     "text": lambda v: valid_text(v, 6000),
     CONSENT: lambda v: v is True,
     "replace_requirement_ids": valid_requirements,
+    "withdraw_requirement_ids": valid_requirements,
+    "intent": lambda v: v in ("supplement", "change"),
     "additional_minutes": lambda v: type(v) is int and v in (0, 15, 30, 60),
     "additional_roles": lambda v: type(v) is int and v in (0, 5, 10),
 }
@@ -165,16 +169,23 @@ def valid_command(command, body):
     if command in {"pause", "resume", "stop"} and "goal_revision" in body:
         fields = CONTRACT_FIELDS
     optional = {"approve": {"require_signoff"}, "answer_preference": {CONSENT},
-                "submit": {"question_id", "replace_requirement_ids"}}.get(command, set())
+                "submit": {"question_id", "replace_requirement_ids", "withdraw_requirement_ids", "intent"}}.get(command, set())
     if not fields <= body.keys() <= fields | optional:
         return False
-    if not all(FIELD_CHECKS[key](value) for key, value in body.items()) or len(request_bytes(body)) > MAX_REQUEST:
+    values = ((key, value) for key, value in body.items()
+              if not (command == "select" and key == "ticket_id" and value is None))
+    if not all(FIELD_CHECKS[key](value) for key, value in values) or len(request_bytes(body)) > MAX_REQUEST:
         return False
     if command_uses_model_input(command, body) and body.get(CONSENT) is not True:
         return False
     if command == "answer_preference":
         return not body["question_id"].startswith("q-")
     if command == "submit" and "question_id" in body and not body["question_id"].startswith("q-"):
+        return False
+    if command == "submit" and "withdraw_requirement_ids" in body and (
+            body.get("intent") != "change" or "question_id" in body or "replace_requirement_ids" in body):
+        return False
+    if command == "submit" and body.get("intent") == "supplement" and ("question_id" in body or "replace_requirement_ids" in body):
         return False
     if command == "extend_team_budget":
         return bool(body["additional_minutes"] or body["additional_roles"])

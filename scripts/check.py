@@ -18,6 +18,7 @@ def main():
     for file in sorted(BOARD.glob('*.js')):
         run(['node','--check',str(file)],BOARD)
     run(['node','--test','test_journey.mjs','test_presentation.mjs'],BOARD)
+    run(['node','--test','scripts/test_pinned_ticket_delivery.mjs'],ROOT)
     run([sys.executable,'-B','-m','unittest','discover','-q'],BOARD)
     modules=['superagent.'+p.stem for p in sorted((BOARD/'superagent').glob('test_*.py'))]
     run([sys.executable,'-B','-m','unittest','-q',*modules],BOARD,

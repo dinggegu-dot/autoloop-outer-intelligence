@@ -22,6 +22,7 @@ from formal_outer_canary_wire import client_ticket, response_proof
 
 HUB_KEY = re.compile(r'[A-Za-z0-9_-]{43}')
 RUNTIME_DIRS = ('hub', 'worker', 'workbench', 'tmp', 'cwd')
+TEAM_CAPACITY = 2
 
 
 def require(condition, message):
@@ -178,6 +179,29 @@ class Supervisor:
         worker = {'url': self.hub_url, 'worker': {'name': 'local', 'key': worker, 'capacity': 1}}
         return hub, worker
 
+    def team_runtime(self):
+        """从已核对的本机配置派生团队并发参数。升级和回退各自保留运行记录。"""
+        home = self.runtime / 'ticket-worker'
+        home.mkdir(mode=0o700, exist_ok=True)
+        owned(home, directory=True)
+        rules = self.rules()
+        rules['rules'][0]['parallel'] = TEAM_CAPACITY
+        worker = read_json(self.runtime / 'worker/config.json')
+        worker['worker']['capacity'] = TEAM_CAPACITY
+        for name, value in (('rules.json', rules), ('config.json', worker)):
+            path = home / name
+            if path.exists() or path.is_symlink():
+                require(read_json(path) == value, '团队运行配置与本机工单服务不一致')
+            else:
+                # 首次配置中途退出可直接重试，恢复已有运行不覆盖它的状态。
+                with tempfile.NamedTemporaryFile(dir=home, mode='w', delete=False) as handle:
+                    json.dump(value, handle)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(handle.name, path)
+                sync_directory(home)
+        return home
+
     def initialize(self):
         # 中台密钥和数据库一起安装，首次中断时可在新目录重试。
         with tempfile.TemporaryDirectory(prefix='.runtime-', dir=self.root) as temporary:
@@ -286,10 +310,13 @@ class Supervisor:
         owner = self.validate_runtime()
         role_env = self.role_environment()
         self.alive()
-        hub_log = self.start('hub', [*self.cli, 'up'], dict(self.env, AGENT_AUTOLOOP_HOME=str(self.runtime / 'hub')))
+        runner = self.team_runtime()
+        hub_env = dict(self.env, AGENT_AUTOLOOP_HOME=str(self.runtime / 'hub'),
+                       AGENT_AUTOLOOP_RULES=str(runner / 'rules.json'))
+        hub_log = self.start('hub', [*self.cli, 'up'], hub_env)
         self.wait_ready(lambda: hub_log(f'[hub] listening on 127.0.0.1:{self.hub_port}')
                         and request(self.hub_port, '/healthz') == 200, 'hub')
-        self.start('worker', [*self.cli, 'up'], dict(role_env, AGENT_AUTOLOOP_HOME=str(self.runtime / 'worker')))
+        self.start('worker', [*self.cli, 'up'], dict(role_env, AGENT_AUTOLOOP_HOME=str(runner)))
         self.wait_ready(lambda: request(self.hub_port, '/v1/state', {'Authorization': f'Bearer {owner}'}) is True,
                         'worker')
         board_log = self.start('board', [sys.executable, '-B', str(self.board), '--goal-pilot',

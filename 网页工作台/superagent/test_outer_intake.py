@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Event
 import unittest
 from unittest.mock import patch
+from uuid import uuid4
 
 from workbench import Problem, Store, Workbench
 
@@ -106,6 +107,297 @@ class OuterIntakeTest(unittest.TestCase):
 
     def control(self, draft, operation, source_event):
         return self.intake.control(draft['id'], operation, draft['revision'], source_event, actor_id='owner')
+
+    def router_new(self, text='交付合成简报', **fields):
+        from outer_workbench import create_task
+
+        self.workbench.outer_workbench_entry = True
+        self.workbench.outer_goal_team = True
+        self.intake.team_model = self.model
+        body = dict(workflow='outer', request_id=str(uuid4()), name='团队工单', goal=text,
+                    acceptance='核对产物内容', allow_model_input=True, **fields)
+        return create_task(self.workbench, body), body
+
+    def test_router_registers_ticket_and_keeps_team_queue_separate_from_legacy(self):
+        from outer_workbench import create_task
+
+        first, body = self.router_new()
+        second, _ = self.router_new('交付另一张合成简报')
+        self.assertNotEqual(first['ticket_id'], second['ticket_id'])
+        self.assertEqual(create_task(self.workbench, body)['ticket_id'], first['ticket_id'])
+        self.assertTrue(create_task(self.workbench, body)['duplicate'])
+        ticket = self.intake.get(first['ticket_id'], 'owner')
+        self.assertEqual(ticket['original_request']['goal'], body['goal'])
+        self.assertEqual(ticket['approval_terms']['team_review_mode'], 'adaptive_review')
+        self.assertEqual(ticket['approval_terms']['execution_profile']['roles']['advisor'], 'gpt-6.2-astra')
+        self.assertEqual(ticket['approval_terms']['execution_model'], 'gpt-6.2-sol')
+        self.assertEqual(ticket['subscription']['bindings'], [{'source':'web','thread_id':ticket['id']}])
+        self.assertEqual(self.intake.pending_team_tickets(), [first['ticket_id'], second['ticket_id']])
+        self.assertEqual(self.intake.drain(), 0)
+        self.assertFalse(self.model.calls)
+        self.assertEqual(self.intake.drain_ticket(first['ticket_id'], limit=2), 2)
+        self.assertEqual(self.intake.pending_team_tickets(), [second['ticket_id']])
+        self.assertEqual([role for role, _ in self.model.calls], ['intake_assessor','acceptance_designer'])
+        for _, context in self.model.calls:
+            self.assertEqual(context['ticket_team'], ticket['ticket_team'])
+            self.assertEqual(context['team_review_mode'], 'adaptive_review')
+            self.assertNotIn('candidate_tickets', context)
+            self.assertNotIn(second['ticket_id'], json.dumps(context))
+        approved = self.approve(self.intake.get(first['ticket_id'], 'owner'))
+        self.assertEqual(approved['mandate']['workflow_profile'], 'router-team-v1')
+        self.assertEqual(approved['goal_contract']['workflow_profile'], 'router-team-v1')
+
+    def test_router_subscription_routes_by_exact_thread_without_model_or_cross_ticket_fallback(self):
+        first, _ = self.router_new()
+        second, _ = self.router_new()
+        first_id, second_id = first['ticket_id'], second['ticket_id']
+        initial = self.intake.get(first_id, 'owner')
+        self.intake.bind_thread(first_id, 'feishu', 'source-card-a', actor_id='owner')
+        self.intake.bind_thread(second_id, 'feishu', 'source-card-b', actor_id='owner')
+        with self.assertRaises(Problem):
+            self.intake.bind_thread(second_id, 'feishu', 'source-card-a', actor_id='owner')
+        with self.assertRaises(Problem):
+            self.send('错单', event='mismatch', source_thread_id='source-card-a', ticket_id=second_id)
+        with self.assertRaises(Problem):
+            self.send('未绑定', event='missing-thread', ticket_id=first_id)
+        with self.assertRaises(Problem):
+            self.send('其他租户', event='wrong-tenant', source_thread_id='source-card-a',
+                      ticket_id=first_id, tenant='other')
+        result = self.send('补充甲', event='linked-message', source_thread_id='source-card-a')
+        retry = self.send('补充甲', event='linked-message', source_thread_id='source-card-a')
+        self.assertEqual(result['action'], 'ATTACH_TO_TICKET')
+        self.assertEqual(result['ticket_id'], first_id)
+        self.assertEqual(retry['event_id'], result['event_id'])
+        self.assertTrue(retry['duplicate'])
+        self.assertFalse(self.model.calls)
+        details = self.intake.get(first_id, 'owner')
+        self.assertEqual(details['revision'], initial['revision'])
+        self.assertEqual([entry['text'] for entry in details['subscription']['entries']], ['补充甲'])
+        self.assertFalse(details['subscription']['entries'][0]['allow_model_input'])
+        self.assertEqual(self.intake.get(second_id, 'owner')['subscription']['entries'], [])
+        unlinked = self.send('unlinked thread text', event='unknown-card', source_thread_id='unlinked')
+        self.assertTrue(unlinked['router_selection'])
+        self.assertEqual({row['id'] for row in unlinked['choices']}, {first_id, second_id})
+        self.assertEqual(self.intake.drain(limit=1), 0)
+        self.assertFalse(self.model.calls)
+
+    def test_router_unbound_sources_wait_for_explicit_selection_and_web_model_authorization(self):
+        self.workbench.outer_goal_team = True
+        self.intake.team_model = self.model
+        unlinked = self.send('刚收到的原话', source_thread_id='new-thread', allow_model_input=True)
+        self.assertTrue(unlinked['router_selection'])
+        self.assertEqual(unlinked['choices'], [])
+        self.assertIsNone(unlinked['ticket_id'])
+        registered = self.intake.select_ticket(unlinked['event_id'], None, actor_id='owner', source='feishu',
+                                               source_event_id='create-from-thread')
+        ticket_id = registered['ticket_id']
+        draft = self.intake.get(ticket_id, 'owner')
+        self.assertEqual(draft['original_request'], {'text':'刚收到的原话'})
+        self.assertTrue(draft['needs_model_consent'])
+        self.assertEqual(self.intake.pending_team_tickets(), [])
+        self.assertEqual(self.intake.drain(), 0)
+        self.assertFalse(self.model.calls)
+        with self.assertRaises(Problem):
+            self.intake.authorize_model_input(ticket_id, draft['revision'], 'remote-consent',
+                                              actor_id='owner', source='feishu')
+        authorization = self.intake.authorize_model_input(ticket_id, draft['revision'], 'web-consent', actor_id='owner')
+        self.assertEqual(authorization['action'], 'MODEL_INPUT_AUTHORIZED')
+        self.assertTrue(self.intake.authorize_model_input(
+            ticket_id, draft['revision'], 'web-consent', actor_id='owner')['duplicate'])
+        self.assertEqual(self.intake.pending_team_tickets(), [ticket_id])
+        self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 2)
+        self.assertEqual(self.model.calls[0][1]['untrusted_text']['current_message'], '刚收到的原话')
+        self.assertFalse(self.intake.get(ticket_id, 'owner')['needs_model_consent'])
+
+    def test_router_standard_form_rejects_missing_consent_and_remote_form_holds_local(self):
+        from outer_workbench import create_task
+
+        self.workbench.outer_workbench_entry = True
+        self.workbench.outer_goal_team = True
+        body = dict(workflow='outer',request_id=str(uuid4()),name='合成单',goal='输出 JSON',acceptance='核对结构')
+        with self.assertRaisesRegex(Problem, '允许发送本单资料'):
+            create_task(self.workbench, body)
+        self.assertEqual(self.intake.drain(), 0)
+        event = create_task(self.workbench, dict(body, allow_model_input=True), source='dsh')
+        draft = self.intake.get(event['ticket_id'], 'owner')
+        self.assertTrue(draft['needs_model_consent'])
+        self.assertNotIn('allow_model_input', draft)
+        self.assertEqual(self.intake.pending_team_tickets(), [])
+
+    def test_router_withdraws_only_selected_suggestions_and_preserves_previous_authorization(self):
+        event, _ = self.router_new()
+        ticket_id = event['ticket_id']
+        examples = [
+            ('constraints', '禁止联网', 'MODEL_PROPOSED'),
+            ('nonfunctional_requirements', '不得采集个人信息', 'CONTEXT_DERIVED'),
+            ('required_capabilities', '提供交互能力', 'MODEL_PROPOSED'),
+        ]
+
+        def propose(role, context, schema):
+            result = self.model(role, context, schema)
+            if role == 'intake_assessor':
+                for field, description, source in examples:
+                    result['goal_draft'][field].append(dict(description=description, source=source,
+                                                           source_refs=[context['event_id']]))
+            return result
+
+        self.intake.team_model = propose
+        self.intake.drain_ticket(ticket_id, limit=2)
+        approved = self.approve(self.intake.get(ticket_id, 'owner'))
+        goal = approved['goal_contract']
+        selected = [goal[field][0]['requirement_id'] for field, _, _ in examples]
+        protected = goal['deliverables'][0]
+        old_execution = self.store.get(ticket_id)['goal_execution']['outer']
+        request = dict(source='web', source_event_id='withdraw-router-suggestions', actor_id='owner',
+                       text='撤回所选建议', ticket_id=ticket_id, expected_ticket_revision=approved['revision'],
+                       allow_model_input=True, change_request=True)
+        with self.assertRaisesRegex(Problem, '只可撤回'):
+            self.intake.submit(**request, withdraw_requirement_ids=[protected['requirement_id']])
+        accepted = self.intake.submit(**request, withdraw_requirement_ids=selected)
+        self.assertEqual(accepted['state'], 'PENDING')
+        self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 1)
+        draft = self.intake.get(ticket_id, 'owner')
+        self.assertEqual(draft['status'], 'AWAITING_APPROVAL')
+        current = draft['goal_contract']
+        self.assertEqual(current['deliverables'], [protected])
+        self.assertEqual({row['requirement_id'] for row in current['withdrawn_requirements']}, set(selected))
+        for field, _, _ in examples:
+            self.assertEqual(current[field], [])
+        self.assertEqual(self.model.calls[-1][0], 'acceptance_designer')
+        self.assertEqual(self.model.calls[-1][1]['goal_contract']['withdrawn_requirements'],
+                         current['withdrawn_requirements'])
+        self.assertEqual(self.store.get(ticket_id)['goal_execution']['outer'], old_execution)
+        self.assertIn('network_tools', draft['approval_terms']['forbidden_operations'])
+        self.assertTrue(self.intake.submit(**request, withdraw_requirement_ids=selected)['duplicate'])
+        self.intake.submit(source='web',source_event_id='additional-change',actor_id='owner',
+                           text='另外交付一份合成说明',ticket_id=ticket_id,expected_ticket_revision=draft['revision'],
+                           allow_model_input=True,change_request=True)
+        self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 2)
+        current = self.intake.get(ticket_id, 'owner')['goal_contract']
+        for field, _, _ in examples:
+            self.assertEqual(current[field], [])
+        self.assertIn(protected, current['deliverables'])
+
+    def test_router_selected_remote_material_records_original_source_without_authorization(self):
+        first, _ = self.router_new()
+        ticket = first['ticket_id']
+        unlinked = self.send('选择后作为本机材料', source_thread_id='incoming-remote-thread')
+        attached = self.intake.select_ticket(unlinked['event_id'], ticket, actor_id='owner', source='web',
+                                             source_event_id='web-select')
+        self.assertEqual(attached['action'], 'ATTACH_TO_TICKET')
+        entry, = self.intake.get(ticket, 'owner')['subscription']['entries']
+        self.assertEqual(entry['source'], 'feishu')
+        self.assertFalse(entry['allow_model_input'])
+        self.assertFalse(self.model.calls)
+
+    def test_development_delivery_is_visible_only_after_local_registration(self):
+        from superagent.development_delivery import register_release
+
+        first, _ = self.router_new()
+        ticket = first['ticket_id']
+        self.intake.drain_ticket(ticket, limit=2)
+        self.approve(self.intake.get(ticket, 'owner'))
+        self.assertNotIn('development_delivery', self.intake.get(ticket, 'owner'))
+        register_release(self.store, ticket)
+        self.assertEqual(self.intake.get(ticket, 'owner')['development_delivery'], {'status':'unauthorized'})
+        with self.assertRaises(Problem):
+            self.intake.get(ticket, 'wrong-owner')
+
+    def test_router_plain_subscription_preserves_pending_clarification(self):
+        first, _ = self.router_new('vague deliverable')
+        ticket = first['ticket_id']
+        self.assertEqual(self.intake.drain_ticket(ticket), 1)
+        draft = self.intake.get(ticket, 'owner')
+        self.assertEqual(draft['status'], 'AWAITING_CLARIFICATION')
+        result = self.intake.submit(source='web', source_event_id='ordinary-note', actor_id='owner',
+                                    text='普通补充', ticket_id=ticket, expected_ticket_revision=draft['revision'],
+                                    allow_model_input=True)
+        self.assertEqual(result['state'], 'DONE')
+        self.assertEqual(self.intake.get(ticket, 'owner')['question'], draft['question'])
+        self.assertEqual(self.intake.pending_team_tickets(), [])
+        answer = dict(source='web', source_event_id='answer', actor_id='owner', text='命令行',
+                      ticket_id=ticket, expected_ticket_revision=draft['revision'],
+                      question_id=draft['question']['question_id'])
+        with self.assertRaisesRegex(Problem, '发送给 Codex'):
+            self.intake.submit(**answer)
+        self.assertEqual(self.intake.pending_team_tickets(), [])
+        self.intake.submit(**answer, allow_model_input=True)
+        self.assertEqual(self.intake.drain_ticket(ticket, limit=2), 2)
+        self.assertEqual(self.intake.get(ticket, 'owner')['status'], 'AWAITING_APPROVAL')
+        self.assertNotIn('普通补充', json.dumps(self.model.calls[-1][1], ensure_ascii=False))
+
+    def test_router_detects_missing_second_stage_before_approval(self):
+        first, _ = self.router_new(team_review_mode='review_and_decide')
+        self.assertEqual(self.intake.drain_ticket(first['ticket_id'], limit=2), 2)
+        draft = self.intake.get(first['ticket_id'], 'owner')
+        self.assertEqual(draft['status'], 'VERIFICATION_GAP')
+        self.assertIn('第 2 步', draft['acceptance_contract']['verification_gaps'][0])
+        self.assertEqual(self.model.calls[-1][1]['team_review_mode'], 'review_and_decide')
+        self.assertIsNone(draft['task_id'])
+
+    def test_router_self_reference_in_draft_proposal_does_not_change_routing(self):
+        event, _ = self.router_new()
+        ticket = event['ticket_id']
+
+        def propose(role, context, schema):
+            result = self.model(role, context, schema)
+            if role == 'intake_assessor':
+                result['candidate_ticket_ids'] = [context['ticket_id']]
+            return result
+
+        self.intake.team_model = propose
+        self.assertEqual(self.intake.drain_ticket(ticket, limit=2), 2)
+        self.assertEqual(self.intake.get(ticket, 'owner')['status'], 'AWAITING_APPROVAL')
+        receipt = self.intake.event(event['event_id'], 'owner')
+        self.assertNotIn('choices', receipt)
+
+    def test_router_recovers_preassigned_draft_from_stored_self_selection(self):
+        from superagent.outer_intake import OuterIntake
+
+        event, _ = self.router_new()
+        ticket_id, event_id = event['ticket_id'], event['event_id']
+        previous, lease, _ = self.intake._claim(ticket_id)
+        with self.intake._transaction() as db:
+            ticket = self.intake._ticket(db, ticket_id)
+            self.intake._finish(db, previous, 'DONE',
+                                {'action':'REQUEST_TICKET_SELECTION','choices':[{'id':ticket_id}]}, ticket)
+            db.execute("UPDATE outer_invocations SET state='accepted' WHERE id=?", (lease,))
+        restarted = OuterIntake(self.workbench, model=self.model, registry=Registry(), team_model=self.model)
+        self.assertEqual(restarted.pending_team_tickets(), [ticket_id])
+        self.assertEqual(restarted.drain_ticket(ticket_id, limit=2), 2)
+        self.assertEqual(restarted.get(ticket_id, 'owner')['status'], 'AWAITING_APPROVAL')
+        self.assertEqual(restarted.event(event_id, 'owner')['action'], 'AWAITING_APPROVAL')
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM outer_tickets').fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT count(*) FROM outer_events').fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT count(*) FROM outer_invocations').fetchone()[0], 3)
+
+    def test_router_late_subscription_preserves_archived_candidate_and_states_it_was_unaffected(self):
+        first, _ = self.router_new()
+        ticket_id = first['ticket_id']
+        self.intake.drain_ticket(ticket_id, limit=2)
+        draft = self.intake.get(ticket_id, 'owner')
+        self.approve(draft)
+        result = self.intake.submit(source='web', source_event_id='sent-note', actor_id='owner', text='先到材料',
+                                    ticket_id=ticket_id, allow_model_input=True)
+        material = dict(event_id=result['event_id'], source='web', sha256='f'*64)
+
+        def archive(task):
+            task.update(status='completed', goal_delivery={'artifact_sha256':'a'*64,'material_refs':[material]})
+            task['goal_execution']['assignments'] = [
+                {'id':'b'*32, 'role_calls':[{'status':'completed','material_refs':[material]}]}]
+
+        self.store.change(ticket_id, archive)
+        self.intake.submit(source='web', source_event_id='late-note', actor_id='owner',
+                           text='封存后才到', ticket_id=ticket_id,
+                           expected_ticket_revision=draft['revision'], allow_model_input=True)
+        result = self.intake.get(ticket_id, 'owner')['subscription']['entries']
+        self.assertEqual(result[0]['text'], '封存后才到')
+        self.assertTrue(result[0]['candidate_unaffected'])
+        self.assertFalse(result[0]['handed_to_team'])
+        self.assertTrue(result[1]['handed_to_team'])
+        self.assertFalse(result[1]['candidate_unaffected'])
+        self.assertEqual(self.store.get(ticket_id)['goal_delivery']['artifact_sha256'], 'a'*64)
 
     def test_normal_new_workbench_requests_overlap_and_third_waits_for_a_slot(self):
         from uuid import uuid4
@@ -301,7 +593,8 @@ class OuterIntakeTest(unittest.TestCase):
         self.workbench.outer_workbench_entry = True
         self.workbench.outer_goal_team = True
         approved = self.approve(self.latest(create_task(self.workbench, dict(workflow='outer', request_id=str(uuid4()),
-            name='比较合成方案', goal='生成合成报告', acceptance='通过检查', team_review_mode='review'))))
+            name='比较合成方案', goal='生成合成报告', acceptance='通过检查', team_review_mode='review'),
+            legacy_fixture=True)))
         key = approved['id']
         calls = [dict(sequence=i, role=role, writable=writable, status='completed', action='done', summary=summary)
                  for i, role, writable, summary in ((1,'lead',False,'按主题分组'), (2,'advisor',False,'按时间排序'),
@@ -435,7 +728,7 @@ class OuterIntakeTest(unittest.TestCase):
         self.workbench.outer_goal_team = True
         body = dict(workflow='outer', request_id=str(uuid4()), name='偏好工单', goal='生成报告',
                     acceptance='通过检查并询问样例偏好')
-        approved = self.approve(self.latest(create_task(self.workbench, body, source='dsh')))
+        approved = self.approve(self.latest(create_task(self.workbench, body, source='dsh', legacy_fixture=True)))
         ticket = approved['id']
         self.assertEqual(approved['mandate']['execution_profile'], PROFILE)
         engine = GoalEngine(self.store)
@@ -487,7 +780,8 @@ class OuterIntakeTest(unittest.TestCase):
         self.workbench.outer_workbench_entry = True
         self.workbench.outer_goal_team = True
         submit = create_task(self.workbench, dict(workflow='outer', request_id=str(uuid4()),
-                                                 name='预算合成单', goal='生成报告', acceptance='通过检查'))
+                                                 name='预算合成单', goal='生成报告', acceptance='通过检查'),
+                             legacy_fixture=True)
         approved = self.approve(self.latest(submit))
         ticket = approved['id']
         with self.assertRaisesRegex(Problem, '不可追加资源'):
@@ -522,14 +816,16 @@ class OuterIntakeTest(unittest.TestCase):
 
         self.workbench.outer_workbench_entry = True
         body = dict(workflow='outer', request_id=str(uuid4()), name='合成审稿', goal='生成报告',
-                    acceptance='通过检查', team_review_mode='review')
+                    acceptance='通过检查', team_review_mode='review', allow_model_input=True)
         with self.assertRaisesRegex(Problem, '未启用团队审稿'):
             create_task(self.workbench, body)
         self.workbench.outer_goal_team = True
+        self.intake.team_model = self.model
         with self.assertRaisesRegex(Problem, '有效的方案审稿方式'):
             create_task(self.workbench, dict(body, team_review_mode='invalid'))
         submission = create_task(self.workbench, body)
-        draft = self.latest(submission)
+        self.intake.drain_ticket(submission['ticket_id'], limit=2)
+        draft = self.intake.get(submission['ticket_id'], 'owner')
         self.assertEqual(draft['approval_terms']['team_review_mode'], 'review')
         self.assertEqual(self.approve(draft)['mandate']['team_review_mode'], 'review')
         with self.assertRaises(Problem):
@@ -566,7 +862,7 @@ class OuterIntakeTest(unittest.TestCase):
         self.workbench.outer_goal_team = True
         draft = self.latest(create_task(self.workbench, dict(
             workflow='outer', request_id=str(uuid4()), name='合成后续选择', goal='生成报告', acceptance='通过检查',
-        )))
+        ), legacy_fixture=True))
         ticket = self.approve(draft)['id']
         GoalEngine(self.store).prepare(ticket)
         sha = 'c' * 64
@@ -622,7 +918,7 @@ class OuterIntakeTest(unittest.TestCase):
         self.workbench.outer_goal_team = True
         body = dict(workflow='outer', request_id=str(uuid4()), name='协调工单', goal='生成报告',
                     acceptance='通过检查')
-        ticket = self.approve(self.latest(create_task(self.workbench, body)))['id']
+        ticket = self.approve(self.latest(create_task(self.workbench, body, legacy_fixture=True)))['id']
         engine = GoalEngine(self.store)
         engine.prepare(ticket)
         candidate = {'assignment':'a'*32,'artifact_sha256':'b'*64,'files':{'report.json':'c'*64}}
@@ -650,7 +946,7 @@ class OuterIntakeTest(unittest.TestCase):
         draft = self.latest(create_task(self.workbench, dict(
             workflow='outer', request_id=str(uuid4()), name='合成续办预算',
             goal='生成报告', acceptance='按合同核对结果',
-        )))
+        ), legacy_fixture=True))
         with self.intake._transaction() as db:
             draft = self.intake._ticket(db,draft['id'],'owner','default')
             draft['approval_terms']['team_role_limit'] = 4

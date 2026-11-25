@@ -92,6 +92,17 @@ test('第二步方向沿用同一张原单的待决定入口，旧样例卡文�
  assert.equal(projectGoalRow({...row,pending_preference:pending,observation_stale:true}).station,'unknown');
 });
 
+test('Router 第一步有实质取舍时在首页显示待定方向',async()=>{
+ const {projectGoalRow}=await import('./goal_team.js');
+ const id='wb-'+'a'.repeat(32);
+ const row={id,status:'AUTHORIZED',ticket_team:{id},journey:{station:'decision'},
+  pending_preference:{id:'first',step:0,requires_option:true,prompt:'核对样例后选择方向'}};
+ const result=projectGoalRow(row);
+ assert.equal(result.label,'第 1 步待定方向');
+ assert.equal(result.anchor,'decision');
+ assert.equal(result.routerTeam,true);
+ assert.equal(projectGoalRow({...row,ticket_team:undefined,pending_preference:{...row.pending_preference,requires_option:false}}).label,'待选样例');
+});
 test('沿用现稿时提醒清空意见，改选可修改方向后允许保留输入', async()=>{
  const {preferenceDirectionConflict}=await import('./goal_team.js');
  assert.match(preferenceDirectionConflict({mode:'keep'},' 保留这句之外再补一句 '),/清空意见.*选择可修改的方向/);
@@ -296,13 +307,17 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   allow_model_input:true,journey:{station:'decision'}};
  const fixed={...ticket,allow_model_input:undefined};
  const question={id:'first',revision:1,step:0,candidate_digest:'sample-digest',options:[{id:'edit',label:'修改'}]};
- async function mount(test,row,{panel='',formalModelInputConsent=true,failFirst=false}={}) {
+ async function mount(test,row,{panel='',formalModelInputConsent=true,failFirst=false,eventReceipt}={}) {
   const root=new GoalElement('root'), events=[];
   const previous={window:globalThis.window,document:globalThis.document,location:globalThis.location,
    history:globalThis.history,requestAnimationFrame:globalThis.requestAnimationFrame};
   test.after(()=>Object.assign(globalThis,previous));
   const location=new URL('http://localhost/?goal='+row.id);
   if(panel) location.searchParams.set('goal_panel',panel);
+  if(eventReceipt) {
+   location.searchParams.delete('goal');
+   location.searchParams.set('outer_event','evt-selection');
+  }
   Object.assign(globalThis,{
    window:{addEventListener(){}},
    document:{createElement:tag=>new GoalElement(tag),addEventListener(){}},
@@ -313,6 +328,7 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   const team=mountGoalTeam(root,{initial:state,formalModelInputConsent,request:async(path,body)=>{
    if(path==='/api/outer') return state;
    if(path==='/api/outer/get') return row;
+   if(path==='/api/outer/event' && eventReceipt) return eventReceipt;
    events.push({path,body:JSON.parse(JSON.stringify(body))});
    if(failFirst && events.length===1) throw new Error('暂不可用');
    return {};
@@ -389,6 +405,132 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   assert.ok(request_id);
   assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,text:'本次改用新的验收样例',
    allow_model_input:true,replace_requirement_ids:['previous']});
+ });
+ await t.test('Router 原单区分补充回执与改约，发送前逐次确认',async t=>{
+  const row={...ticket,ticket_team:{id:ticket.id,workflow_profile:'router-team-v1'},subscription:{
+   bindings:[{source:'feishu',thread_id:'synthetic'}],
+   entries:[{source:'feishu',received_at:'2026-11-25T08:00:00Z',text:'上一轮测试通过'}],
+  }};
+  const ui=await mount(t,row,{panel:'feedback',failFirst:true});
+  const feedback=ui.control('section-feedback');
+  assert.ok(feedback.children.some(child=>child.textContent?.includes('已关联飞书会话')));
+  assert.ok(feedback.querySelector('article').children.some(child=>child.textContent==='上一轮测试通过'));
+  ui.fill('supplement-text','第二轮测试通过');
+  ui.control('submit-supplement').onclick();
+  assert.equal(ui.confirm.textContent,'同意并补充');
+  assert.equal(ui.events.length,0);
+  ui.cancel.onclick();
+  assert.equal(ui.control('supplement-text').value,'第二轮测试通过');
+  ui.control('submit-supplement').onclick();
+  ui.confirm.onclick();
+  await flushGoalUI();
+  assert.equal(ui.control('supplement-text').value,'第二轮测试通过');
+  ui.control('submit-supplement').onclick();
+  ui.confirm.onclick();
+  await flushGoalUI();
+  const first=ui.events[0];
+  assert.equal(first.path,'/api/outer/submit');
+  const {request_id,...payload}=first.body;
+  assert.ok(request_id);
+  assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,
+   intent:'supplement',text:'第二轮测试通过',allow_model_input:true});
+  assert.deepEqual(ui.events[1],first);
+  ui.fill('revision-text','新增验收的边界样例');
+  ui.control('submit-revision').onclick();
+  assert.equal(ui.events.length,2);
+  ui.confirm.onclick();
+  await flushGoalUI();
+  assert.equal(ui.events[2].body.intent,'change');
+ });
+ await t.test('Router 没有匹配工单时仍可从原消息新建',async t=>{
+  const ui=await mount(t,ticket,{eventReceipt:{state:'DONE',router_selection:true,choices:[]}});
+  const choice=ui.root.querySelectorAll('button').find(button=>button.textContent==='新建工单');
+  assert.ok(choice);
+  await choice.onclick();
+  const [{path,body:{request_id,...payload}}]=ui.events;
+  assert.equal(path,'/api/outer/select');
+  assert.ok(request_id);
+  assert.deepEqual(payload,{event_id:'evt-selection',ticket_id:null});
+ });
+ await t.test('进度按已登记计划显示路线，模型来自完成回执',async t=>{
+  const execution={status:'executing',plan:{execution_route:'compare',route_reason:'单页效率和首次填写存在取舍',
+   steps:[{title:'设计报名表',state:'running',execution_route:'compare'},{title:'归档 JSON',state:'pending',execution_route:'direct'}]},
+   team_activity:[{role:'advisor',status:'completed',model:'gpt-6.2-astra'},
+    {role:'implementer',status:'reserved',model:'gpt-6.2-sol'}]};
+  const ui=await mount(t,{...ticket,ticket_team:{id:ticket.id},execution},{panel:'progress'});
+  assert.ok(ui.root.querySelectorAll('h4').some(item=>item.textContent==='已定路线 · 比较双方案'));
+  assert.ok(ui.root.querySelectorAll('small').some(item=>item.textContent==='直接实施'));
+  const actual=ui.root.querySelectorAll('p').find(item=>item.textContent?.startsWith('已完成的角色调用'));
+  assert.match(actual.textContent,/只读顾问 gpt-6.2-astra/);
+  assert.doesNotMatch(actual.textContent,/gpt-6.2-sol/);
+ });
+ await t.test('已有渠道原话须经单独授权才交给团队',async t=>{
+  const row={...fixed,status:'DRAFT',needs_model_consent:true,ticket_team:{id:ticket.id},
+   journey:{station:'flight'},original_request:{text:'测试渠道的原话'}};
+  const ui=await mount(t,row);
+  ui.control('authorize-model-input').onclick();
+  assert.equal(ui.events.length,0);
+  ui.confirm.onclick();
+  await flushGoalUI();
+  const {request_id,...payload}=ui.events[0].body;
+  assert.ok(request_id);
+  assert.equal(ui.events[0].path,'/api/outer/authorize_model_input');
+  assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,allow_model_input:true});
+ });
+ await t.test('Router 原单可明确撤回模型建议，保留本人原要求',async t=>{
+  const row={...ticket,ticket_team:{id:ticket.id},goal_contract:{constraints:[
+   {source:'MODEL_PROPOSED',requirement_id:'suggestion',description:'模型建议开展联网验证'},
+   {source:'USER_EXPLICIT',requirement_id:'user',description:'本人要求保留标题'},
+  ]}};
+  const ui=await mount(t,row,{panel:'revisions'});
+  const form=ui.control('withdraw-requirements');
+  assert.deepEqual(form.querySelectorAll('input').map(option=>option.value),['suggestion']);
+  const [suggestion]=form.querySelectorAll('input');
+  suggestion.checked=true;suggestion.onchange();
+  ui.control('submit-withdrawal').onclick();
+  assert.equal(ui.events.length,0);
+  assert.equal(ui.confirm.textContent,'同意并撤回');
+  ui.confirm.onclick();
+  await flushGoalUI();
+  const {request_id,...payload}=ui.events[0].body;
+  assert.ok(request_id);
+  assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,text:'撤回所选模型建议',
+   intent:'change',withdraw_requirement_ids:['suggestion'],allow_model_input:true});
+ });
+ await t.test('直启工作台的 Router 原单也逐次确认补充外发',async t=>{
+  const ui=await mount(t,{...ticket,ticket_team:{id:ticket.id}},{panel:'feedback',formalModelInputConsent:false});
+  ui.fill('supplement-text','隔离测试补充');
+  ui.control('submit-supplement').onclick();
+  assert.equal(ui.confirm.textContent,'同意并补充');
+  assert.equal(ui.events.length,0);
+  ui.confirm.onclick();
+  await flushGoalUI();
+  assert.equal(ui.events[0].body.allow_model_input,true);
+ });
+ await t.test('开发发布回执仅在已有合并与 Ship 证据时显示上线验证',async t=>{
+  const authorization={repo:'example/project',number:7,head:'a'.repeat(40),mode:'release'};
+  const ui=await mount(t,{...ticket,development_delivery:{status:'live',authorization,
+   receipt:{source:'agent-autoloop-delivery',status:'live',merge:'b'.repeat(40),ship:27}}},{panel:'artifacts'});
+  const release=ui.control('section-development-delivery');
+  assert.equal(release.querySelector('small').textContent,'该 PR 已上线，线上验证通过');
+  assert.ok(release.querySelectorAll('p').some(item=>item.textContent.includes('人工绑定')));
+  assert.equal(release.querySelector('button'),undefined);
+ });
+ await t.test('单有上线状态缺少 Ship 时标为待核对',async t=>{
+  const ui=await mount(t,{...ticket,development_delivery:{status:'live',receipt:{merge:'a'.repeat(40)}}},{panel:'artifacts'});
+  assert.equal(ui.control('section-development-delivery').querySelector('small').textContent,'线上验证待核对');
+ });
+ await t.test('另签的额外文件与缺少独立审查的回执都可在原单核对',async t=>{
+  const authorization={repo:'example/project',number:7,head:'a'.repeat(40),mode:'release',
+   artifact_match:{mapping:'same_path',files_checked:1,additional_pr_files:['build.sh','about.md'],
+    approved_additional_files:['build.sh']}};
+  const ui=await mount(t,{...ticket,development_delivery:{status:'blocked',authorization,
+   receipt:{detail:'missing_independent_review'}}},{panel:'artifacts'});
+  const release=ui.control('section-development-delivery');
+  assert.equal(release.querySelector('small').textContent,'缺少独立审查回执，合并已暂停');
+  const labels=release.querySelectorAll('li').map(item=>item.textContent);
+  assert.ok(labels.includes('build.sh · 已另行授权'));
+  assert.ok(labels.includes('about.md · 未纳入本单验收'));
  });
  await t.test('退回理由绑定当前候选并单独确认',async t=>{
   const candidate={assignment:'a'.repeat(32),sequence:2,state:'pending',artifact_sha256:'b'.repeat(64)};

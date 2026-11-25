@@ -170,6 +170,13 @@ def verify_team_seal(directory, report, task=None, assignment=None):
     checkpoint,files,_ = capture(sealed)
     if checkpoint != report.get('checkpoint'):
         raise Problem('封存版本与回执不一致')
+    if report.get('draft_checkpoint') is True:
+        from superagent.goal_engine import draft_role_prefix, resumable_drafting
+        prefix = draft_role_prefix(assignment or {})
+        if (not resumable_drafting(assignment or {}) or len(prefix) != 3 or not files
+                or prefix[2].get('candidate_sha256') != checkpoint['digest']
+                or report.get('workspace_id') != assignment['id']):
+            raise Problem('未完成审稿的草稿与制作角色原回执不一致')
     if 'team_handoff' in report:
         from superagent.goal_team_handoff import validate_draft_observations, validate_handoff_scopes
         handoff = report['team_handoff']
@@ -515,6 +522,7 @@ def worker(store, verification):
 
 def execute_assignment(store, assignment, directory, verification):
     from superagent.goal_codex import invoke
+    from superagent.goal_team_run import DraftTimeSliceEnded
     contract = assignment.get('verification_contract')
     outer = assignment.get('outer_binding')
     report = {'id':assignment['id'],'run':assignment['run'],'version':assignment['version'],
@@ -673,6 +681,8 @@ def execute_assignment(store, assignment, directory, verification):
                 report['delivery'] = {'assignment':assignment['id'],'files':after['files']}
     except StaleCoordination as exc:
         report.update(coordination_dispatch_stale=True,error=str(exc))
+    except DraftTimeSliceEnded as exc:
+        report.update(draft_time_slice_ended=True,error=str(exc),evidence=exc.evidence)
     except Exception as exc:
         report['error'] = f'{type(exc).__name__}: {str(exc)[:240]}'
     return report
@@ -693,16 +703,20 @@ def prepare_outer_execution(assignment):
         keys = None  # 最后一步返工可以修复最终复验发现的前序回归。
     if keys is not None and phase in ('execute','repair') and instructions.get('schema_version')==2:
         keys.update(instructions['verification_items'])
+    from superagent.outer_verification import implementation_criterion
     context['approved_criteria'] = [
-        {key: row[key] for key in ('criterion_id','requirement_ids','description','required','verifier_id')}
-        | {'interface':{key:value for key,value in row['test_spec'].items() if key not in ('args','files')}}
-        for row in contract['criteria'] if keys is None or row['criterion_id'] in keys
+        implementation_criterion(row) for row in contract['criteria']
+        if keys is None or row['criterion_id'] in keys
     ]
     context['contract_instruction'] = (
         '按已批准目标和验收项实现真实行为。最终验收会在隔离环境复跑全部验收项。'
         'steps[].checks 只填写对应的 criterion_id。每个阶段包含至少一项必需验收，'
         '全部必需验收项必须出现在计划中，每项只在一个阶段。'
     )
+    if context.get('ticket_team') and (context.get('approved_goal_contract') or {}).get('withdrawn_requirements'):
+        context['contract_instruction'] += (
+            'withdrawn_requirements 是本人明确撤回的历史要求，不是当前工作或验收要求。'
+            '旧目标摘要、原话和补充资料即使仍提到这些要求，也不恢复它们。操作边界仍按本次授权。')
     if phase == 'plan':
         from superagent.goal_team_blind import required_blind
         if required_blind(contract):
@@ -714,6 +728,13 @@ def prepare_outer_execution(assignment):
                 '按真实依赖安排至少两个阶段，每阶段有独立且不同的已批准验收条款。'
                 '把前置文件放在第一阶段，第二阶段要有可供本人选择方向的明确产物。'
                 '仅按实际交付依赖拆分阶段。')
+        elif assignment.get('plan_route_required'):
+            context['contract_instruction'] += (
+                '单一交付物优先安排一步，只在有独立新产物或真实依赖时拆分。'
+                '在本轮规划同时选择 execution_route。目标和做法明确、可逆且无实质取舍时用 direct。'
+                '有多种会影响结果的做法、重要风险或用户明确要求比较方案时用 compare。'
+                'comparison_steps 只列确需两份独立方案的阶段序号，从 1 开始，其他机械步骤直接做；direct 时填空数组。'
+                'route_reason 用一句话说明本单为何需要或不需要比较。每步产生可审阅的新稿，终验由工作台安排。')
     if phase == 'replan':
         context['contract_instruction'] += '仅调整后续阶段的实施方案，保持现有阶段顺序和验收项不变。'
     if instructions.get('schema_version')==2:
