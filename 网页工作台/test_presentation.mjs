@@ -453,3 +453,45 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   assert.equal(Object.hasOwn(ui.events[0].body,'allow_model_input'),false);
  });
 });
+
+test('协调原单展开真实脱敏回执即可读到修法、保留版本、复验与四项工具', async()=>{
+ const {callHistory}=await import('./outer.js');
+ const {readFile}=await import('node:fs/promises');
+ const {call_trace:receipt}=JSON.parse(await readFile(new URL('../evidence/goal-team/regression-real-api.json',import.meta.url),'utf8'));
+ class Element {
+  children=[]; isConnected=true;
+  constructor(tag){this.tag=tag;}
+  append(...children){this.children.push(...children);}
+  after(element){this.next=element;}
+  setAttribute(name,value){this[name]=value;}
+  replaceChildren(...children){this.children=children;}
+ }
+ const previous={document:globalThis.document,location:globalThis.location};
+ try {
+  globalThis.document={createElement:tag=>new Element(tag)};
+  globalThis.location={hash:''};
+  const row={id:receipt.call,role:'goal_coordinator',state:'accepted',started_at:'2026-11-25T00:00:00Z'};
+  const article=new Element('article'), requests=[];
+  const panel=callHistory(article,async(name,args)=>{
+   requests.push([name,args]);
+   return name==='calls'?[row]:{...row,...receipt};
+  });
+  await panel.refresh('example',()=>true);
+  const entry=article.next.children.find(item=>item.tag==='details');
+  assert.match(entry.children[0].textContent,/目标协调/);
+  entry.open=true; await entry.ontoggle();
+  const body=entry.children[1];
+  const direct=body.children.map(item=>item.textContent||'').join('\n');
+  assert.ok(direct.includes(receipt.trace.decision.plan_change));
+  assert.ok(direct.includes(receipt.trace.decision.retained_artifacts[0].sha256));
+  assert.ok(direct.includes(receipt.trace.decision.verification_items[0]));
+  const tools=body.children.find(item=>item.tag==='ul');
+  assert.deepEqual(tools.children.map(item=>item.textContent),['读取失败证据 · 已返回','读取剩余预算 · 已返回','读取计划版本 · 已返回','读取已验文件版本 · 已返回']);
+  const technical=body.children.find(item=>item.tag==='details');
+  assert.equal(Boolean(technical.open),false);
+  assert.ok(technical.children.some(item=>item.textContent?.includes(receipt.tools[0].evidence_sha256)));
+  assert.deepEqual(requests,[['calls',{ticket_id:'example'}],['call',{ticket_id:'example',call_id:receipt.call}]]);
+ } finally {
+  globalThis.document=previous.document; globalThis.location=previous.location;
+ }
+});
