@@ -966,6 +966,17 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     for (const [index,choice] of (q.options || []).entries())
       options.append(writeButton(renderValue(choice),'goal-clarification-option-'+index,()=>submit(renderValue(choice)),true));
     if (options.childElementCount) parent.append(options);
+    const materials=(row.subscription?.entries || []).filter(item=>item.allow_model_input===true && item.text);
+    if (row.ticket_team && materials.length) {
+      const saved=details('用原单已有的补充回答','clarification-materials');
+      for (const item of materials) {
+        const entry=el('article',null,'goal-router-feedback');
+        entry.append(el('p',item.text,'goal-copy-block'),
+          writeButton('用这条补充答复','goal-answer-with-'+item.event_id,()=>submit(item.text)));
+        saved.append(entry);
+      }
+      parent.append(saved);
+    }
     const {group,field}=input(options.childElementCount?'其他说明':'补充关键条件',draft,'text','goal-clarification-text');
     parent.append(group,writeButton('提交澄清','goal-submit-clarification',()=>{
       if (!field.value.trim()) { feedback.textContent='请填写澄清内容。'; field.focus(); return; }

@@ -310,7 +310,7 @@ class OuterIntakeTest(unittest.TestCase):
         draft = self.intake.get(ticket, 'owner')
         self.assertEqual(draft['status'], 'AWAITING_CLARIFICATION')
         result = self.intake.submit(source='web', source_event_id='ordinary-note', actor_id='owner',
-                                    text='普通补充', ticket_id=ticket, expected_ticket_revision=draft['revision'],
+                                    text='交付格式：命令行', ticket_id=ticket, expected_ticket_revision=draft['revision'],
                                     allow_model_input=True)
         self.assertEqual(result['state'], 'DONE')
         self.assertEqual(self.intake.get(ticket, 'owner')['question'], draft['question'])
@@ -324,7 +324,63 @@ class OuterIntakeTest(unittest.TestCase):
         self.intake.submit(**answer, allow_model_input=True)
         self.assertEqual(self.intake.drain_ticket(ticket, limit=2), 2)
         self.assertEqual(self.intake.get(ticket, 'owner')['status'], 'AWAITING_APPROVAL')
-        self.assertNotIn('普通补充', json.dumps(self.model.calls[-1][1], ensure_ascii=False))
+        self.assertIn('交付格式：命令行', json.dumps(self.model.calls[-1][1], ensure_ascii=False))
+
+    def test_router_rereads_contact_material_before_publishing_inflight_question(self):
+        first, _ = self.router_new('vague contact 交付联系人清单')
+        ticket = first['ticket_id']
+        second,_ = self.router_new('另一张工单')
+        self.intake.submit(source='web',source_event_id='other-info',actor_id='owner',ticket_id=second['ticket_id'],
+                           text='他单联系人陈遥',allow_model_input=True)
+        self.intake.submit(source='web',source_event_id='local-only',actor_id='owner',ticket_id=ticket,
+                           text='本地未授权联系人王禾')
+        saved = []
+
+        def decide(role, context, schema):
+            result = self.model(role,context,schema)
+            if role == 'intake_assessor':
+                if not saved:
+                    note = self.intake.submit(source='web',source_event_id='real-contact',actor_id='owner',
+                                              ticket_id=ticket,text='联系人：李青',allow_model_input=True)
+                    saved.append(note['event_id'])
+                else:
+                    self.assertEqual(context['authorized_intake_materials'],[{'event_id':saved[0],'text':'联系人：李青'}])
+                    result['proposed_question'] = dict(question_text='',options=[],reason='',blocking_scope='')
+                    result['critical_ambiguities'] = []
+                    result['goal_draft']['required_capabilities'] = [
+                        dict(description='联系人：李青',source='USER_EXPLICIT',source_refs=saved)]
+            return result
+
+        self.intake.team_model = decide
+        self.assertEqual(self.intake.drain_ticket(ticket),1)
+        pre_replay = self.intake.get(ticket,'owner')
+        self.assertIsNone(pre_replay['question'])
+        self.assertFalse(any(entry['handed_to_team'] for entry in pre_replay['subscription']['entries']))
+        self.assertEqual(self.intake.drain_ticket(ticket,limit=2),2)
+        draft = self.intake.get(ticket,'owner')
+        self.assertEqual(draft['status'],'AWAITING_APPROVAL')
+        self.assertEqual(draft['questions_asked'],0)
+        self.assertEqual([entry['event_id'] for entry in draft['subscription']['entries']
+                          if entry['handed_to_team']],saved)
+        item, = draft['goal_contract']['required_capabilities']
+        self.assertEqual((item['description'],item['source_refs']),('联系人：李青',saved))
+        with self.store.connect() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM outer_invocations WHERE ticket=? AND state='stale'", (ticket,)).fetchone()[0],1)
+
+    def test_router_rereads_at_most_once_even_if_more_material_keeps_arriving(self):
+        submission,_ = self.router_new('vague deliverable')
+        ticket = submission['ticket_id']
+
+        def add_new_material(role):
+            self.intake.submit(source='web',source_event_id=f'new-material-{len(self.model.calls)}',
+                               actor_id='owner',ticket_id=ticket,text='另一条授权资料',allow_model_input=True)
+
+        self.model.on_call = add_new_material
+        self.assertEqual(self.intake.drain_ticket(ticket,limit=8),2)
+        draft = self.intake.get(ticket,'owner')
+        self.assertEqual(draft['status'],'AWAITING_CLARIFICATION')
+        self.assertEqual(draft['questions_asked'],1)
+        self.assertEqual(self.intake.pending_team_tickets(),[])
 
     def test_router_detects_missing_second_stage_before_approval(self):
         first, _ = self.router_new(team_review_mode='review_and_decide')

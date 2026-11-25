@@ -16,7 +16,7 @@ from .goal_team_records import (
     public_coordination_decision, public_preference, public_progress, role_limit,
 )
 from .outer_model import (
-    ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, CodexOuterModel, CodexTicketTeamModel, ModelFailure, role_invoke,
+    ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, REQUIREMENT_SOURCES, CodexOuterModel, CodexTicketTeamModel, ModelFailure, role_invoke,
 )
 from .outer_verification import ROUTER_TEAM
 from .team_profiles import new_team_profile
@@ -434,6 +434,19 @@ class OuterIntake:
         self._finish(db, event, 'DONE', {'action': 'ATTACH_TO_TICKET'}, ticket, deliver=False)
 
     @staticmethod
+    def _intake_can_use_materials(ticket):
+        return ticket and ticket.get('ticket_team') and not ticket.get('task_id') and not ticket.get('needs_model_consent')
+
+    @staticmethod
+    def _intake_materials(db,event):
+        rows = db.execute("""SELECT id,body FROM outer_events WHERE ticket=? AND actor=? AND tenant=?
+            AND state='DONE' AND json_extract(result,'$.action')='ATTACH_TO_TICKET'
+            AND json_type(body,'$.allow_model_input')='true' ORDER BY rowid DESC LIMIT 8""",
+                          (event['ticket'],event['actor'],event['tenant'])).fetchall()
+        return [{'event_id':row['id'],'text':_model_text(json.loads(row['body'])['text'],1500)}
+                for row in reversed(rows)]
+
+    @staticmethod
     def _router_choices(db, actor, tenant):
         rows = db.execute("""SELECT body FROM outer_tickets WHERE actor=? AND tenant=?
             AND json_extract(body,'$.ticket_team.workflow_profile')=?
@@ -606,6 +619,14 @@ class OuterIntake:
             for call in assignment.get('role_calls', ()) if call.get('status') == 'completed'
             for ref in call.get('material_refs', ())
         }
+        handed_to_team.update(row['event_id'] for row in db.execute("""
+            SELECT json_extract(material.value,'$.event_id') AS event_id
+            FROM outer_invocations AS invocation
+            JOIN outer_events AS event ON event.id=invocation.event
+            JOIN json_each(invocation.snapshot,'$.authorized_intake_materials') AS material
+            WHERE invocation.ticket=? AND event.ticket=? AND event.tenant=?
+              AND invocation.role='intake_assessor' AND invocation.state='accepted'
+            """, (ticket_id, ticket_id, tenant)))
         artifact_reviews = execution.get('artifact_reviews') or []
         delivery = task.get('goal_delivery') or (artifact_reviews[-1] if artifact_reviews else {})
         candidate_refs = {ref['event_id'] for ref in delivery.get('material_refs', ())}
@@ -839,8 +860,10 @@ class OuterIntake:
 
     def _context(self, db, event, ticket):
         message = json.loads(event['body'])
+        materials = self._intake_materials(db,event) if self._intake_can_use_materials(ticket) else []
         refs = list(dict.fromkeys([*(ticket['original_request_refs'] if ticket else []),
-                                  *(ticket['relevant_thread_refs'][-6:] if ticket else []), event['id']]))
+                                  *(ticket['relevant_thread_refs'][-6:] if ticket else []),
+                                  *(item['event_id'] for item in materials),event['id']]))
         rows = db.execute(
             'SELECT id,body FROM outer_events WHERE id IN (' + ','.join('?' for _ in refs) + ')',
             refs).fetchall()
@@ -873,6 +896,10 @@ class OuterIntake:
         if ticket and (team := ticket.get('ticket_team')):
             context.update(ticket_team=team, workflow_profile=ROUTER_TEAM,
                            team_review_mode=ticket['approval_terms'].get('team_review_mode'))
+            if self._intake_can_use_materials(ticket):
+                context['authorized_intake_materials'] = materials
+            for item in materials:
+                context['untrusted_text']['prior_messages'].pop(item['event_id'], None)
             if ticket.get('question'):
                 context['available_actions'] = ['ANSWER_CLARIFICATION', 'ESCALATE']
             elif message.get('change_request') or message.get('replace_requirement_ids'):
@@ -1106,7 +1133,11 @@ class OuterIntake:
                     if usage.get('input_tokens', 0) + usage.get('output_tokens', 0) > snapshot['remaining_budget']['model_tokens']:
                         raise ValueError('模型用量超出剩余预算')
                     if event['role'] == 'intake_assessor':
-                        self._apply_intake(db, event, ticket, snapshot, response['result'])
+                        if self._retry_stale_clarification(db,event,ticket,snapshot,response['result']):
+                            result_status = 'stale'
+                            response['settlement_reason'] = '新授权补充到达，先让本单负责人核对再发澄清'
+                        else:
+                            self._apply_intake(db, event, ticket, snapshot, response['result'])
                     else:
                         self._apply_acceptance(db, event, ticket, snapshot, response['result'])
                 except (Problem, ValueError, KeyError, TypeError, AttributeError) as error:
@@ -1123,6 +1154,20 @@ class OuterIntake:
             db.execute('UPDATE outer_invocations SET state=?,result=? WHERE id=?',
                        (result_status, _json(response), lease))
 
+    def _retry_stale_clarification(self, db, event, ticket, snapshot, result):
+        if not self._intake_can_use_materials(ticket) or not result['proposed_question']['question_text'].strip():
+            return False
+        binding = json.loads(event['result'] or '{}')
+        if binding.get('material_replayed') or snapshot['remaining_budget']['model_calls'] < 2:
+            return False
+        seen = {row['event_id'] for row in snapshot.get('authorized_intake_materials', ())}
+        if not any(row['event_id'] not in seen for row in self._intake_materials(db,event)):
+            return False
+        binding['material_replayed'] = True
+        db.execute("UPDATE outer_events SET state='PENDING',result=?,lease=NULL,lease_until=NULL WHERE id=?",
+                   (_json(binding),event['id']))
+        return True
+
     @staticmethod
     def _normal_goal(result, ticket, snapshot, event):
         raw = result['goal_draft']
@@ -1132,6 +1177,7 @@ class OuterIntake:
         confirms = bool(ticket['question'])
         untrusted = snapshot['untrusted_text']
         actual_text = {**untrusted['prior_messages'], event['id']: untrusted['current_message']}
+        actual_text.update({item['event_id']:item['text'] for item in snapshot.get('authorized_intake_materials', ())})
         original = untrusted.get('workbench_request')
         if original:
             ref = original['event_id']
@@ -1172,7 +1218,7 @@ class OuterIntake:
                     continue
                 refs = list(dict.fromkeys(item['source_refs']))
                 source = item['source']
-                if source not in ('USER_EXPLICIT', 'USER_CONFIRMED', 'CONTEXT_DERIVED', 'MODEL_PROPOSED'):
+                if source not in REQUIREMENT_SOURCES:
                     raise ValueError('未知需求来源')
                 if not set(refs).issubset(source_keys) or (source != 'MODEL_PROPOSED' and not refs):
                     raise ValueError('无效需求引用')

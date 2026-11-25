@@ -1,0 +1,26 @@
+{
+  "environment": "正式 8765 · Google Chrome",
+  "synthetic": true,
+  "deployed_commit": "8ef5fa5bddd2ab31fba8459317d804eb93c1c49b",
+  "one_order": true,
+  "initial_goal_lacked_contact": true,
+  "same_ticket_consented_supplement": true,
+  "clarification_referenced_subscribed_note_without_repeating_name": true,
+  "archived_ticket_feedback_confirms_team_received": true,
+  "intake_observation": "初次研判期间发出的补充已回到本单。接单时仍询问了姓名，测试人员从原单明确请团队采用已授权的补充，澄清中没有重填姓名。",
+  "actual_contact_matches_supplement": true,
+  "machine_checks": "1/1",
+  "signed_and_downloaded": true,
+  "archive_bytes_match_signoff_candidate": true,
+  "sha256": "74710dcc50eab113039298fe6b2d080b7c9287df76acfdd780dd4f448541ebf0",
+  "isolated_recheck_after_fix": {
+    "synthetic": true,
+    "initial_goal_omitted_contact": true,
+    "supplement_while_first_intake_running": true,
+    "manual_clarification_required": false,
+    "reached_first_approval": true,
+    "accepted_lead_invocation_contains_authorized_note": true,
+    "supplement_body_sha256": "b16866bfa4d8f46be643f413a7d09701776043a8012045a5d0566f0841a26d0c",
+    "observed_lead_model": "gpt-6.2-sol"
+  }
+}

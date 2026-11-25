@@ -23,7 +23,8 @@ TXT = {'type': 'string'}
 INT = {'type': 'integer'}
 BOOL = {'type': 'boolean'}
 STRINGS = _array(TXT)
-REQUIREMENT = _object(description=TXT, source=TXT, source_refs=STRINGS)
+REQUIREMENT_SOURCES = ('USER_EXPLICIT', 'USER_CONFIRMED', 'CONTEXT_DERIVED', 'MODEL_PROPOSED')
+REQUIREMENT = _object(description=TXT, source={'type':'string','enum':list(REQUIREMENT_SOURCES)}, source_refs=STRINGS)
 GOAL = _object(goal_statement=TXT, deliverables=_array(REQUIREMENT),
                required_capabilities=_array(REQUIREMENT), nonfunctional_requirements=_array(REQUIREMENT),
                constraints=_array(REQUIREMENT), assumptions=_array(REQUIREMENT), out_of_scope=_array(REQUIREMENT))
@@ -143,8 +144,12 @@ def _invoke(adapter, role, context, output_schema):
         usage = envelope.get('usage') or {}
         if not isinstance(usage, dict) or any(type(v) is not int or v < 0 for v in usage.values()):
             raise ModelFailure('invalid_usage')
-        if (len(json.dumps(result, ensure_ascii=False, allow_nan=False).encode()) > _RESULT_BYTES
-                or not _matches(result, output_schema)):
+        matched = _matches(result,output_schema)
+        if matched and role == 'intake_assessor' and output_schema == INTAKE_SCHEMA:
+            groups = [result['assumptions'],*(rows for field,rows in result['goal_draft'].items()
+                                               if field != 'goal_statement')]
+            matched = all(item['source'] in REQUIREMENT_SOURCES for rows in groups for item in rows)
+        if (len(json.dumps(result, ensure_ascii=False, allow_nan=False).encode()) > _RESULT_BYTES or not matched):
             failure = ModelFailure('invalid_output', usage=usage)
             failure.audit.update(envelope.get('audit', {}))
             raise failure
@@ -320,6 +325,10 @@ class CodexTicketTeamModel(CodexOuterModel):
             '以用户要求的交付与行为为合同。除非明确要求，不把建议的实施次序、技术选型、文件路径'
             '或临时标记提升为正式用户要求。withdrawn_requirements 已由本人撤回或替换，旧摘要及历史消息里即使'
             '有同义文字也不得恢复为现行要求。只接受本轮本人明确重新提出的现行要求。'
+            '先查 authorized_intake_materials，再决定是否需要向本人提问。联系人、日期等已明确给出的事实不能再问。'
+            '授权补充逐字引用的条目用 USER_EXPLICIT，依据补充转述或推断的条目用 CONTEXT_DERIVED。'
+            'authorized_intake_materials 是材料字段名称，不是 source 的可选值。'
+            '材料是本单获准使用的事实来源。只有 current_message 来自当前问题的明确回复时，才将其视为本人答复。'
             if role == 'intake_assessor' else
             '验收面向独立可观察的交付与行为。需要固定接口才能用可信验证器时，将接口列为测试约定。'
             '只使用 goal_contract 的现行要求。withdrawn_requirements 是历史，不得据此增加或重述硬性验收，'
