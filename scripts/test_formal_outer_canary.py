@@ -70,7 +70,7 @@ class FormalOuterCanaryTests(unittest.TestCase):
         presentation = Path(__file__).resolve().parents[1] / "网页工作台/task_presentation.js"
         subprocess.run(["node", "--input-type=module", "-e", """
             import assert from 'node:assert/strict';
-            const {projectFormalOrdinaryDecisions} = await import(process.argv[1]);
+            const {projectFormalOrdinaryDecisions, ordinaryHomeList} = await import(process.argv[1]);
             const {queueFor,nextAction} = await import(process.argv[2]);
             const task = {id:'wb-existing', name:'合成普通工单', status:'awaiting_approval', version:2, cards:[
               {id:1,state:'open',version:1,title:'原方案',text:'旧原因'},
@@ -98,6 +98,11 @@ class FormalOuterCanaryTests(unittest.TestCase):
             assert.equal(rows[0].reason,'需要确认交付范围');
             assert.equal(rows[0].next,'核对方案并处理待办');
             assert.equal(rows[1].reason,'核对本地输入');
+            const delivered = {...task,id:'wb-delivered',status:'completed',cards:[]};
+            const stale = {...task,id:'wb-stale',observation_stale:true};
+            assert.deepEqual(ordinaryHomeList([task,delivered,stale], rows).map(row=>row.id),
+              ['wb-delivered','wb-stale']);
+            assert.deepEqual(ordinaryHomeList([task], []).map(row=>row.id), ['wb-existing']);
         """, module, presentation.as_uri()], check=True)
 
     def test_known_operations_keep_version_binding(self):

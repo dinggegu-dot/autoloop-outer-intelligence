@@ -1,0 +1,26 @@
+{
+  "baseline": "62f1af091c3663928c0e17eb9c37a71b3226354a",
+  "environment": "原工作台程序生成的隔离前台、签名网关与合成工单；Chrome 桌面与 390px 窄屏",
+  "checks": {
+    "limits_preview_and_reopens_all_matching_orders": true,
+    "ordinary_approval_focus_and_return": true,
+    "ordinary_full_report_stays_accessible": true,
+    "ordinary_research_poll_kept_draft_and_selection": true,
+    "new_order_error_preserved_on_refresh_and_legacy_toggle": true,
+    "decision_deep_link_keeps_original": true,
+    "direct_return_to_home": true,
+    "mobile_home_overflow": 0,
+    "mobile_detail_overflow": 0,
+    "ordinary_poll_kept_text_caret": true,
+    "cancel_preserves_draft": true,
+    "supplement_after_503_same_request": true,
+    "preview_and_download_identical": true,
+    "original_home_and_new_order_survive_team_disable": true,
+    "page_errors": []
+  },
+  "selected_filter_contrast_ratio": 6.85,
+  "rollback": {
+    "program_entries_verified": 9,
+    "new_synthetic_order_survived": true
+  }
+}
