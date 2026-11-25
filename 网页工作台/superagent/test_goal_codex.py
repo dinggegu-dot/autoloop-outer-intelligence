@@ -150,6 +150,22 @@ class GoalCodexTest(unittest.TestCase):
                 self.assertEqual(set(self.schema["required"]), set(result))
                 self.assertEqual(list(self.output.iterdir()), [])
 
+    def test_outer_assignments_use_scoped_permissions(self):
+        self.assignment["outer_binding"] = {"ticket_id": self.assignment["ticket"]}
+        with (patch.dict(os.environ, {"AUTOLOOP_REQUIRE_SCOPED_WORKSPACE": "1"}),
+              patch("superagent.goal_app_server.invoke", return_value={"session": _SESSION}) as scoped,
+              patch.object(goal_codex, "_run", side_effect=AssertionError("unexpected legacy CLI"))):
+            for phase, permission in (("plan", "read-only"), ("replan", "read-only"),
+                                      ("execute", "workspace-write"), ("repair", "workspace-write")):
+                with self.subTest(phase=phase):
+                    self.assignment["phase"] = phase
+                    self.assertEqual(goal_codex.invoke(self.assignment, self.workspace, self.output)["session"], _SESSION)
+                    self.assertEqual(scoped.call_args.kwargs["sandbox"], permission)
+                    self.assertEqual(scoped.call_args.kwargs["workspace"], self.workspace)
+                    self.assertEqual(scoped.call_args.kwargs["model"], "gpt-6.2-sol")
+                    payload = json.loads(scoped.call_args.kwargs["prompt"].split("\n", 1)[1])
+                    self.assertEqual(payload["phase"], phase)
+
     def test_invalid_outputs(self):
         self.assignment["phase"] = "review"
         good = _events({"passed": True, "findings": []})

@@ -39,6 +39,7 @@ PLIST_BACKUP = "workbench-launchagent.plist"
 SIDE_FILES = ("app", "formal_outer_canary_supervisor.py", "formal_outer_canary_wire.py")
 UPGRADE_MANIFEST = "upgrade.json"
 TEAM_BUTTON = b'id="outer-team-canary-submit"'
+AUTHORIZED_GOAL = b'id="outer-goal-team"'
 TEAM_ASSETS = ("goal_team.js", "goal_team.css", "task_presentation.js")
 
 
@@ -583,7 +584,8 @@ def build_upgrade(repo, target, original, staging):
     for name in SIDE_FILES[1:]:
         shutil.copy2(source / "scripts" / name, bundle / name)
     require(all((bundle / "front/outer-canary" / name).is_file() for name in TEAM_ASSETS)
-            and TEAM_BUTTON in (bundle / "front/index.html").read_bytes(), "构建包缺少固定合成团队入口")
+            and all(marker in (bundle / "front/index.html").read_bytes()
+                    for marker in (TEAM_BUTTON, AUTHORIZED_GOAL)), "构建包缺少团队工单入口")
     return {"front": bundle / "front", "side": bundle}
 
 
@@ -646,6 +648,7 @@ def upgrade(original, target):
             require(code_state(live_roots) == after, "升级文件与目标构建摘要不一致")
             start_canary()
             assert_preserved(known, formal, side, team=True)
+            require(AUTHORIZED_GOAL in read_legacy()[0]("/"), "正式新单未开放授权目标模式")
             require(canary_config(originals) == (ports, config), "切换后现役灰度配置发生变动")
         except BaseException:
             try:

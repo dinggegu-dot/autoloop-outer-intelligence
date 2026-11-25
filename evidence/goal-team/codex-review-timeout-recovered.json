@@ -1,0 +1,134 @@
+{
+  "date": "2026-11-25",
+  "result": "PASS",
+  "synthetic": true,
+  "baseline_commit": "a3b76db",
+  "entry": "同一隔离工作台及合成原单，通过普通业务 API 暂停、继续、下载",
+  "ticket_ref_sha256": "ed89aba7d27fc6bb081cdd40b3576c2cae5a80d0b7628993fa63ba51930e22e9",
+  "fixture": {
+    "initial_html_heading_fault": true,
+    "machine_checks_before_fault": [
+      "PASS",
+      "PASS"
+    ],
+    "machine_checks_after_fault": [
+      "FAIL",
+      "PASS"
+    ],
+    "actual_reviewer_shell_probe": true,
+    "fixture_cutoff_seconds_after_shell_start": 3,
+    "codex_transport_replayed": false
+  },
+  "initial_fault_checks": {
+    "before": [
+      "PASS",
+      "PASS"
+    ],
+    "after": [
+      "FAIL",
+      "PASS"
+    ]
+  },
+  "initial_timeout": {
+    "run": 2,
+    "error_code": "timeout",
+    "deadline_injected_after_actual_shell_start": true,
+    "interrupt_sent": true,
+    "interrupt_acknowledged": true,
+    "turn_terminal_status": "interrupted",
+    "process_record_state": "stopped",
+    "tracked_process_count": 3,
+    "live_tracked_processes_at_interrupt": 3,
+    "live_tracked_after_cleanup": 0,
+    "live_group_members_after_cleanup": 0,
+    "sealed_checkpoint": {
+      "artifacts": [
+        "phase-one-codex-timeout.html"
+      ],
+      "digest": "c0d761c3602e7eecc7d2f72dec06fc9c0fb7ec7f89692230eed787df426bf92f",
+      "files": {
+        "phase-one-codex-timeout.html": "94ee109a70744e7ef334444fad5e3e836414ab969a4f42837ada998c2da062f7"
+      }
+    },
+    "unverified_candidate_download_http": 404
+  },
+  "automatic_resume": {
+    "run": 3,
+    "original_mandate_revision": 1,
+    "only_role": "lead",
+    "writable": false,
+    "candidate_bytes_match_sealed_repair": true,
+    "turn_started": true,
+    "tools": 0,
+    "token_usage_reported": false,
+    "responses_websocket_connection_observed": true,
+    "responses_retry_reported_stream_disconnect": true,
+    "specific_endpoint_failure_cause_confirmed": false,
+    "app_server_exit_record": "stopped",
+    "elapsed_seconds": 237.13,
+    "error_code": "timeout"
+  },
+  "manual_resume": {
+    "control_statuses": [
+      "blocked",
+      "paused",
+      "queued",
+      "completed"
+    ],
+    "original_mandate_revision": 1,
+    "same_mandate_before_pause_and_after_resume": true,
+    "additional_approvals": 0,
+    "run": 4,
+    "source_run": 2,
+    "calls": 1,
+    "role": "lead",
+    "model": "gpt-6.2-sol",
+    "writable": false,
+    "sandbox": "read-only",
+    "permission_digest": "56844e1de10d0576f1b767e741cf8da98fc6265dd2274c4846c952c469c26834",
+    "real_turn_and_usage_reported": true,
+    "candidate_sha256": "c0d761c3602e7eecc7d2f72dec06fc9c0fb7ec7f89692230eed787df426bf92f",
+    "actual_shell_read": [
+      {
+        "path": "phase-one-codex-timeout.html",
+        "sha256": "94ee109a70744e7ef334444fad5e3e836414ab969a4f42837ada998c2da062f7"
+      }
+    ],
+    "process_record_state": "stopped",
+    "writer_called_again": false
+  },
+  "independent_final_review": {
+    "run": 5,
+    "kind": "外层独立机器终验",
+    "verifier_profile": "outer-v2",
+    "checkpoint_sha256": "c0d761c3602e7eecc7d2f72dec06fc9c0fb7ec7f89692230eed787df426bf92f",
+    "checks": [
+      {
+        "id": "acceptance-1",
+        "status": "PASS"
+      },
+      {
+        "id": "acceptance-2",
+        "status": "PASS"
+      }
+    ]
+  },
+  "delivery": {
+    "execution_status": "completed",
+    "outcome": "VERIFIED_COMPLETE",
+    "archive_sha256": "c0d761c3602e7eecc7d2f72dec06fc9c0fb7ec7f89692230eed787df426bf92f",
+    "unverified_candidate_download_http_after_completion": 404,
+    "normal_download_http": 200,
+    "by_verified_candidate_http": 200,
+    "attachment_header": true,
+    "filename": "phase-one-codex-timeout.html",
+    "download_sha256": "94ee109a70744e7ef334444fad5e3e836414ab969a4f42837ada998c2da062f7",
+    "download_bytes": 241,
+    "original_sealed_review_materials_verified_archive_and_download_identical": true
+  },
+  "isolation": {
+    "workbench_only": true,
+    "formal_data_used": false,
+    "formal_8765_listener_pid_unchanged_during_resume_and_verification": true
+  }
+}

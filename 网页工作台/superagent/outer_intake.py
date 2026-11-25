@@ -252,7 +252,8 @@ class OuterIntake:
                 raise Problem('已发卡片不能绑定新版工单', 409)
 
     def submit(self, *, source, source_event_id, actor_id, text, source_thread_id=None, tenant='default',
-               ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None, workbench_request=None, goal_team=False):
+               ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None,
+               workbench_request=None, goal_team=False, allow_model_input=False):
         identity = self._source(source, source_event_id, actor_id, tenant, source_thread_id)
         _string(text, '原始需求', 6000)
         _, _, actor, tenant, thread = identity
@@ -278,6 +279,7 @@ class OuterIntake:
                 'type': 'message', 'text': text, 'ticket_id': requested,
                 'expected_ticket_revision': expected_ticket_revision, 'question_id': question_id,
                 'replace_requirement_ids': replace_requirement_ids,
+                **({'allow_model_input': True} if allow_model_input is True else {}),
                 **({'force_new': True, 'workbench_request': workbench_request} if workbench_request is not None else {}),
                 **({'goal_team': True} if workbench_request is not None and goal_team else {}),
             }, role='intake_assessor')
@@ -566,6 +568,8 @@ class OuterIntake:
         if request is not None:
             ticket['coordinator_profile'] = 'scoped-v1'
             ticket['workbench_name'] = request['name']
+            if request.get('allow_model_input') is True:
+                ticket['allow_model_input'] = True
             if message.get('goal_team') is True:
                 ticket['approval_terms']['execution_profile'] = PROFILE
                 if request.get('team_review_mode'):
@@ -1095,7 +1099,7 @@ class OuterIntake:
             return ticket
 
     def answer_preference(self, ticket_id, revision, question_id, question_revision, candidate_digest,
-                          answer, request_id, *, actor_id, source='web', tenant='default'):
+                          answer, request_id, *, actor_id, source='web', tenant='default', allow_model_input=False):
         from .goal_engine import decision, digest
 
         identity = self._source(source, request_id, actor_id, tenant, None)
@@ -1113,6 +1117,8 @@ class OuterIntake:
         data = {'type':'execution_preference', 'ticket_id':ticket_id, 'revision':revision,
                 'question_id':question_id, 'question_revision':question_revision,
                 'candidate_digest':candidate_digest, 'option_id':option, 'text':text}
+        if text and allow_model_input is True:
+            data['allow_model_input'] = True
         with self._transaction() as db:
             ticket = self._ticket(db, ticket_id, identity[2], identity[3])
             event, duplicate = self._insert(db, identity, ticket_id, data)
@@ -1212,16 +1218,19 @@ class OuterIntake:
             return self._event_view(db.execute('SELECT * FROM outer_events WHERE id=?', (event['id'],)).fetchone())
 
     def decide_artifact(self,ticket_id,operation,expected_revision,candidate,artifact_sha256,reason,request_id,
-                        *,actor_id,source='web',tenant='default',source_thread_id=None):
+                        *,actor_id,source='web',tenant='default',source_thread_id=None,allow_model_input=False):
         from .goal_engine import decision
         if operation not in ('accept','return'):
             raise Problem('未知作品验收决定')
         reason = _string(reason,'退回原因',2000) if operation=='return' else ''
         identity = self._source(source,request_id,actor_id,tenant,source_thread_id)
+        data = dict(type='artifact_review', ticket_id=ticket_id, operation=operation,
+                    revision=expected_revision, candidate=candidate, artifact_sha256=artifact_sha256, reason=reason)
+        if reason and allow_model_input is True:
+            data['allow_model_input'] = True
         with self._transaction() as db:
             ticket = self._ticket(db,ticket_id,actor_id,tenant)
-            event,duplicate = self._insert(db,identity,ticket_id,dict(type='artifact_review',ticket_id=ticket_id,operation=operation,
-                revision=expected_revision,candidate=candidate,artifact_sha256=artifact_sha256,reason=reason))
+            event,duplicate = self._insert(db,identity,ticket_id,data)
             if duplicate:
                 return dict(json.loads(event['result']),duplicate=True)
             self._compare(ticket,expected_revision)

@@ -1,4 +1,4 @@
-"""8765 的首单灰度入口。运行时只转发固定合成任务和版本绑定的控制请求。"""
+"""8765 工作台的回环网关，校验工单版本与自由文字的发送授权。"""
 import hmac
 from http.client import HTTPConnection, HTTPException
 from http.cookies import SimpleCookie
@@ -57,13 +57,22 @@ ASSETS = {
     "/outer-canary/task_presentation.js": "task_presentation.js",
 }
 MIMES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}
+VERSION_FIELDS = {"ticket_id", "revision", "request_id"}
+CONTRACT_FIELDS = VERSION_FIELDS | {"goal_revision", "acceptance_revision"}
+CONSENT = "allow_model_input"
 CONTROL_FIELDS = {
     "get": {"ticket_id"}, "calls": {"ticket_id"}, "call": {"ticket_id", "call_id"}, "event": {"event_id"},
-    "approve": {"ticket_id", "revision", "goal_revision", "acceptance_revision", "request_id"},
-    "pause": {"ticket_id", "revision", "request_id"}, "resume": {"ticket_id", "revision", "request_id"},
-    "stop": {"ticket_id", "revision", "request_id"},
+    "approve": CONTRACT_FIELDS,
+    "pause": VERSION_FIELDS, "resume": VERSION_FIELDS, "stop": VERSION_FIELDS,
+    "accept_artifact": CONTRACT_FIELDS | {"candidate", "artifact_sha256"},
+    "return_artifact": CONTRACT_FIELDS | {"candidate", "artifact_sha256", "reason", CONSENT},
+    "answer_preference": CONTRACT_FIELDS | {"question_id", "question_revision", "candidate_digest", "answer"},
+    "submit": VERSION_FIELDS | {"text", CONSENT},
+    "extend_team_budget": VERSION_FIELDS | {"mandate_revision", "additional_minutes", "additional_roles"},
 }
+MAX_REQUEST = 48000
 MAX_RESPONSE = 16 * 1024 * 1024
+ORDER_TEXT_LIMITS = {"name": 80, "goal": 6000, "acceptance": 4000}
 
 
 def canonical_uuid(value):
@@ -73,39 +82,103 @@ def canonical_uuid(value):
         return False
 
 
-def valid_command(command, body):
-    checks = {
-        "ticket_id": lambda v: isinstance(v, str) and re.fullmatch(TICKET, v),
-        "event_id": lambda v: isinstance(v, str) and re.fullmatch(r"evt-[a-f0-9]{32}", v),
-        "call_id": lambda v: isinstance(v, str) and re.fullmatch(r"(?:call-)?[a-f0-9]{12,64}", v),
-        "request_id": canonical_uuid,
-        "revision": lambda v: type(v) is int and v > 0,
-        "goal_revision": lambda v: type(v) is int and v > 0,
-        "acceptance_revision": lambda v: type(v) is int and v > 0,
-        "question_revision": lambda v: type(v) is int and v > 0,
-        "question_id": lambda v: isinstance(v, str) and re.fullmatch(r"[a-f0-9]{32}", v),
-        "candidate": lambda v: isinstance(v, str) and re.fullmatch(r"[a-f0-9]{32}", v),
-        "candidate_digest": lambda v: isinstance(v, str) and re.fullmatch(r"[a-f0-9]{64}", v),
-        "artifact_sha256": lambda v: isinstance(v, str) and re.fullmatch(r"[a-f0-9]{64}", v),
-        "require_signoff": lambda v: type(v) is bool,
-        "answer": lambda v: (
-            isinstance(v, dict) and v.keys() == {"option_id", "text"} and v["text"] == ""
-            and isinstance(v["option_id"], str) and re.fullmatch(r"[a-z0-9_-]{1,64}", v["option_id"])
-        ),
-    }
-    binding = CONTROL_FIELDS["approve"]
-    fields = CONTROL_FIELDS.get(command)
-    if command == "approve" and "require_signoff" in body:
-        fields = binding | {"require_signoff"}
-    elif command in {"pause", "resume", "stop"} and "goal_revision" in body:
-        fields = binding
-    elif command == "answer_preference":
-        fields = binding | {"question_id", "question_revision", "candidate_digest", "answer"}
-    elif command == "accept_artifact":
-        fields = binding | {"candidate", "artifact_sha256"}
-    if not fields or body.keys() != fields:
+def matches(pattern, value):
+    return isinstance(value, str) and re.fullmatch(pattern, value) is not None
+
+
+def valid_text(value, limit, *, blank=False):
+    if not isinstance(value, str) or len(value) > limit or "\0" in value or (not blank and not value.strip()):
         return False
-    return all(checks[key](value) for key, value in body.items())
+    try:
+        value.encode("utf-8")
+    except UnicodeError:
+        return False
+    return True
+
+
+def request_bytes(body):
+    return json.dumps(body, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def valid_custom_order(body):
+    required = ORDER_TEXT_LIMITS.keys() | {"workflow", "request_id", CONSENT}
+    return (isinstance(body, dict) and required <= body.keys() <= required | {"team_review_mode"}
+            and body["workflow"] == "outer" and body[CONSENT] is True
+            and canonical_uuid(body["request_id"])
+            and body["request_id"] not in (SYNTHETIC_ORDER["request_id"], TEAM_ORDER["request_id"])
+            and body.get("team_review_mode", "review") in ("review", "review_and_decide")
+            and all(valid_text(body[key], limit, blank=key != "goal") for key, limit in ORDER_TEXT_LIMITS.items())
+            and len(request_bytes(body)) <= MAX_REQUEST)
+
+
+def valid_answer(answer):
+    return (isinstance(answer, dict) and answer.keys() <= {"option_id", "text"}
+            and ("option_id" not in answer or matches(r"[a-z0-9_-]{1,40}", answer["option_id"]))
+            and valid_text(answer.get("text", ""), 2000, blank=True)
+            and bool(answer.get("option_id") or answer.get("text", "").strip()))
+
+
+def valid_requirements(value):
+    return (isinstance(value, list) and 1 <= len(value) <= 12
+            and all(matches(r"req-[a-f0-9]{32}", item) for item in value) and len(set(value)) == len(value))
+
+
+def valid_revision(value):
+    return type(value) is int and 0 < value <= 2**53 - 1
+
+
+FIELD_CHECKS = {
+    "ticket_id": lambda v: matches(TICKET, v),
+    "event_id": lambda v: matches(r"evt-[a-f0-9]{32}", v),
+    "call_id": lambda v: matches(r"(?:call-)?[a-f0-9]{12,64}", v),
+    "request_id": canonical_uuid,
+    "revision": valid_revision,
+    "goal_revision": valid_revision,
+    "acceptance_revision": valid_revision,
+    "question_revision": valid_revision,
+    "mandate_revision": valid_revision,
+    "question_id": lambda v: matches(r"(?:q-)?[a-f0-9]{32}", v),
+    "candidate": lambda v: matches(r"[a-f0-9]{32}", v),
+    "candidate_digest": lambda v: matches(r"[a-f0-9]{64}", v),
+    "artifact_sha256": lambda v: matches(r"[a-f0-9]{64}", v),
+    "require_signoff": lambda v: type(v) is bool,
+    "answer": valid_answer,
+    "reason": lambda v: valid_text(v, 2000),
+    "text": lambda v: valid_text(v, 6000),
+    CONSENT: lambda v: v is True,
+    "replace_requirement_ids": valid_requirements,
+    "additional_minutes": lambda v: type(v) is int and v in (0, 15, 30, 60),
+    "additional_roles": lambda v: type(v) is int and v in (0, 5, 10),
+}
+
+
+def command_uses_model_input(command, body):
+    """判断已通过格式校验的操作是否提交新的自由文字。"""
+    return command in {"submit", "return_artifact"} or (
+        command == "answer_preference" and bool(body["answer"].get("text", "").strip()))
+
+
+def valid_command(command, body):
+    fields = CONTROL_FIELDS.get(command)
+    if fields is None or not isinstance(body, dict):
+        return False
+    if command in {"pause", "resume", "stop"} and "goal_revision" in body:
+        fields = CONTRACT_FIELDS
+    optional = {"approve": {"require_signoff"}, "answer_preference": {CONSENT},
+                "submit": {"question_id", "replace_requirement_ids"}}.get(command, set())
+    if not fields <= body.keys() <= fields | optional:
+        return False
+    if not all(FIELD_CHECKS[key](value) for key, value in body.items()) or len(request_bytes(body)) > MAX_REQUEST:
+        return False
+    if command_uses_model_input(command, body) and body.get(CONSENT) is not True:
+        return False
+    if command == "answer_preference":
+        return not body["question_id"].startswith("q-")
+    if command == "submit" and "question_id" in body and not body["question_id"].startswith("q-"):
+        return False
+    if command == "extend_team_budget":
+        return bool(body["additional_minutes"] or body["additional_roles"])
+    return True
 
 
 class OuterCanary:
@@ -154,7 +227,7 @@ class OuterCanary:
                                 "Origin": self.origin})
             status, result_headers, payload = self._request(
                 "POST" if body is not None else "GET", route, headers,
-                None if body is None else json.dumps(body, ensure_ascii=False).encode())
+                None if body is None else request_bytes(body))
             mime = result_headers.get("Content-Type", "").split(";", 1)[0]
             download = re.fullmatch(f"/api/tasks/{TICKET}/artifact", urlsplit(route).path)
             allowed = "application/octet-stream" if download and status == 200 else "application/json"
@@ -167,15 +240,21 @@ class OuterCanary:
         return handler.respond(payload, result_headers["Content-Type"], status, result)
 
     def post(self, handler, route, body):
+        if not isinstance(body, dict):
+            return handler.json_response({"error": "工单请求格式无效"}, 400)
         if route == "/api/tasks":
             if body == FIXTURE:
                 return self.forward(handler, "/api/tasks", SYNTHETIC_ORDER)
             if body == TEAM_FIXTURE:
                 return self.forward(handler, "/api/tasks", TEAM_ORDER)
-            return handler.json_response({"error": "灰度入口仅接受内置合成工单"}, 409)
+            if body.get(CONSENT) is not True:
+                return handler.json_response({"error": "请先确认同意将本次工单文字发送给 Codex"}, 409)
+            if not valid_custom_order(body):
+                return handler.json_response({"error": "智能工单填写内容或请求格式无效"}, 400)
+            return self.forward(handler, "/api/tasks", body)
         command = route.removeprefix(PREFIX)
-        if not valid_command(command, body):
-            return handler.json_response({"error": "灰度工单操作或者版本格式无效"}, 400)
+        if command == route or not valid_command(command, body):
+            return handler.json_response({"error": "请核对工单版本、提交内容及模型发送授权"}, 400)
         return self.forward(handler, "/api/outer/" + command, body)
 
     def get(self, handler, route):

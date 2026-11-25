@@ -165,14 +165,13 @@ test('待办先按已确认截止时间排序，再按等待起点和工单号�
  assert.deepEqual(queue.map(row=>row.id),['d','b','a','c']);
 });
 
-test('初稿读取被明确拒绝后先撤下旧决定，普通故障保留重试',async t=>{
- const {mountGoalTeam}=await import('./goal_team.js');
- class Element {
+class GoalElement {
   constructor(tag) {
    this.tag=tag; this.children=[]; this.dataset={}; this.value='';
    this.classList={add(){},toggle(){}};
   }
   get firstElementChild(){return this.children[0];}
+  get childElementCount(){return this.children.length;}
   get isConnected(){return this.parent ? this.parent.isConnected : this.tag==='root';}
   append(...children){for(const child of children){child.parent=this;this.children.push(child);}}
   replaceChildren(...children){for(const child of this.children)child.parent=null;this.children=[];this.append(...children);}
@@ -180,23 +179,30 @@ test('初稿读取被明确拒绝后先撤下旧决定，普通故障保留重�
   closest(){return null;}
   setAttribute(){}
   addEventListener(){}
+  focus(){}
+  showModal(){this.open=true;}
+  close(){this.open=false;}
   querySelectorAll(selector){
    const matches=selector==='details[data-disclosure]' ? node=>node.tag==='details' && node.dataset.disclosure :
+    selector==='[data-goal-write]' ? node=>Object.hasOwn(node.dataset,'goalWrite') :
     selector.startsWith('#') ? node=>node.id===selector.slice(1) :
     selector.startsWith('.') ? node=>node.className?.split(' ').includes(selector.slice(1)) : node=>node.tag===selector;
    return this.children.flatMap(node=>[...(matches(node)?[node]:[]),...node.querySelectorAll(selector)]);
   }
   querySelector(selector){return this.querySelectorAll(selector)[0];}
- }
- const flush=()=>new Promise(resolve=>setImmediate(resolve));
+}
+const flushGoalUI=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('初稿读取被明确拒绝后先撤下旧决定，普通故障保留重试',async t=>{
+ const {mountGoalTeam}=await import('./goal_team.js');
  for(const status of [409,403,503]) await t.test(String(status),async t=>{
-  const root=new Element('root');
+  const root=new GoalElement('root');
   const previous={window:globalThis.window,document:globalThis.document,location:globalThis.location,
    requestAnimationFrame:globalThis.requestAnimationFrame,fetch:globalThis.fetch};
   t.after(()=>Object.assign(globalThis,previous));
   Object.assign(globalThis,{
    window:{addEventListener(){}},
-   document:{createElement:tag=>new Element(tag),addEventListener(){}},
+   document:{createElement:tag=>new GoalElement(tag),addEventListener(){}},
    location:{search:'?goal=wb-draft',hash:''},
    requestAnimationFrame:()=>{},
   });
@@ -220,16 +226,16 @@ test('初稿读取被明确拒绝后先撤下旧决定，普通故障保留重�
    request:async path=>path==='/api/outer'?{drafts:[]}:(++reads===2?refreshed:row),
    renewSession:async()=>{sessionRenewals++;},
   });
-  await flush();
+  await flushGoalUI();
   const disclosure=root.querySelector('.goal-draft-disclosure');
   disclosure.open=true; disclosure.ontoggle();
-  await flush();
+  await flushGoalUI();
   assert.equal(root.querySelector('pre').textContent,'封存原文');
   const submit=root.querySelector('#goal-submit-preference');
   assert.ok(submit && !submit.disabled);
   const picker=root.querySelector('#goal-draft-file');
   picker.value='b.txt'; picker.onchange();
-  await flush();
+  await flushGoalUI();
   if(status===503){
    assert.equal(reads,1);
    assert.equal(root.querySelector('#goal-submit-preference'),submit);
@@ -246,10 +252,174 @@ test('初稿读取被明确拒绝后先撤下旧决定，普通故障保留重�
   // 原单仍返回同一个已拒绝的绑定时也不能把旧决定放回来。
   row={...row,revision:2};
   finishRefresh(row);
-  await flush();
+  await flushGoalUI();
   assert.equal(root.querySelector('#goal-submit-preference'),undefined);
   row={...row,pending_preference:{...question,id:'second',candidate_digest:'candidate-second'}};
   await team.refresh();
   assert.ok(root.querySelector('#goal-submit-preference'));
+ });
+});
+
+test('正式原单逐次确认自由文本，预算独立确认',async t=>{
+ const {mountGoalTeam}=await import('./goal_team.js');
+ const ticket={id:'wb-test',status:'AUTHORIZED',revision:5,goal_revision:3,acceptance_revision:2,
+  allow_model_input:true,journey:{station:'decision'}};
+ const fixed={...ticket,allow_model_input:undefined};
+ const question={id:'first',revision:1,step:0,candidate_digest:'sample-digest',options:[{id:'edit',label:'修改'}]};
+ async function mount(test,row,{panel='',formalModelInputConsent=true,failFirst=false}={}) {
+  const root=new GoalElement('root'), events=[];
+  const previous={window:globalThis.window,document:globalThis.document,location:globalThis.location,
+   history:globalThis.history,requestAnimationFrame:globalThis.requestAnimationFrame};
+  test.after(()=>Object.assign(globalThis,previous));
+  const location=new URL('http://localhost/?goal='+row.id);
+  if(panel) location.searchParams.set('goal_panel',panel);
+  Object.assign(globalThis,{
+   window:{addEventListener(){}},
+   document:{createElement:tag=>new GoalElement(tag),addEventListener(){}},
+   location,history:{replaceState(){}},requestAnimationFrame:()=>{},
+  });
+  test.mock.method(globalThis,'setInterval',()=>0);
+  const state={drafts:[row]};
+  const team=mountGoalTeam(root,{initial:state,formalModelInputConsent,request:async(path,body)=>{
+   if(path==='/api/outer') return state;
+   if(path==='/api/outer/get') return row;
+   events.push({path,body:JSON.parse(JSON.stringify(body))});
+   if(failFirst && events.length===1) throw new Error('暂不可用');
+   return {};
+  }});
+  await team.refresh();
+  const dialog=root.querySelector('dialog');
+  const [cancel,confirm]=dialog.querySelectorAll('button');
+  const control=id=>root.querySelector('#goal-'+id);
+  const fill=(id,value)=>{const field=control(id);field.value=value;field.oninput();};
+  return {root,team,events,dialog,cancel,confirm,control,fill};
+ }
+ await t.test('只选方向直接提交，空白不作为外发意见',async t=>{
+  const ui=await mount(t,{...ticket,pending_preference:question});
+  ui.control('option-edit').onchange();
+  ui.fill('preference-text','  ');
+  ui.control('submit-preference').onclick();
+  await flushGoalUI();
+  assert.equal(ui.dialog.open,undefined);
+  assert.equal(ui.events.length,1);
+  const [{path,body}]=ui.events;
+  assert.equal(path,'/api/outer/answer_preference');
+  assert.deepEqual(body.answer,{option_id:'edit',text:''});
+  assert.equal(Object.hasOwn(body,'allow_model_input'),false);
+ });
+ await t.test('正式固定试单显示预设样例，提交只带选项',async t=>{
+  const ui=await mount(t,{...fixed,pending_preference:question});
+  assert.equal(ui.control('preference-text'),undefined);
+  assert.ok(ui.root.querySelector('.goal-now').querySelectorAll('p').some(node=>node.textContent==='选择一组样例。'));
+  ui.control('option-edit').onchange();
+  ui.control('submit-preference').onclick();
+  await flushGoalUI();
+  assert.equal(ui.events.length,1);
+  assert.deepEqual(ui.events[0].body.answer,{option_id:'edit',text:''});
+  assert.equal(Object.hasOwn(ui.events[0].body,'allow_model_input'),false);
+ });
+ await t.test('自由意见取消保留，失败重试仍需确认且复用原请求编号',async t=>{
+  const ui=await mount(t,{...ticket,pending_preference:question},{failFirst:true});
+  ui.fill('preference-text','保留标题，调整示例');
+  ui.control('submit-preference').onclick();
+  assert.match(ui.dialog.querySelector('p').textContent,/发送给 Codex 模型/);
+  ui.cancel.onclick();
+  await ui.team.refresh();
+  assert.equal(ui.events.length,0);
+  assert.equal(ui.control('preference-text').value,'保留标题，调整示例');
+  ui.control('submit-preference').onclick();
+  ui.confirm.onclick();
+  await flushGoalUI();
+  assert.equal(ui.control('preference-text').value,'保留标题，调整示例');
+  assert.match(ui.root.querySelector('.goal-feedback').textContent,/已保留填写内容/);
+  ui.control('submit-preference').onclick();
+  assert.equal(ui.events.length,1);
+  ui.confirm.onclick();
+  await flushGoalUI();
+  assert.equal(ui.events.length,2);
+  assert.deepEqual(ui.events[0],ui.events[1]);
+  const {body}=ui.events[0];
+  assert.deepEqual(body.answer,{text:'保留标题，调整示例'});
+  assert.deepEqual([body.ticket_id,body.revision,body.question_id,body.question_revision,body.candidate_digest,body.allow_model_input],
+   [ticket.id,ticket.revision,question.id,question.revision,question.candidate_digest,true]);
+ });
+ await t.test('补充或替换条件只发当前工单版本',async t=>{
+  const goal_contract={constraints:[{source:'USER_EXPLICIT',requirement_id:'previous',description:'原要求'}]};
+  const ui=await mount(t,{...ticket,goal_contract},{panel:'revisions'});
+  const replacement=ui.control('section-revisions').querySelector('input');
+  replacement.checked=true; replacement.onchange();
+  ui.fill('revision-text','本次改用新的验收样例');
+  ui.control('submit-revision').onclick();
+  assert.match(ui.dialog.querySelector('p').textContent,/替换选中的 1 项要求/);
+  assert.equal(ui.events.length,0);
+  ui.confirm.onclick();
+  await flushGoalUI();
+  const [{path,body:{request_id,...payload}}]=ui.events;
+  assert.equal(path,'/api/outer/submit');
+  assert.ok(request_id);
+  assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,text:'本次改用新的验收样例',
+   allow_model_input:true,replace_requirement_ids:['previous']});
+ });
+ await t.test('退回理由绑定当前候选并单独确认',async t=>{
+  const candidate={assignment:'a'.repeat(32),sequence:2,state:'pending',artifact_sha256:'b'.repeat(64)};
+  const row={...ticket,journey:{...ticket.journey,artifact_review:true},execution:{status:'awaiting_artifact_review',
+   goal_execution:{artifact_reviews:[candidate]}}};
+  const ui=await mount(t,row,{panel:'artifacts'});
+  ui.fill('return-reason','补齐附录的来源');
+  ui.control('return-artifact').onclick();
+  assert.equal(ui.confirm.textContent,'同意并退回');
+  assert.equal(ui.events.length,0);
+  ui.confirm.onclick();
+  await flushGoalUI();
+  const [{path,body:{request_id,...payload}}]=ui.events;
+  assert.equal(path,'/api/outer/return_artifact');
+  assert.ok(request_id);
+  assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,goal_revision:ticket.goal_revision,
+   acceptance_revision:ticket.acceptance_revision,candidate:candidate.assignment,artifact_sha256:candidate.artifact_sha256,
+   reason:'补齐附录的来源',allow_model_input:true});
+ });
+ await t.test('正式固定试单的候选仍可签收',async t=>{
+  const candidate={assignment:'a'.repeat(32),sequence:2,state:'pending',artifact_sha256:'b'.repeat(64)};
+  const row={...fixed,journey:{...ticket.journey,artifact_review:true},execution:{status:'awaiting_artifact_review',
+   goal_execution:{artifact_reviews:[candidate]}}};
+  const ui=await mount(t,row,{panel:'artifacts'});
+  assert.equal(ui.control('return-reason'),undefined);
+  assert.equal(ui.control('return-artifact'),undefined);
+  ui.control('accept-artifact').onclick();
+  ui.confirm.onclick();
+  await flushGoalUI();
+  assert.equal(ui.events[0].path,'/api/outer/accept_artifact');
+  assert.equal(ui.events[0].body.candidate,candidate.assignment);
+ });
+ await t.test('正式固定试单的条件页只展示记录',async t=>{
+  const ui=await mount(t,{...fixed,status:'VERIFICATION_GAP'},{panel:'revisions'});
+  assert.equal(ui.control('section-revisions'),undefined);
+  assert.equal(ui.root.querySelectorAll('button').some(node=>node.textContent==='补充条件'),false);
+ });
+ await t.test('预算先核对总额，确认后按原授权版本续办',async t=>{
+  const mandate={budget_seconds:3600,team_role_limit:16,execution_profile:{}};
+  const ui=await mount(t,{...ticket,mandate,mandate_revision:2,execution:{status:'budget_exhausted'}});
+  const time=ui.control('budget-minutes');
+  assert.equal(ui.control('extend-budget').disabled,true);
+  time.value='15'; time.onchange();
+  ui.control('extend-budget').onclick();
+  assert.match(ui.dialog.querySelector('p').textContent,/75 分钟、16 个角色轮次/);
+  assert.equal(ui.events.length,0);
+  ui.confirm.onclick();
+  await flushGoalUI();
+  const [{path,body:{request_id,...payload}}]=ui.events;
+  assert.equal(path,'/api/outer/extend_team_budget');
+  assert.ok(request_id);
+  assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,mandate_revision:2,additional_minutes:15,additional_roles:0});
+ });
+ await t.test('实验路径仍按原方式提交文字',async t=>{
+  const ui=await mount(t,{...fixed,pending_preference:question},{formalModelInputConsent:false});
+  ui.fill('preference-text','沿用实验流程');
+  ui.control('submit-preference').onclick();
+  await flushGoalUI();
+  assert.equal(ui.dialog.open,undefined);
+  assert.equal(ui.events.length,1);
+  assert.deepEqual(ui.events[0].body.answer,{text:'沿用实验流程'});
+  assert.equal(Object.hasOwn(ui.events[0].body,'allow_model_input'),false);
  });
 });

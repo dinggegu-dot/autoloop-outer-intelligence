@@ -1,4 +1,4 @@
-"""Execute one approved goal assignment through the local Codex CLI."""
+"""Execute one approved goal assignment through the local Codex runtime."""
 
 import contextlib
 import json
@@ -275,6 +275,14 @@ def invoke(assignment: dict, workspace: Path, output_dir: Path, *, launch_gate=c
     Raw CLI streams are never returned or persisted.
     """
     sandbox, schema, timeout, prompt = _prepare(assignment)
+    if assignment.get("outer_binding") and os.environ.get("AUTOLOOP_REQUIRE_SCOPED_WORKSPACE") == "1":
+        # 正式外层工单可接受自由文字，模型工具必须使用经过核对的工作区权限。
+        from .goal_app_server import invoke as invoke_scoped
+        return invoke_scoped(
+            model=assignment["model"], effort="medium", sandbox=sandbox, prompt=prompt.decode("utf-8"),
+            schema=schema, workspace=workspace, output_dir=output_dir, deadline=time.monotonic() + timeout,
+            launch_gate=launch_gate,
+        )
     try:
         env = trusted_cli_environment()
     except ValueError:

@@ -265,6 +265,36 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertEqual(task['goal_execution']['coordinator_profile'], 'scoped-v1')
         self.assertNotIn('coordinator_profile', self.intake.get(legacy['id'], 'owner'))
 
+    def test_explicit_workbench_model_consent_stays_in_the_original_event(self):
+        from outer_channels import dispatch
+        from outer_workbench import create_task
+        from uuid import uuid4
+
+        self.workbench.outer_workbench_entry = True
+        body = dict(workflow='outer', request_id=str(uuid4()), name='普通入口工单',
+                    goal='生成合成报告', acceptance='检查标题', allow_model_input=True)
+        event_id = create_task(self.workbench, body)['event_id']
+        draft = self.latest({'event_id': event_id})
+        self.assertIs(draft['allow_model_input'], True)
+        self.assertIs(next(row for row in self.intake.list('owner') if row['id'] == draft['id'])['allow_model_input'], True)
+        with self.workbench.store.connect() as db:
+            authorized = db.execute(
+                "SELECT json_type(body,'$.workbench_request.allow_model_input') FROM outer_events WHERE id=?",
+                (event_id,)).fetchone()[0]
+        self.assertEqual(authorized, 'true')
+        context = next(context for _, context in self.model.calls if context.get('event_id') == event_id)
+        self.assertEqual(context['untrusted_text']['workbench_request'], {
+            'event_id': event_id, 'name': body['name'], 'acceptance': body['acceptance'],
+        })
+        followup = dict(ticket_id=draft['id'], revision=draft['revision'], request_id=str(uuid4()),
+                        text='再核对一次标题', allow_model_input=True)
+        response = dispatch(self.intake,'web','submit',followup)
+        self.assertTrue(dispatch(self.intake,'web','submit',followup)['duplicate'])
+        with self.workbench.store.connect() as db:
+            authorized = db.execute("SELECT json_type(body,'$.allow_model_input') FROM outer_events WHERE id=?",
+                                    (response['event_id'],)).fetchone()[0]
+        self.assertEqual(authorized, 'true')
+
     def test_team_preference_binds_profile_pause_version_and_cross_channel_answer(self):
         from uuid import uuid4
         from outer_workbench import create_task
@@ -445,7 +475,8 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertEqual(unchanged['execution']['pending_preference'],public)
         with self.store.connect() as db:
             self.assertIsNone(db.execute("SELECT id FROM outer_events WHERE source_event_id='choose-a'").fetchone())
-        answer = self.intake.answer_preference(*args,{'option_id':'a','text':'  '},'choose-a',actor_id='owner')
+        answer = self.intake.answer_preference(*args,{'option_id':'a','text':'  '},'choose-a',actor_id='owner',
+                                               allow_model_input=True)
         retry = self.intake.answer_preference(*args,{'option_id':'a'},'choose-a',actor_id='owner')
         self.assertEqual(answer['action'],'PREFERENCE_RECORDED')
         self.assertTrue(retry['duplicate'])
