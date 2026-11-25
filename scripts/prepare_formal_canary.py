@@ -9,6 +9,22 @@ from prepare_formal_outer_pilot import BOARD, REPO, replace_once, source_only
 
 
 FRONT_FILES = ("server.py", "index.html", "tasks.js")
+HOME_QUEUE_CSS = """
+.goal-home .goal-home-header { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px; }
+.goal-home .goal-home-groups { display:grid;gap:14px;grid-template-columns:minmax(0,1fr); }
+@media (min-width:740px) {
+  .goal-home .goal-home-groups { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+.goal-home .goal-home-list { display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(min(100%,21rem),1fr));list-style:none;margin:0;padding:0;min-width:0; }
+.goal-home .goal-home-list h4 { margin:0;font-size:1rem; }
+.goal-home .goal-queue { align-content:start;gap:6px; }
+.goal-home .goal-empty { border:0;background:transparent;padding:0;font-size:.875rem; }
+.goal-home .goal-button { text-decoration:none; }
+.goal-home > button { justify-self:start; }
+#formal-home-decisions .goal-card { border-inline-start:3px solid var(--goal-primary); }
+#formal-home-decisions .goal-chip { background:var(--goal-wait);color:var(--goal-wait-ink); }
+#formal-home-decisions .goal-why dd { white-space:pre-line; }
+"""
 
 
 def write(path, text):
@@ -49,10 +65,47 @@ def frontend(formal, front):
     server = replace_once(server, "        self.respond(file.read_bytes(), types[file.suffix])", """
         body = file.read_bytes()
         if route in ('/', '/index.html') and not getattr(self.server, 'outer_canary', None):
-            body = body.replace(b'<!--OUTER-CANARY-BEGIN-->', b'<template>', 1)
-            body = body.replace(b'<!--OUTER-CANARY-END-->', b'</template>', 1)
+            for region in (b'OUTER-CANARY', b'OUTER-TEAM-OPTIONS', b'OUTER-HOME-ASSETS', b'OUTER-HOME-QUEUE', b'OUTER-HOME-APPROVALS'):
+                body = body.replace(b'<!--' + region + b'-BEGIN-->', b'<template>', 1)
+                body = body.replace(b'<!--' + region + b'-END-->', b'</template>', 1)
         self.respond(body, types[file.suffix])""".lstrip("\n"))
     html = (formal / "index.html").read_text()
+    html = replace_once(html, '</head>', '''<!--OUTER-HOME-ASSETS-BEGIN--><link rel="stylesheet" href="/outer-canary/goal_team.css"><!--OUTER-HOME-ASSETS-END-->
+</head>''')
+    html = replace_once(html, '<div id="live-tasks">', '''<!--OUTER-HOME-QUEUE-BEGIN-->
+        <section id="formal-home-decisions" class="goal-team goal-home" aria-labelledby="formal-home-decisions-title" hidden>
+          <div class="goal-queue-title"><h2 id="formal-home-decisions-title" tabindex="-1">待我决定</h2>
+            <span class="goal-count" hidden></span>
+          </div>
+          <p class="goal-connection" id="formal-home-ordinary-status" role="status">正在读取普通工单待办。</p>
+          <p class="goal-connection" id="formal-home-codex-status" role="status">正在读取 Codex 工单待办。</p>
+          <button type="button" class="goal-button" hidden>重新读取 Codex 工单</button>
+          <ul class="goal-home-list" hidden></ul>
+          <p class="goal-empty" hidden>当前没有需要你决定的工单。</p>
+        </section>
+        <section id="formal-goal-home" class="goal-team goal-home" aria-labelledby="formal-goal-home-title" hidden>
+          <div class="goal-home-header"><h2 id="formal-goal-home-title" tabindex="-1">Codex 工单</h2>
+            <a class="goal-button" href="/workbench">查看全部 Codex 工单</a>
+          </div>
+          <div class="goal-home-groups"></div>
+          <nav class="goal-actions" aria-label="其他 Codex 工单" hidden>
+            <a class="goal-button" href="/workbench?station=dock" data-station="dock" hidden>已暂停或停止</a>
+            <a class="goal-button" href="/workbench?station=unknown" data-station="unknown" hidden>待核对</a>
+          </nav>
+        </section>
+        <!--OUTER-HOME-QUEUE-END--><div id="live-tasks">''')
+    html = replace_once(html, '<div id="live-approvals">', '''<!--OUTER-HOME-APPROVALS-BEGIN-->
+        <section id="formal-goal-approvals" class="goal-team goal-home" aria-labelledby="formal-goal-approvals-title" hidden>
+          <div class="goal-home-header"><h2 id="formal-goal-approvals-title">Codex 工单</h2>
+            <a class="goal-button" href="/workbench?station=decision">查看 Codex 待决定工单</a>
+          </div>
+          <p class="goal-connection" role="status"></p>
+        </section>
+        <!--OUTER-HOME-APPROVALS-END--><div id="live-approvals">''')
+    for old, new in (('>待审批 <span id="game-open"', '>普通工单审批 <span id="game-open"'),
+                     ('</span> 待审批 <span class="nav-count red"', '</span> 普通工单审批 <span class="nav-count red"'),
+                     ('aria-label="查看待审批事项"', 'aria-label="查看普通工单审批"')):
+        html = replace_once(html, old, new)
     dialog = '</span></button></form></dialog>'
     # 插在旧提交按钮后，保留旧表单的默认回车操作。
     html = replace_once(html, dialog, '''</span></button><!--OUTER-CANARY-BEGIN--><div class="wb-actions">
@@ -68,15 +121,12 @@ def frontend(formal, front):
 <select id="outer-team-review-mode">
 <option value="">随任务自动安排</option>
 <option value="review">比较方案并审稿</option>
-<option value="review_and_decide">从第 2 步审稿并请我定方向</option>
+<option value="review_and_decide">分步交付，第 2 步请我定方向</option>
 </select>
+<p class="draft-warning" id="outer-team-review-hint" hidden>请写明至少两步可以分别验收的成果。</p>
 <label><input type="checkbox" id="outer-team-consent"> 允许把本单填写的名称、目标和完成标准发送给 Codex</label>
-<p class="draft-warning">勾选后开始研判。执行等你在工单批准。请只填写获准发送的内容。</p>
+<p class="draft-warning">登记后开始研判。执行等你在工单批准。请只填写获准发送的内容。</p>
 </div></fieldset><!--OUTER-TEAM-OPTIONS-END--><p class="draft-warning" id="task-form-status">''')
-    server = replace_once(server, "            body = body.replace(b'<!--OUTER-CANARY-END-->', b'</template>', 1)",
-                          """            body = body.replace(b'<!--OUTER-CANARY-END-->', b'</template>', 1)
-            body = body.replace(b'<!--OUTER-TEAM-OPTIONS-BEGIN-->', b'<template>', 1)
-            body = body.replace(b'<!--OUTER-TEAM-OPTIONS-END-->', b'</template>', 1)""")
     tasks = replace_once((formal / "tasks.js").read_text(), """    if (working) return;
     working = true;
     const button = form.querySelector('[type=submit]');""", """    if (working) return;
@@ -130,6 +180,7 @@ def frontend(formal, front):
     const enabled=Boolean(teamMode?.checked);
     if (!teamMode) return;
     node('#outer-team-settings').hidden=!enabled;
+    node('#outer-team-review-hint').hidden=node('#outer-team-review-mode').value!=='review_and_decide';
     if (!enabled) teamConsent.checked=false;
     teamModelFields.hidden=enabled;
     for (const id of ['task-mode','task-budget']) {
@@ -141,6 +192,7 @@ def frontend(formal, front):
     button.textContent=enabled?'登记目标':button.dataset.defaultText;
   };
   teamMode?.addEventListener('change',syncTeamMode);
+  node('#outer-team-review-mode')?.addEventListener('change',syncTeamMode);
   for (const name of ['name','goal','acceptance']) {
     form.elements[name].addEventListener('input',()=>{if(teamConsent)teamConsent.checked=false;});
   }
@@ -148,6 +200,29 @@ def frontend(formal, front):
   form.addEventListener('reset',()=>setTimeout(syncTeamMode,0));
   syncTeamMode();
   const modeInput=node('#task-mode'), timeInput=node('#task-budget');""")
+    tasks = replace_once(tasks, '<h2>任务审批</h2>', '<h2>普通工单审批</h2>')
+    tasks = replace_once(tasks, '当前没有新的任务审批。', '当前没有新的普通工单审批。')
+    tasks = replace_once(tasks, '<h2>我的工单</h2>', "<h2>${homeQueue?'普通工单':'我的工单'}</h2>")
+    tasks = replace_once(tasks, """  function approvals(task) {
+    return task.cards.filter(card => card.state === 'open').map(card => {
+      const applicable = connected && !task.observation_stale && !task.runs?.some(r=>r.state==='unknown') && !task.revision_pending && !task.paused && card.binding?.approval === task.approval?.id
+        && card.binding?.version === task.version;""", """  function canAnswerApproval(task, card) {
+    return connected && !task.observation_stale && !task.runs?.some(r=>r.state==='unknown') && !task.revision_pending && !task.paused && card.binding?.approval === task.approval?.id
+      && card.binding?.version === task.version;
+  }
+  function approvals(task) {
+    return task.cards.filter(card => card.state === 'open').map(card => {
+      const applicable = canAnswerApproval(task, card);""")
+    tasks = replace_once(tasks, '<div class="next-action">', '<div class="next-action" id="section-actions" tabindex="-1">')
+    tasks = replace_once(tasks, '<form class="mission-section" data-research-follow=',
+                         '<form class="mission-section" id="section-research-follow" tabindex="-1" data-research-follow=')
+    tasks = replace_once(tasks, "    if (!tasks.some(task => task.id === selected)", """    homeQueue?.setOrdinary(fresh ? projectFormalOrdinaryDecisions(tasks, queueFor, canAnswerApproval, nextAction) : null);
+    if (!tasks.some(task => task.id === selected)""")
+    tasks = replace_once(tasks, "  start();\n})();", """  const homeQueue = mountFormalGoalQueue(node('#formal-home-decisions'),node('#formal-goal-home'),session,
+    openSection);
+  start();
+})();""")
+    tasks += "\n" + (REPO / "scripts/formal_home_goal_queue.js").read_text()
     for name, text in zip(FRONT_FILES, (server, html, tasks)):
         write(front / name, text)
     shutil.copy2(REPO / "scripts/formal_outer_canary.py", front / "outer_canary.py")
@@ -156,6 +231,8 @@ def frontend(formal, front):
     ui.mkdir()
     candidate = (BOARD / "index.html").read_text().replace('href="/style.css"', 'href="/outer-canary/style.css"').replace(
         'src="/app.js"', 'src="/outer-canary/app.js"').replace('<form id="new">', '<form id="new" hidden>')
+    candidate = replace_once(candidate, '<a id="map-link" href="/">王国地图</a><a href="#tickets">工单簿</a>',
+                             '<a id="map-link" href="/#tasks">工单工作台</a><a href="/workbench">工单簿</a>')
     write(ui / "index.html", candidate)
     app = replace_once((BOARD / "app.js").read_text(), "    form.hidden=!outer.workbench_entry;\n    byId('outer-opt-in').hidden=!outer.workbench_entry;\n", "")
     app = replace_once(app, "launch.hidden=false;launch.textContent", "launch.hidden=true;launch.textContent")
@@ -186,13 +263,19 @@ def frontend(formal, front):
     outer = replace_once(outer, "by('launch').hidden=false;", "by('launch').hidden=true;")
     outer = replace_once(outer, "if(query.has('new')){composer.showModal();", "if(query.has('new')){")
     outer = replace_once(outer, "'发布一个目标，开始第一段航程。'", "'请在普通新单入口提交合成索引试单。'")
-    outer = replace_once(outer, "by('map-link').href=chosen?'/?trip='+encodeURIComponent(chosen):'/';", "by('map-link').href='/';")
+    outer = replace_once(outer, "by('map-link').href=chosen?'/?trip='+encodeURIComponent(chosen):'/';",
+                         "by('map-link').href='/#tasks';")
     write(ui / "outer.js", outer)
     team = (BOARD / "goal_team.js").read_text().replace("'/api/tasks/", "'/api/outer-canary/tasks/").replace(
         "'/api/outer/'", "'/api/outer-canary/'").replace("'/api/outer'", "'/api/outer-canary/drafts'")
     write(ui / "goal_team.js", team)
-    for name in ("style.css", "goal_team.css", "task_presentation.js"):
-        shutil.copy2(BOARD / name, ui / name)
+    write(ui / "goal_team.css", (BOARD / "goal_team.css").read_text() + HOME_QUEUE_CSS)
+    style = replace_once((BOARD / "style.css").read_text(),
+                         ".mast{gap:.5rem}.mast nav{margin-left:auto}.mast nav a:last-child{display:none}",
+                         ".mast{gap:.5rem;flex-wrap:wrap}.mast nav{margin-left:auto;gap:.6rem}"
+                         ".mast nav a{display:inline-flex;align-items:center;min-height:44px;padding-inline:.25rem}")
+    write(ui / "style.css", style)
+    shutil.copy2(BOARD / "task_presentation.js", ui / "task_presentation.js")
 
 
 def backend(app):

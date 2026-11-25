@@ -35,6 +35,13 @@
     --goal-run-ink: #d7eaf8;
     --goal-focus: #9acfff;
   }
+  /* 正式首页和工单簿的外壳保留浅色，深色文字组件需要自己的底色。 */
+  .goal-team {
+    background: var(--goal-surface);
+    border: 1px solid var(--goal-line);
+    border-radius: 14px;
+    padding: clamp(12px, 2vw, 20px);
+  }
 }
 .goal-team {
   display: grid;
@@ -270,4 +277,33 @@
   border: 1px solid var(--goal-line);
   border-radius: 8px;
   background: var(--goal-soft);
+}
+
+.goal-team .goal-workflow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+  margin: 18px 0 4px;
+  padding: 0;
+  gap: 4px;
+}
+.goal-workflow li {
+  border-block-start: 3px solid var(--goal-line);
+  padding-block: 6px;
+  font-size: .82rem;
+  color: var(--goal-muted);
+}
+.goal-workflow [aria-current=step] {
+  color: var(--goal-primary);
+  border-color: currentColor;
+  font-weight: 750;
+}
+.goal-workflow small { display: block; font-size: .74rem; font-weight: 500; }
+.goal-team .goal-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 10px; }
+.goal-plans section { padding: 0 12px 8px; background: var(--goal-soft); border-radius: 8px; }
+.goal-detail-head .goal-actions { margin-top: 8px; }
+.goal-ticket .goal-content { padding-top: 16px; }
+@media (min-width: 960px) {
+  .goal-team.has-ticket { grid-template-columns: minmax(260px, .8fr) minmax(0, 2fr); }
+  .goal-team.has-ticket .goal-ticket { padding: clamp(18px, 2vw, 30px); }
 }

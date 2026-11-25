@@ -43,8 +43,9 @@ const innerRepairStates = {
 };
 const teamReviewModes = {
   review: {label:'比较方案并审稿', scope:'负责人和顾问分别提出方案，确定做法后，由顾问查看初稿并提出修改意见。'},
-  review_and_decide: {label:'从第 2 步审稿并请我定方向', scope:'从第 2 步起审稿。第 2 步初稿完成后请你定方向。'},
+  review_and_decide: {label:'分步交付，第 2 步请我定方向', scope:'适合至少两步能分别验收的工单。第 2 步初稿完成后请你定方向。'},
 };
+const canReviseAtDecision = row => row.journey?.modify ?? (row.status==='VERIFICATION_GAP');
 const blindOutcomes = {win:'团队胜',tie:'相当',loss:'团队负',unrated:'未评'};
 const time = value => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
 const renderValue = value => typeof value === 'string' ? value : value?.description || JSON.stringify(value) || '';
@@ -64,9 +65,11 @@ export function projectGoalRow(row,{allowFreeText=true}={}) {
   let label = view.label || '待核对', reason = view.instruction, next = view.next;
   const sequence = candidate?.sequence || row.delivery_sequence;
   if (station==='delivery' && sequence) label='v'+sequence+' 已交付';
-  if (station==='flight' && phase==='reviewing') label='正在独立核验';
+  // 新版的列表与原单共用后台投影，旧版原单仍可从当前派工回执还原状态。
+  const dispatchPhase=row.execution_phase || view.phase || row.execution?.goal_execution?.assignments?.findLast(a=>a.state==='dispatched')?.phase;
+  if (station==='flight' && phase==='reviewing' && !Object.hasOwn(view,'phase')) label=dispatchPhase==='coordinate'?'正在协调返工':'正在独立核验';
   if (station==='flight' && row.last_verified) reason=row.last_verified;
-  if (station==='flight' && phase==='executing' && canReadInnerRepairs(row)) {
+  if (station==='flight' && phase==='executing' && !Object.hasOwn(view,'inner_repair_status') && canReadInnerRepairs(row)) {
     const assignment=row.execution?.goal_execution?.assignments?.at(-1);
     const repair=assignment?.inner_repairs?.at(-1);
     if (assignment?.state==='dispatched' && ['repairing','rechecking'].includes(repair?.status))
@@ -95,6 +98,8 @@ export function projectGoalRow(row,{allowFreeText=true}={}) {
       next = row.question.question_text; action = allowFreeText ? '回答澄清' : '查看待澄清事项';
     } else if (view.approve) {
       label = '待批准'; next = '核对交付、验收、权限与预算，再决定是否批准。'; action = '查看本版授权';
+    } else if (row.status === 'AWAITING_APPROVAL' && view.pause) {
+      label = '待暂停旧版'; next = '暂停旧执行，停稳后再批准新版。'; action = '查看本版授权';
     } else if (canExtendBudget(row)) {
       label='待补预算';
       next='核对当前额度，决定要追加的时间或角色轮次。'; action='查看预算并决定';
@@ -114,12 +119,13 @@ export function projectGoalRow(row,{allowFreeText=true}={}) {
         if (!allowFreeText) reason='核对当前候选的交付文件和验收结果。';
         next = allowFreeText ? '核对当前候选和验收结果，签收或退回。' : '核对通过后签收交付。'; action = '查看待签收版本';
       }
-    } else if (view.modify || row.status === 'VERIFICATION_GAP') {
+    } else if (canReviseAtDecision(row)) {
       label = view.label || '待补条件';
-      if (allowFreeText) { next = '补充可验证的条件或说明需要调整的要求。'; action = '查看并补充'; }
-      else { anchor='criteria'; action='查看验收条件'; }
-    } else if (row.status === 'AWAITING_APPROVAL' && view.pause) {
-      label = '待暂停旧版'; next = '暂停旧执行，停稳后再批准新版。'; action = '查看本版授权';
+      if (allowFreeText) { anchor='revisions'; next = view.next || '补充可验证的条件或说明需要调整的要求。'; action = '查看并补充'; }
+      else {
+        station='unknown'; anchor='criteria';
+        next='本单仅支持查看验收条件与当前授权。'; action='查看验收条件';
+      }
     } else {
       station = 'unknown'; anchor = 'progress'; label = view.label || '待核对'; action = '查看原因';
     }
@@ -130,6 +136,29 @@ export function projectGoalRow(row,{allowFreeText=true}={}) {
     waitingSince: preference?.created_at || row.decision_since || row.question?.created_at || row.updated_at || '',
     due: preference?.due_at || row.decision_due_at || '',
   };
+}
+
+// 工单可退回早先阶段。只标明已知的当前位置，历史进度由有版本的回执说明。
+function workflowSteps(row, model) {
+  if (['unknown','dock'].includes(model.station) || ['PAUSED','STOPPED'].includes(row.status)) return null;
+  const phase=row.execution_phase || row.journey?.phase;
+  const status=row.execution?.status || row.execution_status;
+  let current;
+  if (model.station==='delivery') current=3;
+  else if (['DRAFT','ASSESSING','AWAITING_APPROVAL','AWAITING_CLARIFICATION','VERIFICATION_GAP','NEEDS_ATTENTION'].includes(row.status)) current=0;
+  else if (row.status==='AUTHORIZED') {
+    if (status==='awaiting_artifact_review') current=3;
+    else if (phase==='review' || (!Object.hasOwn(row.journey || {},'phase') && !phase && status==='reviewing')) current=2;
+    else current=1;
+  } else return null;
+  const stages=el('ol',null,'goal-workflow');
+  stages.setAttribute('aria-label','工单所在环节');
+  for (const [index,label] of ['接单与批准','派工与推进','独立核验','签收与交付'].entries()) {
+    const item=el('li',label);
+    if (index===current) { item.setAttribute('aria-current','step'); item.append(el('small','当前')); }
+    stages.append(item);
+  }
+  return stages;
 }
 
 export function sortQueue(rows, station) {
@@ -160,9 +189,14 @@ export function mountTeamReviewControl(anchor, initial='') {
     select.append(option);
   }
   if (Object.hasOwn(teamReviewModes,initial)) select.value=initial;
-  field.append(select);
+  const hint=el('small','请写明至少两步可以分别验收的成果。','goal-muted');
+  hint.id='team-review-hint';
+  const showHint=()=>{hint.hidden=select.value!=='review_and_decide';};
+  select.onchange=showHint;
+  select.setAttribute('aria-describedby',hint.id);
+  field.append(select,hint);
   anchor.after(field);
-  const sync=enabled=>{field.hidden=!enabled;select.disabled=!enabled;};
+  const sync=enabled=>{field.hidden=!enabled;select.disabled=!enabled;showHint();};
   sync(false);
   return sync;
 }
@@ -270,7 +304,7 @@ async function getFile(id, candidate, path) {
 }
 function previewTextFile(id, candidate, path, parent) {
   const preview=details('预览 '+path,'preview-'+candidate+'/'+path);
-  const content=el('pre'); content.textContent='正在核对文件…';
+  const content=el('div'); content.textContent='正在核对文件…';
   preview.append(content); parent.append(preview);
   let reading=false, done=false;
   preview.ontoggle=async()=>{
@@ -279,7 +313,17 @@ function previewTextFile(id, candidate, path, parent) {
     try {
       const response=await getFile(id,candidate,path);
       const text=await response.text();
-      content.textContent=text.length<=12000?text:text.slice(0,12000)+'\n预览到此。完整内容可下载。';
+      content.replaceChildren();
+      const limit=12000;
+      const source=text.slice(0,limit);
+      if (/\.html?$/i.test(path)) {
+        const reader=el('div',null,'goal-draft-reader goal-draft-rendered');
+        reader.tabIndex=0; reader.setAttribute('aria-label',path+'静态正文');
+        reader.append(staticMarkup(source));
+        if (!reader.textContent.trim()) reader.append(el('p','这份文件没有可预览的静态正文。'));
+        content.append(reader);
+      } else content.append(draftSource(source,path+'文件内容'));
+      if (text.length>limit) content.append(el('small','预览到此。完整内容可下载。','goal-muted'));
       done=true;
     } catch(error) { content.textContent='暂无法核对文件。'+error.message; }
     finally { reading=false; }
@@ -620,12 +664,12 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const counts = new Map();
     for (const row of shown) counts.set(row.title,(counts.get(row.title)||0)+1);
     const layout = filter==='all' ? Object.keys(queues) : filter ? [filter] : ['decision','flight','delivery'];
-    const key = JSON.stringify([focused,activeRegular,shown,layout,connected,regularFresh,checkedAt,Boolean(data)]);
+    const unconfirmed = !connected || !regularFresh;
+    const key = JSON.stringify([focused,activeRegular,shown,layout,connected,regularFresh,unconfirmed && checkedAt,Boolean(data)]);
     if (key===listKey) return;
     listKey = key;
     const saved = position(queueBox);
     queueBox.replaceChildren();
-    const unconfirmed = !connected || !regularFresh;
     connection.textContent = !data ? '正在读取工单' : unconfirmed
       ? '连接中断 · 上次更新 '+(checkedAt || '待核对') : '';
     for (const station of layout) {
@@ -929,6 +973,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
           else if(execution.status==='awaiting_artifact_review')label='待签收';
           else if(execution.status==='budget_exhausted')label='待补预算';
           else if(execution.status==='blocked')label='执行受阻';
+          else if(row.journey?.inner_repair_status || row.journey?.phase==='coordinate')label=row.journey.label;
           else if(activeAssignment && ['executing','reviewing'].includes(execution.status))label='正在'+(phases[activeAssignment.phase] || '推进');
         }
         item.append(el('span',label,'goal-chip'),el('strong',step.title||step.objective));
@@ -960,6 +1005,18 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     for (const [index,record] of records.entries()) {
       const label=[record.step,record.run==null?'':'Run '+record.run].filter(Boolean).join(' · ');
       const box=details(label || '审稿记录','team-handoff-'+record.id,index===0);
+      const plans=(row.execution?.team_activity || []).filter(call=>call.assignment===record.id &&
+        ['lead_plan','advisor_plan'].includes(call.purpose) && call.summary);
+      if (plans.length) {
+        const versions=details('查看双方原方案','team-plans-'+record.id);
+        const columns=el('div',null,'goal-plans');
+        for (const plan of plans) {
+          const part=el('section');
+          copy(part,plan.purpose==='lead_plan'?'负责人方案':'只读顾问的独立方案',plan.summary);
+          columns.append(part);
+        }
+        versions.append(columns); box.append(versions);
+      }
       copy(box,'负责人比较方案与取舍',record.comparison);
       if (record.draft) draftVersion(box,'审稿所见的初稿版本',record.draft);
       copy(box,'只读顾问看稿意见',record.review);
@@ -1046,7 +1103,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     for (const [path,sha] of files) {
       const file=el('div',null,'goal-file');
       if (downloadable && candidate.assignment) {
-        if(/\.(md|txt|csv|json)$/i.test(path)) previewTextFile(row.id,candidate.assignment,path,file);
+        if(/\.(html?|md|txt|csv|json)$/i.test(path)) previewTextFile(row.id,candidate.assignment,path,file);
         downloadFile(row.id,candidate.assignment,path,file,'下载 '+label+' · '+path);
       }
       else file.append(el('strong',path));
@@ -1206,7 +1263,6 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const existing=current?.state==='pending' || current?.state==='accepted' ? current : delivery ||
       (current?.state==='returned' ? current : null);
     parent.append(el('h3','成果与验收'));
-    displayInnerRepairs(row,parent);
     if (existing) {
       const name='v'+(existing.sequence || Math.max(1,reviews.length));
       const state=protectedBallot ?
@@ -1225,6 +1281,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       parent.append(el('p','尚无经过独立核验的交付文件。','goal-muted'));
       machineChecks(parent,flow.validation?.checks,'machine');
     }
+    displayInnerRepairs(row,parent);
     const past=[...(row.prior_deliveries || []),...reviews.filter(item=>item!==existing)].reverse();
     if (past.length && !protectedBallot) {
       const history=details('历史交付版本','past-deliveries');
@@ -1289,12 +1346,13 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       history.append(el('p',[time(item.at),item.title].filter(Boolean).join(' · ')));
     if (!history.querySelector('p')) history.append(el('p','尚无执行记录。','goal-muted'));
     parent.append(history);
-    if (protectedBallot) return;
+    if (protectedBallot || !canReadInnerRepairs(row)) return;
     if (supportsExperiments) displayBlindHistory(row,parent);
-    const diagnostics=details('角色与执行记录','outer-history',section==='outer-history');
+    const diagnostics=details('角色、工具与派工记录','outer-history',section==='outer-history');
     diagnostics.id='goal-section-outer-history';
     for (const item of execution?.team_activity || []) {
-      const activity=details([item.role,item.model,item.effort].filter(Boolean).join(' · '),'activity-'+(item.turn || item.assignment));
+      const roleLabel={lead:'负责人',advisor:'只读顾问',design_advisor:'设计顾问',implementer:'执行者',reviewer:'独立复核者'}[item.role] || item.role;
+      const activity=details([roleLabel,item.model,item.effort].filter(Boolean).join(' · '),'activity-'+(item.turn || item.assignment));
       copy(activity,'回执',item.summary);
       const tokens=item.usage?.total_tokens;
       activity.append(el('p',Number.isSafeInteger(tokens) && tokens>=0 ? '已上报 '+tokens.toLocaleString('zh-CN')+' tokens' : '用量未报告','goal-muted'));
@@ -1303,9 +1361,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       textList(activity,'工具记录',item.tools);
       diagnostics.append(activity);
     }
-    if (decisions.length) textList(diagnostics,'程序已登记的决定',decisions);
     parent.append(diagnostics);
-    if (callHistory && !preferenceOf(row) && !row.journey?.artifact_review && !row.approval_terms?.execution_profile) {
+    if (callHistory && canReadInnerRepairs(row)) {
       const placeholder=el('div');
       diagnostics.append(placeholder);
       let calls;
@@ -1316,7 +1373,11 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       };
       diagnostics.ontoggle=load; load();
     }
-    if (!canSendText(row) || ['PAUSED','STOPPED'].includes(row.status) || row.journey?.artifact_review || preferenceOf(row) || currentClarification(row)) return;
+    if (decisions.length) {
+      const ledger=details('程序已登记的决定','engine-decisions');
+      textList(ledger,null,decisions); diagnostics.append(ledger);
+    }
+    if (!canSendText(row) || row.journey?.modify===false || ['PAUSED','STOPPED'].includes(row.status) || row.journey?.artifact_review || preferenceOf(row) || currentClarification(row)) return;
     const update=details('补充或修改要求','revisions',section==='revisions'); update.id='goal-section-revisions';
     const draft=getDraft(row.id+'/changes/'+row.revision);
     const contract=row.goal_contract || {};
@@ -1433,6 +1494,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     },'quiet');
     copyId.id='goal-copy-id'; copyId.title=row.id;
     identity.append(copyId); header.append(heading,identity);
+    const workflow=workflowSteps(row,model);
+    if (workflow) header.append(workflow);
     const view=row.journey || {};
     const canDecide=model.station==='decision' && pref && !['PAUSED','STOPPED'].includes(row.status);
     const stagedKey=canDecide && !rejected ? stagedPreferenceKey(row,pref) : '';
@@ -1441,7 +1504,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const keepDirection=directionKey && openDirection?.key===directionKey;
     const now=keepDirection ? openDirection.now : el('section',null,'goal-now');
     const summary=el('div');
-    const nowTitle=el('h3','现在与下一步'); nowTitle.id='goal-section-decision'; nowTitle.tabIndex=-1;
+    const nowTitle=el('h3',model.station==='decision'?'等你决定':'现在与下一步'); nowTitle.id='goal-section-decision'; nowTitle.tabIndex=-1;
     summary.append(nowTitle);
     if (!connected) summary.append(el('p','连接中断。操作暂停，正在核对工单状态。','goal-muted'));
     if (!rejected && model.reason) summary.append(el('p',model.reason));
@@ -1469,7 +1532,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         model.anchor==='blind-review'?'查看匿名材料':'查看当前候选',()=>{
         panel='artifacts'; section=model.anchor; focusNext=true; writeRoute({id:row.id,anchor:section}); drawDetail(row);
       },'primary'));
-      else if (canSendText(row) && (view.modify || row.status==='VERIFICATION_GAP')) now.append(button('补充条件',()=>{
+      else if (panel!=='decisions' && model.anchor==='revisions' && canSendText(row) && canReviseAtDecision(row)) now.append(button('补充条件',()=>{
         panel='decisions'; section='revisions'; focusNext=true; writeRoute({id:row.id,anchor:section}); drawDetail(row);
       },'primary'));
     }

@@ -195,6 +195,136 @@ class OuterIntakeTest(unittest.TestCase):
                 decisions = [row['id'] for row in rows if row['journey']['station']=='decision']
                 self.assertEqual(decisions,[pending['id']])
 
+    def test_outer_list_and_detail_use_current_coordination_phase_and_decision(self):
+        from outer_channels import dispatch
+        from superagent.goal_engine import decision, pause_or_block
+
+        approved = self.approve(self.latest(self.send('生成合成工作报告')))
+        key = approved['id']
+
+        def views():
+            brief = dispatch(self.intake, 'web', 'list', {})[0]
+            detail = dispatch(self.intake, 'web', 'get', {'ticket_id':key})
+            self.assertEqual(brief['journey'], detail['journey'])
+            return detail['journey']
+
+        def coordinate(task):
+            task.update(status='reviewing', phase='review')
+            task['goal_execution']['stage'] = 'coordinate'
+
+        self.store.change(key, coordinate)
+        view = views()
+        self.assertEqual((view['phase'],view['label']), ('coordinate','正在协调'))
+
+        for action, label in [('REQUEST_APPROVAL','需确认变更'), ('BLOCKED','协调后受阻')]:
+            def stop_for_decision(task):
+                proposal = dict(action=action, reason='原授权未覆盖备用输入', plan_change='追加一个合成输入',
+                                remaining_risk='候选格式仍需核对', internal='调用细节')
+                pause_or_block(task, proposal['reason'])
+                decision(task, 'coordinated', proposal=proposal)
+
+            self.store.change(key, stop_for_decision)
+            view = views()
+            self.assertEqual((view['station'],view['label'],view['instruction']),
+                             ('decision',label,'原授权未覆盖备用输入'))
+            self.assertTrue(view['modify'])
+            self.assertFalse(view['approve'])
+            self.assertIn('修改要求', view['next'])
+            self.assertEqual([row['text'] for row in view['decision_items']], ['追加一个合成输入','候选格式仍需核对'])
+        # 通过普通修改入口产生新版契约，仍需先处理旧执行才能授权。
+        submitted = dispatch(self.intake, 'web', 'submit', dict(ticket_id=key, revision=approved['revision'],
+                            request_id='change-after-coordination', text='change 新增一个合成文件'))
+        updated = self.latest(submitted)
+        self.assertEqual(updated['status'], 'AWAITING_APPROVAL')
+        self.assertGreater(updated['goal_revision'], approved['goal_revision'])
+        self.assertFalse(views()['approve'])
+
+    def test_needs_attention_only_offers_edit_with_available_outer_budget(self):
+        from outer_channels import card, dispatch
+        from superagent.outer_intake import _MAX_TOKENS
+
+        submitted = self.send('生成合成工作报告')
+        self.intake.drain(limit=1)
+        self.model.fails = 2
+        draft = self.latest(submitted)
+        self.assertEqual(draft['status'], 'NEEDS_ATTENTION')
+        key = draft['id']
+
+        def check(can_modify):
+            brief = dispatch(self.intake, 'web', 'list', {})[0]
+            detail = dispatch(self.intake, 'web', 'get', {'ticket_id':key})
+            self.assertEqual(brief['journey'], detail['journey'])
+            self.assertEqual(detail['journey']['modify'], can_modify)
+            self.assertEqual('outer_edit' in dict(card(detail)['actions']), can_modify)
+            return detail['journey']['next']
+
+        self.assertIn('补充', check(True))
+        with self.store.connect() as db:
+            db.execute("UPDATE outer_invocations SET result=json_set(result,'$.usage.input_tokens',?) WHERE ticket=?",
+                       (_MAX_TOKENS,key))
+        self.assertEqual(check(False), '已达到外层模型预算。')
+
+    def test_public_stage_and_repair_status_follow_active_assignments(self):
+        from outer_channels import dispatch
+
+        approved = self.approve(self.latest(self.send('生成合成工作报告')))
+        key = approved['id']
+        expected = [('executing','execute','repairing','执行者正在返修'),
+                    ('executing','execute','rechecking','负责人正在复验新版'),
+                    ('queued','execute','waiting_review','等待负责人复验'),
+                    ('reviewing','review',None,'正在独立核验')]
+        for status, phase, repair, label in expected:
+            def set_progress(task):
+                task.update(status=status, phase=phase)
+                state = task['goal_execution']
+                state.update(stage=phase, assignments=[dict(id='earlier', state='settled', phase='execute',
+                                                          inner_repairs=[dict(status='repairing')])])
+                if status == 'executing':
+                    state['assignments'].append(dict(id='current', state='dispatched', phase='execute',
+                        transport='claimed', inner_repairs=[dict(status=repair, issue='不会进入列表的详细问题')]))
+                if status == 'queued':
+                    state['team_pending_repair'] = {'repair_record':{'status':repair}}
+
+            self.store.change(key, set_progress)
+            brief = dispatch(self.intake, 'web', 'list', {})[0]
+            detail = dispatch(self.intake, 'web', 'get', {'ticket_id':key})
+            self.assertEqual(brief['journey'], detail['journey'])
+            self.assertEqual((brief['execution_phase'],brief['inner_repair_status'],brief['journey']['label']),
+                             (phase,repair,label))
+            self.assertNotIn('不会进入列表', json.dumps(brief, ensure_ascii=False))
+
+    def test_public_comparison_reuses_saved_role_summaries(self):
+        from outer_channels import dispatch
+        from outer_workbench import create_task
+        from uuid import uuid4
+
+        self.workbench.outer_workbench_entry = True
+        self.workbench.outer_goal_team = True
+        approved = self.approve(self.latest(create_task(self.workbench, dict(workflow='outer', request_id=str(uuid4()),
+            name='比较合成方案', goal='生成合成报告', acceptance='通过检查', team_review_mode='review'))))
+        key = approved['id']
+        calls = [dict(sequence=i, role=role, writable=writable, status='completed', action='done', summary=summary)
+                 for i, role, writable, summary in ((1,'lead',False,'按主题分组'), (2,'advisor',False,'按时间排序'),
+                     (3,'lead',True,'按主题分组，组内按时间排序'), (4,'advisor',False,'日期列可读'))]
+
+        def stage(task):
+            task['goal_execution']['assignments'] = [
+                dict(id='review-draft', state='settled', phase='execute', team_review_mode='review', step=1,
+                     role_calls=calls),
+                dict(id='other', state='settled', phase='execute', step=1, role_calls=calls[:2]),
+                dict(id='continuation', state='settled', phase='execute', team_review_mode='review_and_decide',
+                     team_handoff_continuation={'draft_sha256':'bound'}, step=1, role_calls=calls[:1]),
+            ]
+
+        self.store.change(key, stage)
+        detail = dispatch(self.intake, 'web', 'get', {'ticket_id':key})
+        seen = [row for row in detail['execution']['team_activity'] if 'purpose' in row]
+        self.assertEqual([(row['purpose'],row['summary'],row['step'],row['assignment']) for row in seen], [
+            ('lead_plan','按主题分组',1,'review-draft'), ('advisor_plan','按时间排序',1,'review-draft'),
+            ('plan_comparison','按主题分组，组内按时间排序',1,'review-draft'),
+        ])
+        self.assertTrue(all('purpose' not in row for row in self.store.get(key)['goal_execution']['assignments'][0]['role_calls']))
+
     def test_clarification_reuses_ticket_and_atomic_approval_is_idempotent(self):
         first = self.send('vague', source_thread_id='root')
         self.assertTrue(self.send('vague', source_thread_id='root')['duplicate'])

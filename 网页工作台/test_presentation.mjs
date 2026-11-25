@@ -120,7 +120,7 @@ test('团队审稿记录显示真实初稿与三份摘要，锁票前隐藏工�
 test('普通表单仅在启用目标模式时开放团队审稿，切回时保留已选项', async()=>{
  const {mountTeamReviewControl}=await import('./goal_team.js');
  const previous=globalThis.document;
- const createElement=tag=>({tag,children:[],append(...nodes){this.children.push(...nodes);}});
+ const createElement=tag=>({tag,children:[],setAttribute(key,value){this[key]=value;},append(...nodes){this.children.push(...nodes);}});
  globalThis.document={createElement};
  try {
   const anchor={after(node){this.next=node;}};
@@ -134,6 +134,10 @@ test('普通表单仅在启用目标模式时开放团队审稿，切回时保�
   assert.equal(control.hidden,false);
   assert.equal(select.disabled,false);
   assert.equal(select.value,'review_and_decide');
+  assert.equal(control.children[1].hidden,false);
+  select.value='review'; select.onchange();
+  assert.equal(control.children[1].hidden,true);
+  select.value='review_and_decide'; select.onchange();
   sync(false); sync(true);
   assert.equal(select.value,'review_and_decide');
  } finally { globalThis.document=previous; }
@@ -151,6 +155,32 @@ test('原单区分执行者返修、负责人复验与外层独立核验', async
  assert.equal(projectGoalRow(ticket('passed','settled','reviewing')).label,'正在独立核验');
  const blind={criteria:[{required:true,verifier_id:'blind-projection'}]};
  assert.equal(projectGoalRow({...ticket('rechecking'),acceptance_contract:blind}).label,'正在执行');
+});
+
+test('首页按原单当前可用操作分流，优先处理仍在运行的旧版', async()=>{
+ const {projectGoalRow}=await import('./goal_team.js');
+ const row={id:'wb-projection',status:'AUTHORIZED',execution_status:'blocked',
+  journey:{station:'decision',label:'协调后受阻',modify:true,next:'修改要求后重新核对批准版本。'}};
+ assert.deepEqual([projectGoalRow(row).station,projectGoalRow(row).anchor],['decision','revisions']);
+ const fixed=projectGoalRow(row,{allowFreeText:false});
+ assert.deepEqual([fixed.station,fixed.anchor],['unknown','criteria']);
+ assert.doesNotMatch(fixed.next,/修改要求/);
+ const exhausted=projectGoalRow({...row,status:'VERIFICATION_GAP',journey:{...row.journey,modify:false,next:'已达到外层模型预算。'}});
+ assert.equal(exhausted.next,'已达到外层模型预算。');
+ assert.notEqual(exhausted.anchor,'revisions');
+ const pause=projectGoalRow({...row,status:'AWAITING_APPROVAL',journey:{...row.journey,pause:true}});
+ assert.deepEqual([pause.label,pause.anchor],['待暂停旧版','decision']);
+});
+
+test('协调、复验及隐藏的阶段采用同一份公开状态', async()=>{
+ const {projectGoalRow}=await import('./goal_team.js');
+ const row={id:'wb-coordination',status:'AUTHORIZED',execution_status:'reviewing',
+  journey:{station:'flight',phase:'coordinate',label:'正在协调返工'}};
+ assert.equal(projectGoalRow(row).label,'正在协调返工');
+ assert.equal(projectGoalRow({...row,journey:{...row.journey,phase:null,label:'正在核对回执'}}).label,'正在核对回执');
+ const hidden={...row,execution:{status:'executing',goal_execution:{assignments:[{state:'dispatched',inner_repairs:[{status:'repairing'}]}]}},
+  journey:{station:'flight',label:'正在执行',inner_repair_status:null}};
+ assert.equal(projectGoalRow(hidden).label,'正在执行');
 });
 
 test('待办先按已确认截止时间排序，再按等待起点和工单号排序', async()=>{
@@ -422,4 +452,46 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   assert.deepEqual(ui.events[0].body.answer,{text:'沿用实验流程'});
   assert.equal(Object.hasOwn(ui.events[0].body,'allow_model_input'),false);
  });
+});
+
+test('协调原单展开真实脱敏回执即可读到修法、保留版本、复验与四项工具', async()=>{
+ const {callHistory}=await import('./outer.js');
+ const {readFile}=await import('node:fs/promises');
+ const {call_trace:receipt}=JSON.parse(await readFile(new URL('../evidence/goal-team/regression-real-api.json',import.meta.url),'utf8'));
+ class Element {
+  children=[]; isConnected=true;
+  constructor(tag){this.tag=tag;}
+  append(...children){this.children.push(...children);}
+  after(element){this.next=element;}
+  setAttribute(name,value){this[name]=value;}
+  replaceChildren(...children){this.children=children;}
+ }
+ const previous={document:globalThis.document,location:globalThis.location};
+ try {
+  globalThis.document={createElement:tag=>new Element(tag)};
+  globalThis.location={hash:''};
+  const row={id:receipt.call,role:'goal_coordinator',state:'accepted',started_at:'2026-11-25T00:00:00Z'};
+  const article=new Element('article'), requests=[];
+  const panel=callHistory(article,async(name,args)=>{
+   requests.push([name,args]);
+   return name==='calls'?[row]:{...row,...receipt};
+  });
+  await panel.refresh('example',()=>true);
+  const entry=article.next.children.find(item=>item.tag==='details');
+  assert.match(entry.children[0].textContent,/目标协调/);
+  entry.open=true; await entry.ontoggle();
+  const body=entry.children[1];
+  const direct=body.children.map(item=>item.textContent||'').join('\n');
+  assert.ok(direct.includes(receipt.trace.decision.plan_change));
+  assert.ok(direct.includes(receipt.trace.decision.retained_artifacts[0].sha256));
+  assert.ok(direct.includes(receipt.trace.decision.verification_items[0]));
+  const tools=body.children.find(item=>item.tag==='ul');
+  assert.deepEqual(tools.children.map(item=>item.textContent),['读取失败证据 · 已返回','读取剩余预算 · 已返回','读取计划版本 · 已返回','读取已验文件版本 · 已返回']);
+  const technical=body.children.find(item=>item.tag==='details');
+  assert.equal(Boolean(technical.open),false);
+  assert.ok(technical.children.some(item=>item.textContent?.includes(receipt.tools[0].evidence_sha256)));
+  assert.deepEqual(requests,[['calls',{ticket_id:'example'}],['call',{ticket_id:'example',call_id:receipt.call}]]);
+ } finally {
+  globalThis.document=previous.document; globalThis.location=previous.location;
+ }
 });
