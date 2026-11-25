@@ -26,4 +26,6 @@
 
 [派工调度](../../网页工作台/superagent/ticket_dispatcher.py) · [工单绑定与订阅](../../网页工作台/superagent/outer_intake.py) · [内层审稿与复验](../../网页工作台/superagent/goal_team_run.py) · [归档与独立验收](../../网页工作台/superagent/outer_verification.py)
 
+在签名网关的隔离工作台，简单单由一个 Sol 执行者制作，下载的文件名清单与预期一致。复杂单由 Sol 和 Astra 分别提案。一次审稿超时后，从同一张工单继续，取回了内容相同的初稿，接着审稿和实施。机器验收通过，核对内容后在原单签收，下载文件的摘要与封存版本一致。[真实模型与下载验收记录](../../evidence/goal-team/router-ticket-teams.json)
+
 [开发工单的发布授权与回单](../operations/ticket-development-delivery.md)

@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "data": "synthetic",
+    "browser": "Google Chrome",
+    "entry": "正式形态的隔离签名网关",
+    "worker": "隔离 Autoloop/Codex 真实运行"
+  },
+  "ui_checks": {
+    "normal_create_defaults_to_router": true,
+    "documented_separate_user_decision_state": true,
+    "model_input_requires_explicit_consent": true,
+    "same_ticket_supplement_received": true,
+    "same_ticket_archive_download": true,
+    "fixture_503_preserves_draft_and_retry_request_id": true
+  },
+  "orders": {
+    "simple": {
+      "profile_version": 2,
+      "route": "direct",
+      "comparison_steps": [],
+      "workspace_and_dispatch_bound": true,
+      "role_receipts": [
+        {
+          "run": 2,
+          "role": "implementer",
+          "model": "gpt-6.2-sol",
+          "write_access": true,
+          "result": "completed"
+        }
+      ],
+      "outcome": "VERIFIED_COMPLETE",
+      "machine_checks": "1/1",
+      "download": {
+        "filename": "result.json",
+        "sha256": "bbc301a34d002528089d40f9db5e286fd5fb9254d046073acd24116b8377f409",
+        "expected_json_verified": true
+      }
+    },
+    "complex": {
+      "profile_version": 2,
+      "route": "compare",
+      "comparison_steps": [
+        1
+      ],
+      "workspace_and_dispatch_bound": true,
+      "role_receipts": [
+        {
+          "run": 5,
+          "role": "lead",
+          "model": "gpt-6.2-sol",
+          "write_access": false,
+          "result": "completed"
+        },
+        {
+          "run": 5,
+          "role": "advisor",
+          "model": "gpt-6.2-astra",
+          "write_access": false,
+          "result": "completed"
+        },
+        {
+          "run": 5,
+          "role": "lead",
+          "model": "gpt-6.2-sol",
+          "write_access": true,
+          "result": "completed"
+        },
+        {
+          "run": 5,
+          "role": "advisor",
+          "model": "gpt-6.2-astra",
+          "write_access": false,
+          "result": "failed"
+        }
+      ],
+      "initial_result": "比较方案与初稿完成，审稿轮达到派工时限",
+      "stage_continuation": {
+        "same_mandate": true,
+        "archived_prefix_receipts_reused": 3,
+        "initial_three_roles_repeated": false,
+        "same_draft_bytes": true,
+        "draft_sha256": "5751dcbcc3f3bf5c8595953ab83ddcc4fa2bc40f621a1a8fc18330d77f437401",
+        "resumed_run": 6,
+        "calls": [
+          {
+            "role": "advisor",
+            "model": "gpt-6.2-astra",
+            "write_access": false,
+            "result": "completed"
+          },
+          {
+            "role": "lead",
+            "model": "gpt-6.2-sol",
+            "write_access": false,
+            "result": "completed"
+          }
+        ],
+        "planned_stage": "继续当前封存初稿审稿"
+      },
+      "outcome": "VERIFIED_COMPLETE",
+      "archive": {
+        "filename": "signup.html",
+        "sha256": "5751dcbcc3f3bf5c8595953ab83ddcc4fa2bc40f621a1a8fc18330d77f437401",
+        "machine_checks": "1/1",
+        "criteria_content_verified": true,
+        "synthetic_operator_signed": true,
+        "final_bytes_match_original_sealed_draft": true
+      },
+      "implementation_roles": [
+        {
+          "role": "implementer",
+          "model": "gpt-6.2-sol",
+          "result": "completed",
+          "write_access": true
+        },
+        {
+          "role": "lead",
+          "model": "gpt-6.2-sol",
+          "result": "completed",
+          "write_access": false
+        }
+      ]
+    }
+  },
+  "withdraw_model_suggestions": {
+    "source": "旧合成工单账本的隔离副本",
+    "withdrawn_suggestions": 3,
+    "prior_goal_revision": 3,
+    "new_goal_revision": 4,
+    "historical_snapshot_bytes_preserved": true,
+    "owner_requirements_preserved": true,
+    "scope_and_forbidden_operations_preserved": true,
+    "prior_draft_approved": false,
+    "authorization_issued": false,
+    "result": "重新设计验收后，新版无缺口待批准"
+  }
+}
