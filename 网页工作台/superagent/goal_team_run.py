@@ -47,6 +47,14 @@ MAX_OPTIONS = 3
 OPTION_LENGTHS = {'id':40,'label':80,'text':1800}
 
 
+class DraftTimeSliceEnded(Problem):
+    """当前派工不够开始下一角色，已经结算的回执可供续办。"""
+
+    def __init__(self, started):
+        super().__init__('当前派工时限不足以开始下一审稿角色，已完成回执保留')
+        self.evidence = {'started_ns':started, 'ended_ns':time.time_ns()}
+
+
 def materialize(files, directory, *, readonly=False):
     directory.mkdir(mode=0o700)
     for relative, content in files.items():
@@ -61,12 +69,15 @@ def materialize(files, directory, *, readonly=False):
             path.chmod(0o400)
 
 
-def sealed_workspace(directory, reference):
+def sealed_workspace(directory, reference, *, allow_unsealed=False):
     identifier = reference.get('assignment')
     if (type(identifier) is not str or len(identifier) != 32
             or any(c not in '0123456789abcdef' for c in identifier)):
         raise Problem('团队候选引用不存在')
     target = directory.parent / identifier / 'sealed'
+    if allow_unsealed and not os.path.lexists(target):
+        # Worker 在已保存写入回执后、封存重命名前退出时，必须核对整个原工作区。
+        target = target.with_name('candidate')
     if (not target.is_dir() or target.is_symlink()
             or capture(target)[0]['digest'] != reference.get('artifact_sha256')):
         raise Problem('团队候选与登记摘要不一致')
@@ -149,6 +160,7 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
     from superagent.goal_app_server import GoalAppServerError
     from superagent.team_profiles import invoke_role, role_effort, supported
     from superagent.goal_runtime import save_team_recovery
+    from superagent.goal_engine import DRAFT_ROLE_ORDER, resumable_drafting
 
     config = assignment['execution_profile']
     if not supported(config):
@@ -179,7 +191,11 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
     def ask(role, instruction, data, *, writable=False, effort='high', response_schema=None,
             actions=None, verification=None, candidate_source=None, expected_sha256=None,
             capture_output=False, draft_observations=False, handoff_scope=False, read_paths=None):
-        if len(calls) >= allowed or deadline - time.monotonic() < TEAM_ROLE_MIN_SECONDS:
+        if len(calls) >= allowed:
+            raise Problem('本次派工剩余额度不足以继续内层调用')
+        if deadline - time.monotonic() < TEAM_ROLE_MIN_SECONDS:
+            if resumable_drafting(assignment):
+                raise DraftTimeSliceEnded(start)
             raise Problem('本次派工剩余额度不足以继续内层调用')
         has_preference = bool(model_context['owner_preference'])
         schema = response_schema or RESULT
@@ -563,8 +579,9 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
         )
         return finish_implementation(result, require_checked=True, handoff_selection=handoff_selection)
     if review_mode in TEAM_REVIEW_MODES:
-        if allowed < 5:
-            raise Problem('草稿审阅首派需要五个可用角色轮次')
+        preserved = (assignment.get('draft_resume') or {}).get('calls', ())
+        if len(preserved) + allowed < len(DRAFT_ROLE_ORDER):
+            raise Problem('草稿审阅缺少剩余角色轮次')
         if ((decision_allowed and (review_mode not in PREFERENCE_REVIEW_MODES or model_context['owner_preference']))
                 or (decision_required and review_mode != 'review_and_decide')):
             raise Problem('本步选择状态与派工登记不一致')
@@ -572,15 +589,27 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
                                ('goal','stage','approved_criteria','approved_goal_contract')}
         independent_context['original_requirements'] = stage_context['original_requirements']
         baseline_binding = {'candidate_source':workspace, 'expected_sha256':baseline_checkpoint['digest']}
-        lead_plan = ask(
+        if any(call.get('candidate_sha256') != baseline_checkpoint['digest'] for call in preserved[:2]):
+            raise Problem('已保留的独立方案对应另一份原稿')
+
+        def drafting_role(index, *args, **kwargs):
+            if index < len(preserved):
+                call = preserved[index]
+                result = {key:call[key] for key in ('action','summary','retain','verify')}
+                result['options'] = call.get('options', [])
+                result.update({key:call[key] for key in ('observations','handoff_scope') if key in call})
+                return validated_result({'result':result})
+            return ask(*args, **kwargs)
+
+        lead_plan = drafting_role(0,
             'lead', '先读原话、批准的条款和实际上一版，提出本步方案与保留项。',
             independent_context, effort='medium', actions=('done',), **baseline_binding,
         )
-        independent_plan = ask(
+        independent_plan = drafting_role(1,
             'advisor', '自己读同样的原话、条款和实际上一版，独立提出方案与一个可观察的反例。',
             independent_context, effort='medium', actions=('done',), **baseline_binding,
         )
-        comparison = ask(
+        comparison = drafting_role(2,
             'lead', '比较负责人方案与顾问独立方案，说明具体采纳与舍弃的理由。'
             '在工作区写出本步可审阅的实际初稿。需要本人选择时，先把共同部分做成真实初稿，'
             '并给出基于该草稿的可选方向，留待本人决定。',
@@ -589,12 +618,25 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
              'previous_checkpoint':baseline_checkpoint},
             writable=True, effort='medium', actions=('done',), capture_output=True,
         )
-        draft = seal(workspace,directory)
+        if len(preserved) >= 3:
+            comparison_call = preserved[2]
+            source = sealed_workspace(directory,{
+                'assignment':comparison_call['id'].partition(':')[0],
+                'artifact_sha256':comparison_call['candidate_sha256'],
+            }, allow_unsealed=True)
+        else:
+            comparison_call = calls[-1]
+            source = workspace
+        draft = seal(source,directory)
         if (not draft['files'] or draft['digest'] == baseline_checkpoint['digest']
-                or draft['digest'] != calls[-1].get('candidate_sha256')):
+                or draft['digest'] != comparison_call.get('candidate_sha256')):
             raise Problem('负责人未形成与回执摘要一致的可审阅新草稿')
+        if resumable_drafting(assignment) and len(preserved) < 3:
+            # 封存制作轮，让 Astra 的实物核查有新的时限，不把旧轮消耗转嫁给下一角色。
+            return dict(report, draft_checkpoint=True, checkpoint=draft, workspace_id=assignment['id'],
+                        evidence={'started_ns':start,'ended_ns':time.time_ns()})
         draft_binding = {'candidate_source':directory/'sealed','expected_sha256':draft['digest']}
-        draft_review = ask(
+        draft_review = drafting_role(3,
             'advisor', '用本地读取工具打开实际封存草稿。observations 每条写精确相对 path、从文件逐字引用的 '
             'excerpt 和具体 issue。优先指出确定的问题或可观察风险；若未发现问题，说明核对的位置与结论。'
             '只有不可逐字引用的非文本文件可将 excerpt 留空。',
@@ -608,7 +650,7 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
                 '只有存在新的实质取舍确需本人判断时才交回 ask；可以自行决定就交 done，options 留空。'
             ) + '交回 ask 时附三组有实质差别的 options，说明各自影响，summary 写清要本人决定的问题。'
             lead_actions = ('ask',) if decision_required else ('done','ask')
-        instruction = ask(
+        instruction = drafting_role(4,
             'lead', '打开同一封存草稿，对顾问的实物意见说明采纳或舍弃。'
             '在 verify、retain 用自然语言概括复查和保留项。用 handoff_scope.variants 写可自动核对的范围。'
             '交 done 时仅一项且 option_id 留空，交 ask 时每个 options.id 恰有一项。'

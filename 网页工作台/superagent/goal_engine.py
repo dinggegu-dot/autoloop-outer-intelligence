@@ -22,6 +22,7 @@ EVENT = 'workbench.goal.assignment'
 POLICY_VERSION = 1
 CALL_LIMIT_SECONDS = 240
 TEAM_DRAFT_LIMIT_SECONDS = 330
+DRAFT_ROLE_ORDER = (('lead',False),('advisor',False),('lead',True),('advisor',False),('lead',False))
 REPAIR_LIMIT = 2
 PACKAGE_LIMIT = 4
 PACKAGE_ROUTES = {
@@ -77,6 +78,22 @@ def assignment_route(assignment):
 
 def team_candidate_assignment(assignment):
     return bool(assignment.get('execution_profile')) and assignment['phase'] in ('execute','repair')
+
+
+def resumable_drafting(assignment):
+    return (assignment.get('team_review_mode') and assignment.get('execution_profile', {}).get('version', 1) >= 2
+            and not assignment.get('team_handoff_continuation') and not assignment.get('repair_continuation'))
+
+
+def draft_role_prefix(assignment):
+    completed = list((assignment.get('draft_resume') or {}).get('calls', ()))
+    for call in assignment.get('role_calls', ()):
+        if call.get('status') != 'completed':
+            break
+        completed.append(call)
+    if tuple((call.get('role'),call.get('writable')) for call in completed) != DRAFT_ROLE_ORDER[:len(completed)]:
+        raise Problem('审稿断点的原角色顺序无法核对')
+    return completed
 
 
 def team_execution_route(task):
@@ -405,6 +422,8 @@ class GoalEngine:
                         remaining -= self._minimum_review_seconds(task)
                     pending = state.get('team_pending_repair')
                     handoff = state.get('team_pending_handoff')
+                    draft = self._draft_resume(task) if not pending and not handoff and team_review_mode(task,phase) else None
+                    conclusion_only = draft and len(draft['calls']) == len(DRAFT_ROLE_ORDER)
                     if any(record and not self._same_team_candidate_scope(task,record)
                            for record in (pending,handoff)) or (
                                handoff and handoff['mode'] != team_review_mode(task,phase)):
@@ -427,7 +446,7 @@ class GoalEngine:
                             saved = '返修新版和问题已保存。' if reviewing_repair else '原候选和问题已保存。'
                             pause_or_block(task, action + '还需' + '和'.join(missing) + '。' + saved, budget=True)
                             return
-                    elif self._team_role_slots(state) <= 0:
+                    elif self._team_role_slots(state) <= 0 and not conclusion_only:
                         pause_or_block(task,'内层角色调用额度用完',budget=True)
                         return
                     elif remaining < MIN_TEAM_ASSIGNMENT_SECONDS:
@@ -437,6 +456,9 @@ class GoalEngine:
                         needed = 5
                         if handoff:
                             needed = 1 if explicit_keep_answer(handoff['handoff']['instruction'],answer) else 2
+                        else:
+                            if draft:
+                                needed = len(DRAFT_ROLE_ORDER)-len(draft['calls'])
                         missing = needed - self._team_role_slots(state)
                         if missing > 0:
                             pause_or_block(task,f'审稿及续办本轮还需 {missing} 个角色轮次',budget=True)
@@ -534,6 +556,56 @@ class GoalEngine:
             'assignment':pending['source_assignment'], 'artifact_sha256':pending['base_sha256'],
             'files':pending['files'],
         }
+
+    @staticmethod
+    def _recoverable_draft_end(assignment):
+        report = assignment.get('report')
+        if report and report.get('draft_checkpoint') is True and not report.get('error'):
+            return True
+        if report and report.get('draft_time_slice_ended') is True:
+            return True
+        last = (assignment.get('role_calls') or [{}])[-1]
+        return (last.get('error_code') in ('timeout','process_timeout')
+                or report is None and assignment.get('transport') in ('nothing','cancelled','done'))
+
+    @staticmethod
+    def _draft_resume(task):
+        state = flow(task)
+        stage = state['stage']
+        previous = next((row for row in reversed(state['assignments'])
+                         if row['phase'] == stage and row['step'] == task['step'] and row['version'] == task['version']), None)
+        if not previous or previous['state'] != 'settled' or not resumable_drafting(previous):
+            return None
+        old = previous.get('outer_binding') or {}
+        live = outer_binding(task)
+        previous_error = (previous.get('report') or {}).get('error')
+        answer = team_preference_for_step(task).get('answer') or {}
+        if (not live or not GoalEngine._draft_authorization_continues(state,old,live)
+                or previous.get('preference_event') != answer.get('event')
+                or previous.get('execution_profile') != profile(state)
+                or previous['team_review_mode'] != team_review_mode(task,stage)
+                or not (GoalEngine._recoverable_draft_end(previous) or previous_error)):
+            return None
+        calls = draft_role_prefix(previous)
+        if len(calls) == len(DRAFT_ROLE_ORDER) and previous_error and not GoalEngine._recoverable_draft_end(previous):
+            calls = calls[:-1]
+        old_resume = previous.get('draft_resume') or {}
+        stalled = 0 if len(calls) > len(old_resume.get('calls', ())) else old_resume.get('stalled',0)+1
+        return {'calls':calls, 'stalled':stalled, 'previous_assignment':previous['id']}
+
+    @staticmethod
+    def _draft_authorization_continues(state, old, live):
+        budget_fields = {'mandate_revision','approval_event_id','authorization_digest'}
+        if any(old.get(key) != live[key] for key in set(live)-budget_fields-{'stop_generation'}):
+            return False
+        if old.get('mandate_revision') == live['mandate_revision']:
+            return all(old.get(key) == live[key] for key in budget_fields)
+        # 经本人另签的追加预算复制原权限，只改变资源额度与批准记录。
+        revision, approval = old.get('mandate_revision'), old.get('approval_event_id')
+        for event in state['decisions']:
+            if event['kind'] == 'budget_extended' and event['old_mandate'] == revision:
+                revision, approval = event['mandate'], event['approval']
+        return (revision,approval) == (live['mandate_revision'],live['approval_event_id'])
 
     @staticmethod
     def _handoff_answer(task, handoff):
@@ -639,21 +711,22 @@ class GoalEngine:
             details.update(execution_profile=profile(state), candidate_base=state.get('active_candidate'))
             if phase in ('execute','repair'):
                 slots = GoalEngine._team_role_slots(state)
-                if slots <= 0:
+                mode = team_review_mode(task,phase)
+                pending = state.get('team_pending_repair')
+                handoff = state.get('team_pending_handoff')
+                draft = GoalEngine._draft_resume(task) if mode and not pending and not handoff else None
+                if slots <= 0 and not (draft and len(draft['calls']) == len(DRAFT_ROLE_ORDER)):
                     raise Problem('内层角色调用额度用完')
-                details['role_slots'] = slots
+                details['role_slots'] = max(0,slots)
                 route = team_execution_route(task)
                 if route is not None:
                     details.update(execution_route=route, route_reason=task['plan']['route_reason'])
                     if route == 'direct' and phase == 'execute':
                         details['role_slots'] = 1
-                mode = team_review_mode(task,phase)
                 if mode:
                     details.update(team_review_mode=mode,
                                    team_decision_allowed=(mode in PREFERENCE_REVIEW_MODES),
                                    team_decision_required=(mode == 'review_and_decide' and task['step'] == 1))
-                pending = state.get('team_pending_repair')
-                handoff = state.get('team_pending_handoff')
                 if handoff and (not GoalEngine._same_team_candidate_scope(task,handoff)
                                 or not mode or handoff['mode'] != mode):
                     raise Problem('不能续办旧阶段或旧验收下的审稿草稿')
@@ -673,6 +746,8 @@ class GoalEngine:
                 elif handoff:
                     details['candidate_base'] = GoalEngine._pending_candidate_base(handoff)
                     details['team_handoff_continuation'] = handoff['handoff']
+                elif draft:
+                    details.update(draft_resume=draft, role_slots=len(DRAFT_ROLE_ORDER)-len(draft['calls']))
                 answer = (GoalEngine._handoff_answer(task,handoff) if handoff and handoff['decision_required']
                           else team_preference_for_step(task).get('answer'))
                 if handoff and handoff['decision_required'] and not answer:
@@ -920,6 +995,14 @@ class GoalEngine:
             if scoped and (transport != 'done' or not valid or report.get('error')):
                 self._record_scoped_proposal(task,assignment,report if valid else None,'rejected',
                                              '未收到可验证的协调提案')
+            if resumable_drafting(assignment) and self._recoverable_draft_end(assignment):
+                resume = self._draft_resume(task)
+                if resume and resume['stalled'] <= 1:
+                    decision(task,'draft_resume_queued',assignment=key,completed_roles=len(resume['calls']))
+                    return
+                if resume and resume['calls']:
+                    pause_or_block(task,'审稿未能继续，已保留完成回执和可核对草稿。可先暂停，再从原单继续剩余角色。')
+                    return
             if not valid or (transport != 'done' and not (recovered and transport == 'nothing')):
                 if team_candidate:
                     pause_or_block(task,recovery_error or '团队派工已结束，缺少可核对的候选回执')
@@ -1264,12 +1347,19 @@ class GoalEngine:
         calls = assignment.get('role_calls') or []
         pending_review = 'repair_review_pending' in report
         settled_calls = calls
+        if 'team_handoff' in report and resumable_drafting(assignment):
+            settled_calls = draft_role_prefix(assignment)
+            if len(settled_calls) != len(DRAFT_ROLE_ORDER) or (
+                    len(calls) + len((assignment.get('draft_resume') or {}).get('calls', ())) != len(settled_calls)):
+                raise Problem('恢复的完整审稿回执缺少既定角色')
         if pending_review and len(calls) > 1 and (calls[-1]['role'],calls[-1]['writable']) == ('lead',False):
             # 复验过程中 Worker 退出时，只把已完成的写入纳入待复验凭证。
             settled_calls = calls[:-1]
         sessions = [call.get('session') for call in settled_calls]
         previous = {call.get('session') for prior in state['assignments'] if prior is not assignment
                     for call in prior.get('role_calls', [])}
+        reused = {call.get('session') for call in (assignment.get('draft_resume') or {}).get('calls', ())}
+        previous.difference_update(reused)
         if (assignment['step'] != task['step'] or not settled_calls
                 or any(call.get('status') != 'completed' or not call.get('turn') for call in settled_calls)
                 or any(not session or session in previous for session in sessions)
@@ -1294,7 +1384,7 @@ class GoalEngine:
                 raise Problem('直接实施只允许一个可写执行者')
         pending = state.get('team_pending_handoff')
         if 'team_handoff' in report:
-            self._accept_team_handoff(task,assignment,report,calls)
+            self._accept_team_handoff(task,assignment,report,settled_calls)
             return
         if mode:
             self._verify_handoff_continuation(task,assignment,settled_calls,checkpoint,pending,partial=pending_review)
@@ -1378,8 +1468,7 @@ class GoalEngine:
         handoff = report['team_handoff']
         checkpoint = report['checkpoint']
         asks = report['result']['action'] == 'ask'
-        route = [('lead',False),('advisor',False),('lead',True),('advisor',False),('lead',False)]
-        identity = [(call['role'],call['writable']) for call in calls]
+        identity = tuple((call['role'],call['writable']) for call in calls)
         if (not assignment.get('team_review_mode') or state.get('team_pending_handoff')
                 or assignment.get('team_handoff_continuation') or assignment.get('repair_continuation')
                 or 'deferred_repair' in report or 'repair_review_pending' in report
@@ -1387,7 +1476,7 @@ class GoalEngine:
                 or set(handoff) != {'comparison','draft_review','instruction','draft_sha256'}
                 or handoff['instruction'] != report['result']
                 or handoff['draft_sha256'] != checkpoint['digest'] or not checkpoint['files']
-                or identity != route):
+                or identity != DRAFT_ROLE_ORDER):
             raise Problem('缺少与封存草稿对应的分阶段审稿回执')
         baseline = calls[0].get('candidate_sha256')
         candidate_base = assignment.get('candidate_base')
@@ -1519,7 +1608,8 @@ class GoalEngine:
                 base = parent.get('candidate_base')
             refs = {
                 (ref['event_id'], ref['sha256']): ref for row in reversed(lineage)
-                for role in row.get('role_calls', []) if role['status'] == 'completed'
+                for role in [*(row.get('draft_resume') or {}).get('calls', ()), *row.get('role_calls', ())]
+                if role['status'] == 'completed'
                 for ref in role.get('material_refs', [])
             }
             state['active_candidate']['material_refs'] = list(refs.values())
@@ -2126,6 +2216,17 @@ class GoalEngine:
         if (state.get('outer') or {}).get('mandate', {}).get('workflow_profile') == ROUTER_TEAM:
             context['notes'] = self._authorized_materials(task)
             context['ticket_team'] = {'id':ticket, 'workflow_profile':ROUTER_TEAM}
+            if prefix := (assignment.get('draft_resume') or {}).get('calls'):
+                original = prefix[0].get('material_refs', [])
+                current_materials = {
+                    (item['event_id'],item['source'],hashlib.sha256(item['body'].encode()).hexdigest()):item
+                    for item in context['notes']
+                }
+                keys = [(ref['event_id'],ref['source'],ref['sha256']) for ref in original]
+                if (any(call.get('material_refs',[]) != original for call in prefix)
+                        or any(key not in current_materials for key in keys)):
+                    raise Problem('草稿续办的原授权资料无法按原指纹核对',409)
+                context['notes'] = [current_materials[key] for key in keys]
         reviews = state.get('artifact_reviews') or []
         if assignment['phase']=='repair' and reviews and reviews[-1]['state']=='returned':
             from superagent.outer_intake import _model_text

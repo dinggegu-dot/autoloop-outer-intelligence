@@ -170,6 +170,13 @@ def verify_team_seal(directory, report, task=None, assignment=None):
     checkpoint,files,_ = capture(sealed)
     if checkpoint != report.get('checkpoint'):
         raise Problem('封存版本与回执不一致')
+    if report.get('draft_checkpoint') is True:
+        from superagent.goal_engine import draft_role_prefix, resumable_drafting
+        prefix = draft_role_prefix(assignment or {})
+        if (not resumable_drafting(assignment or {}) or len(prefix) != 3 or not files
+                or prefix[2].get('candidate_sha256') != checkpoint['digest']
+                or report.get('workspace_id') != assignment['id']):
+            raise Problem('未完成审稿的草稿与制作角色原回执不一致')
     if 'team_handoff' in report:
         from superagent.goal_team_handoff import validate_draft_observations, validate_handoff_scopes
         handoff = report['team_handoff']
@@ -515,6 +522,7 @@ def worker(store, verification):
 
 def execute_assignment(store, assignment, directory, verification):
     from superagent.goal_codex import invoke
+    from superagent.goal_team_run import DraftTimeSliceEnded
     contract = assignment.get('verification_contract')
     outer = assignment.get('outer_binding')
     report = {'id':assignment['id'],'run':assignment['run'],'version':assignment['version'],
@@ -673,6 +681,8 @@ def execute_assignment(store, assignment, directory, verification):
                 report['delivery'] = {'assignment':assignment['id'],'files':after['files']}
     except StaleCoordination as exc:
         report.update(coordination_dispatch_stale=True,error=str(exc))
+    except DraftTimeSliceEnded as exc:
+        report.update(draft_time_slice_ended=True,error=str(exc),evidence=exc.evidence)
     except Exception as exc:
         report['error'] = f'{type(exc).__name__}: {str(exc)[:240]}'
     return report

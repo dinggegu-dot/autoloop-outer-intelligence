@@ -596,6 +596,79 @@ class OuterExecutionTests(unittest.TestCase):
         self.assertEqual(finished['status'],'completed')
         self.assertEqual(finished['goal_delivery']['material_refs'],[material])
 
+    def test_router_drafting_survives_early_and_sealed_review_timeouts(self):
+        from superagent.goal_app_server import GoalAppServerError
+        from superagent.team_profiles import new_team_profile
+
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion())
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=new_team_profile(),workflow_profile=registry.ROUTER_TEAM,
+            team_review_mode=ADAPTIVE_REVIEW,budget_seconds=3600))
+        self.plan(['one'])
+        seen = []
+        material = {'event_id':'original-material','source':'web','body':'原批准材料'}
+        later_material = {'event_id':'later-material','source':'web','body':'封存后才来的资料'}
+        notes = [material]
+
+        def invoke(**options):
+            sequence = len(seen) + 1
+            seen.append((options['model'],options['sandbox']))
+            data = json.loads(options['prompt'].rsplit('\n',1)[-1])
+            self.assertEqual(data['approved_materials'],[material])
+            timing = dict(started_ns=1_000_000_000,ended_ns=2_000_000_000)
+            if sequence in (2,5):
+                raise GoalAppServerError('timeout','模拟角色超时',evidence=timing)
+            result = dict(action='done',summary='可核对的角色回执',options=[],retain=[],verify=[])
+            if sequence == 4:
+                (options['workspace']/'one.json').write_text('{"ok":true}')
+            if sequence == 6:
+                self.assertEqual((options['workspace']/'one.json').read_text(),'{"ok":true}')
+                result['observations'] = [{'path':'one.json','excerpt':'true','issue':'核对字段'}]
+            if sequence == 7:
+                result['verify'] = ['核对布尔内容']
+                result['handoff_scope'] = {'variants':[dict(option_id='',mode='keep',retained=[],
+                                                          changes=[],removed_paths=[])]}
+            challenge = options['read_challenge'] or {}
+            tools = [dict(name='shell',settled=True,paired=True,status='completed',exit_code=0,
+                          candidate_reads=list(challenge.values()))] if challenge else []
+            return dict(result=result,model=options['model'],session=f'role-session-{sequence}',
+                        turn=f'role-turn-{sequence}',tools=tools,**timing)
+
+        attempts = []
+        with (patch('superagent.goal_app_server.invoke',side_effect=invoke),
+              patch.object(GoalEngine,'_authorized_materials',side_effect=lambda task: list(notes))):
+            for completed in (0,1,3,3):
+                assignment,directory = self.launch_team_stage()
+                directory.mkdir(parents=True)
+                (directory/'entered').write_text(str(assignment['run']))
+                self.assertEqual(len(assignment.get('draft_resume',{}).get('calls',())),completed)
+                report = execute_assignment(self.store,assignment,directory,None)
+                save_json(directory/'report.json',report)
+                task = self.settle_team_from_disk(assignment,'done')
+                self.assertEqual(task['status'],'queued',task['error'])
+                attempts.append((directory,report))
+                if completed == 1:
+                    notes.append(later_material)
+
+        self.assertIn('模拟角色超时',attempts[0][1]['error'])
+        self.assertTrue(attempts[1][1]['draft_checkpoint'])
+        self.assertIn('模拟角色超时',attempts[2][1]['error'])
+        self.assertEqual(attempts[3][1]['checkpoint'],attempts[1][1]['checkpoint'])
+        self.assertEqual((attempts[1][0]/'sealed/one.json').read_bytes(),
+                         (attempts[3][0]/'sealed/one.json').read_bytes())
+        self.assertEqual(flow(task)['team_pending_handoff']['base_sha256'],attempts[1][1]['checkpoint']['digest'])
+        self.assertEqual(seen,[
+            ('gpt-6.2-sol','read-only'),('gpt-6.2-astra','read-only'),('gpt-6.2-astra','read-only'),
+            ('gpt-6.2-sol','workspace-write'),('gpt-6.2-astra','read-only'),('gpt-6.2-astra','read-only'),
+            ('gpt-6.2-sol','read-only'),
+        ])
+        continuation,directory = self.launch_team_stage()
+        self.assertEqual(continuation['candidate_base']['artifact_sha256'],attempts[1][1]['checkpoint']['digest'])
+        done = self.finish_team_stage(continuation,directory)
+        self.assertEqual(done['status'],'completed')
+        self.assertEqual(done['goal_delivery']['artifact_sha256'],attempts[1][1]['checkpoint']['digest'])
+
     def test_required_team_decision_rejects_done_handoff(self):
         self.staged_team_plan('review_and_decide','one','two')
         first,directory = self.launch_team_stage()
