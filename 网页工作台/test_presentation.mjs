@@ -520,6 +520,18 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   const ui=await mount(t,{...ticket,development_delivery:{status:'live',receipt:{merge:'a'.repeat(40)}}},{panel:'artifacts'});
   assert.equal(ui.control('section-development-delivery').querySelector('small').textContent,'线上验证待核对');
  });
+ await t.test('另签的额外文件与缺少独立审查的回执都可在原单核对',async t=>{
+  const authorization={repo:'example/project',number:7,head:'a'.repeat(40),mode:'release',
+   artifact_match:{mapping:'same_path',files_checked:1,additional_pr_files:['build.sh','about.md'],
+    approved_additional_files:['build.sh']}};
+  const ui=await mount(t,{...ticket,development_delivery:{status:'blocked',authorization,
+   receipt:{detail:'missing_independent_review'}}},{panel:'artifacts'});
+  const release=ui.control('section-development-delivery');
+  assert.equal(release.querySelector('small').textContent,'缺少独立审查回执，合并已暂停');
+  const labels=release.querySelectorAll('li').map(item=>item.textContent);
+  assert.ok(labels.includes('build.sh · 已另行授权'));
+  assert.ok(labels.includes('about.md · 未纳入本单验收'));
+ });
  await t.test('退回理由绑定当前候选并单独确认',async t=>{
   const candidate={assignment:'a'.repeat(32),sequence:2,state:'pending',artifact_sha256:'b'.repeat(64)};
   const row={...ticket,journey:{...ticket.journey,artifact_review:true},execution:{status:'awaiting_artifact_review',

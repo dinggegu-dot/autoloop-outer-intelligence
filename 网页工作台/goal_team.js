@@ -1322,13 +1322,15 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const box=details('开发发布回执','development-delivery');
     box.id='goal-section-development-delivery';
     const summary=box.querySelector('summary');
-    const checked=authorization?.artifact_match?.files_checked;
-    const matched=authorization?.artifact_match?.mapping==='same_path' && Number.isInteger(checked) && checked>0;
+    const match=authorization?.artifact_match;
+    const checked=match?.files_checked;
+    const matched=match?.mapping==='same_path' && Number.isInteger(checked) && checked>0;
     let label=labels[status];
     if (status==='live') {
       if (!(receipt?.merge && receipt?.ship)) label='线上验证待核对';
       else if (!matched) label='该 PR 已上线，线上验证通过';
     }
+    if (receipt?.detail==='missing_independent_review') label='缺少独立审查回执，合并已暂停';
     if (label) summary.append(el('small',label,'goal-chip'));
     if (authorization) {
       copy(box,'合并请求',authorization.repo+' #'+authorization.number);
@@ -1336,6 +1338,12 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       copy(box,'审查提交',authorization.head);
       copy(box,'与本单交付的关系',matched ? '已核对 '+checked+' 个已验文件。' :
         '人工绑定，尚无 PR 文件与本单验收版本一致的核对记录。');
+      if (matched && match.additional_pr_files?.length) {
+        const extras=details('PR 中未纳入本单验收的文件','release-additional-files');
+        const approved=new Set(match.approved_additional_files || []);
+        textList(extras,null,match.additional_pr_files.map(path=>path+(approved.has(path)?' · 已另行授权':' · 未纳入本单验收')));
+        box.append(extras);
+      }
     }
     if (receipt?.merge) copy(box,'合并提交',receipt.merge);
     if (receipt?.ship) copy(box,'Ship 运行',String(receipt.ship));
