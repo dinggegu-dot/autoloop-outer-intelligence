@@ -731,8 +731,10 @@ def prepare_outer_execution(assignment):
         elif assignment.get('plan_route_required'):
             context['contract_instruction'] += (
                 '单一交付物优先安排一步，只在有独立新产物或真实依赖时拆分。'
+                '存在 continued_from 时从已签收成果和本轮 change_request 判断复杂度，上轮已确定的方向作为基线。'
                 '在本轮规划同时选择 execution_route。目标和做法明确、可逆且无实质取舍时用 direct。'
-                '有多种会影响结果的做法、重要风险或用户明确要求比较方案时用 compare。'
+                '有多种会影响结果的做法、重要风险、目标明确但做法开放或用户明确要求比较方案时用 compare。'
+                '把需要选方向的比较安排在制作方向相关的成品之前，前置工作只做各方向共用的部分。'
                 'comparison_steps 只列确需两份独立方案的阶段序号，从 1 开始，其他机械步骤直接做；direct 时填空数组。'
                 'route_reason 用一句话说明本单为何需要或不需要比较。每步产生可审阅的新稿，终验由工作台安排。')
     if phase == 'replan':

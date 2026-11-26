@@ -45,8 +45,17 @@ def dispatch(service, source, command, body):
                                      source=source, source_event_id=body['request_id'])
     if command == 'submit':
         intent = body.get('intent')
-        if intent is not None and (intent not in ('supplement', 'change') or not body.get('ticket_id')):
+        if intent is not None and (intent not in ('supplement', 'change', 'continue') or not body.get('ticket_id')):
             raise Problem('请选择本工单的补充资料或修改要求')
+        reference = None
+        if intent == 'continue':
+            if source != 'web' or not consent or not body.get('revision') or not all(
+                    body.get(key) for key in ('candidate','artifact_sha256')) or any(
+                    key in body for key in ('withdraw_requirement_ids','replace_requirement_ids','question_id')):
+                raise Problem('请在原单确认续改的交付版本和资料范围', 409)
+            reference = {'assignment': body['candidate'], 'artifact_sha256': body['artifact_sha256']}
+        elif any(key in body for key in ('candidate','artifact_sha256')):
+            raise Problem('此操作无需指定续改版本')
         if body.get('withdraw_requirement_ids') and (intent != 'change' or body.get('replace_requirement_ids') or body.get('question_id')):
             raise Problem('请单独选择要撤回的建议，再确认修改要求')
         if intent == 'supplement' and (body.get('replace_requirement_ids') or body.get('question_id')):
@@ -55,7 +64,8 @@ def dispatch(service, source, command, body):
                               text=body['text'], source_thread_id=body.get('thread'),
                               ticket_id=body.get('ticket_id'), question_id=body.get('question_id'),
                               expected_ticket_revision=body.get('revision'),
-                              replace_requirement_ids=body.get('replace_requirement_ids'), change_request=intent == 'change',
+                              replace_requirement_ids=body.get('replace_requirement_ids'), change_request=intent in ('change','continue'),
+                              **({'continuation':reference} if reference else {}),
                               **({'withdraw_requirement_ids':body['withdraw_requirement_ids']}
                                  if 'withdraw_requirement_ids' in body else {}), **consent)
     ticket = body['ticket_id']

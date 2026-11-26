@@ -37,6 +37,15 @@ class FormalOuterCanaryTests(unittest.TestCase):
             gateway.post(None, "/api/tasks", CUSTOM_ORDER)
             forward.assert_called_once_with(None, "/api/tasks", CUSTOM_ORDER)
 
+    def test_continue_requires_exact_delivered_base_and_fresh_consent(self):
+        request = dict(VERSION, intent="continue", text="增加附录", candidate="b"*32,
+                       artifact_sha256="c"*64, allow_model_input=True)
+        self.assertTrue(valid_command("submit", request))
+        for invalid in ({k:v for k,v in request.items() if k!="candidate"},
+                        dict(request, question_id="q-"+"1"*32), dict(request, allow_model_input=False),
+                        dict(request, artifact_sha256="invalid"), dict(request,intent="change")):
+            self.assertFalse(valid_command("submit", invalid))
+
     def test_custom_orders_use_exact_schema_and_limits(self):
         self.assertTrue(valid_custom_order(CUSTOM_ORDER))
         self.assertTrue(valid_custom_order(dict(CUSTOM_ORDER, team_review_mode="review_and_decide")))

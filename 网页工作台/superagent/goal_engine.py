@@ -110,6 +110,17 @@ def team_review_mode(task, phase):
     return mode if mode == 'review' or (mode == 'review_and_decide' and task['step'] > 0) else None
 
 
+def team_proposal_owner(task, mode):
+    if mode == ADAPTIVE_REVIEW and team_execution_route(task) == 'compare':
+        return task['plan']['steps'][task['step']].get('direction_owner')
+    return None
+
+
+def team_decision_required(task, mode):
+    return ((mode == 'review_and_decide' and task['step'] == 1)
+            or team_proposal_owner(task, mode) == 'owner')
+
+
 def team_preference_for_step(task):
     question = flow(task).get('pending_preference') or {}
     # 旧版只在首阶段提问，原单里的问题没有 step 字段。
@@ -220,8 +231,9 @@ def bind_router_route(task, assignment, planned, result):
             if key in previous:
                 planned[key] = previous[key]
         for step, old_step in zip(planned['steps'], previous['steps'][task['step']:]):
-            if 'execution_route' in old_step:
-                step['execution_route'] = old_step['execution_route']
+            for key in ('execution_route', 'direction_owner'):
+                if key in old_step:
+                    step[key] = old_step[key]
         return
 
     goal = flow(task)['outer']['goal_contract']
@@ -229,6 +241,9 @@ def bind_router_route(task, assignment, planned, result):
         row['description'] for field in ('required_capabilities','deliverables','nonfunctional_requirements')
         for row in goal.get(field, ()) if row.get('source') in ('USER_EXPLICIT','USER_CONFIRMED')
     ]
+    if followup := goal.get('continued_from'):
+        # 本轮只改日期时，上轮已兑现的“先比较”不再是一项新的流程指令。
+        requirements = [followup['change_request']]
     comparison_clauses = [
         clause for text in requirements for clause in re.split(r'[。！？；，;,.!]', text)
         if _COMPARE_REQUEST.search(clause.strip())
@@ -250,9 +265,13 @@ def bind_router_route(task, assignment, planned, result):
         route, reason, selected = 'compare', '用户明确要求比较方案，由独立顾问在首个实施阶段提案并审稿。', [1]
     elif skip_comparison and route == 'compare':
         route, reason, selected = 'direct', '用户明确要求按既定做法直接实施。', []
+    if goal.get('direction_to_compare') and route == 'direct' and not skip_comparison:
+        route, reason, selected = 'compare', '用户目标明确，团队先比较会改变交付结果的方向。', [1]
     planned.update(execution_route=route, route_reason=reason.strip(), comparison_steps=sorted(selected))
     for index, step in enumerate(planned['steps'], 1):
         step['execution_route'] = 'compare' if index in selected else 'direct'
+        if index in selected and goal.get('direction_owner') in ('team', 'owner'):
+            step['direction_owner'] = goal['direction_owner']
 
 class GoalEngine:
     def __init__(self, store, verification_contract=None, team_enabled=False):
@@ -724,9 +743,12 @@ class GoalEngine:
                     if route == 'direct' and phase == 'execute':
                         details['role_slots'] = 1
                 if mode:
+                    decision_owner = team_proposal_owner(task, mode)
                     details.update(team_review_mode=mode,
-                                   team_decision_allowed=(mode in PREFERENCE_REVIEW_MODES),
-                                   team_decision_required=(mode == 'review_and_decide' and task['step'] == 1))
+                                   team_decision_allowed=(mode in PREFERENCE_REVIEW_MODES and decision_owner != 'team'),
+                                   team_decision_required=team_decision_required(task, mode))
+                    if decision_owner:
+                        details['direction_owner'] = decision_owner
                 if handoff and (not GoalEngine._same_team_candidate_scope(task,handoff)
                                 or not mode or handoff['mode'] != mode):
                     raise Problem('不能续办旧阶段或旧验收下的审稿草稿')
@@ -1371,8 +1393,9 @@ class GoalEngine:
             raise Problem('团队候选缺少封存摘要')
         result = validated_result(report)
         mode = team_review_mode(task,assignment['phase'])
-        decision_allowed = mode in PREFERENCE_REVIEW_MODES
-        decision_required = mode == 'review_and_decide' and task['step'] == 1
+        decision_owner = team_proposal_owner(task, mode)
+        decision_allowed = mode in PREFERENCE_REVIEW_MODES and decision_owner != 'team'
+        decision_required = team_decision_required(task, mode)
         if mode != assignment.get('team_review_mode') or (mode and
                 (assignment.get('team_decision_allowed') is not decision_allowed or
                  assignment.get('team_decision_required') is not decision_required)):
@@ -1426,6 +1449,8 @@ class GoalEngine:
 
     @staticmethod
     def _team_question(task, assignment, report, last, *, staged=False):
+        from superagent.goal_team_handoff import valid_directions
+
         result = report['result']
         preference = {'prompt':result['summary'], 'options':result['options']}
         reported = report.get('preference', preference if staged else None)
@@ -1434,9 +1459,9 @@ class GoalEngine:
                 or assignment['phase'] != 'execute'):
             raise Problem('该阶段已有本人决定')
         if (result['action'] != 'ask' or last.get('action') != 'ask'
-                or len(result['options']) != 3
+                or not valid_directions(result['options'], proposal_choice=staged and assignment.get('direction_owner') == 'owner')
                 or reported != preference):
-            raise Problem('中途问题缺少三个可比较版本')
+            raise Problem('中途问题缺少可比较的选项')
         checkpoint = report['checkpoint']
         question = {
             **preference, 'id':uuid.uuid4().hex, 'revision':1, 'assignment':assignment['id'],
@@ -1447,6 +1472,8 @@ class GoalEngine:
         }
         if staged:
             question.update(requires_option=True,draft_sha256=checkpoint['digest'])
+            if assignment.get('direction_owner') == 'owner':
+                question.update(decision_kind='proposal_choice', recommended_option_id=result['options'][0]['id'])
         return question
 
     @staticmethod

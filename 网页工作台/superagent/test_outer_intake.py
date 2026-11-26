@@ -77,7 +77,9 @@ class Model:
                     goal_draft=dict(goal_statement='目标 ' + text, deliverables=[requirement],
                                     required_capabilities=[], nonfunctional_requirements=[],
                                     constraints=[invented] if 'invent' in text else [],
-                                    assumptions=[], out_of_scope=[]),
+                                    assumptions=[], out_of_scope=[],
+                                    **({'preferences':[],'design_conditions':[]} if 'preferences' in schema['properties']['goal_draft']['properties'] else {})),
+                    **({'preference_support':[],'question_targets':[]} if 'preference_support' in schema['properties'] else {}),
                     assumptions=[], critical_ambiguities=['交付格式'] if question['question_text'] else [],
                     proposed_question=question, suggested_action=action, reason='根据当前线程处理')
 
@@ -208,6 +210,227 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 2)
         self.assertEqual(self.model.calls[0][1]['untrusted_text']['current_message'], '刚收到的原话')
         self.assertFalse(self.intake.get(ticket_id, 'owner')['needs_model_consent'])
+
+    def test_team_scopes_preferences_and_recovers_an_existing_gap_on_original_ticket(self):
+        from superagent import outer_verification as verification
+        import copy
+
+        self.intake.registry = verification
+        goal_text = '请整理展览内容；画一张海报；最好给我一个可直接下载的版本'
+        first, _ = self.router_new(goal_text)
+        ticket_id = first['ticket_id']
+        old = True
+
+        def propose(role, context, schema):
+            result = self.model(role, context, schema)
+            if role == 'intake_assessor':
+                ref = context['original_request_refs'][0]
+                draft = result['goal_draft']
+                draft.update(goal_statement='整理展览内容及海报',
+                             deliverables=[dict(description=text, source='USER_EXPLICIT', source_refs=[ref])
+                                           for text in goal_text.split('；')],
+                             required_capabilities=[dict(description='核实实时开放的下载站点', source='MODEL_PROPOSED',
+                                                         source_refs=[ref])])
+                result['preference_support'] = [dict(preference_quote=goal_text.split('；')[-1],
+                                                     derived_description='核实实时开放的下载站点')]
+                result['critical_ambiguities'] = ['团队尚未确定表现方式']
+                result['proposed_question'].update(question_text='请逐项填写海报验收方式？', options=[],
+                                                   reason='团队未确定制作方法', blocking_scope='acceptance')
+            else:
+                goal = context['goal_contract']
+                required = goal['deliverables']
+                # 先保留一张确实被旧版卡住的单，再经普通修改入口重评。
+                if old:
+                    gaps = [(required[0], 'independent_evidence')]
+                else:
+                    gaps = [(row,'artifact_inspection') for row in required]
+                    gaps += [(goal['preferences'][0], 'independent_evidence'),
+                             (goal['required_capabilities'][0], 'independent_evidence')]
+                result.update(criteria=[], verification_gaps=[
+                    dict(requirement_id=row['requirement_id'], reason='核对' + row['description'],
+                         evidence_kind=kind) for row,kind in gaps])
+            return result
+
+        self.intake.team_model = propose
+        self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 2)
+        initial = self.intake.get(ticket_id, 'owner')
+        self.assertEqual(initial['status'], 'VERIFICATION_GAP')
+        with self.store.connect() as db:
+            original = self.intake._ticket(db,ticket_id)
+            legacy = copy.deepcopy(original['goal_contract'])
+            legacy['deliverables'] += legacy.pop('preferences')
+            legacy.pop('direction_owner')
+            legacy.pop('direction_to_compare',None)
+            for row in legacy['required_capabilities']:
+                row.pop('acceptance_role',None)
+            original['goal_contract'] = legacy
+            self.intake._save(db, original)
+        old = False
+        self.intake.submit(source='web', source_event_id='same-ticket-reassess', actor_id='owner',
+                           ticket_id=ticket_id, expected_ticket_revision=initial['revision'],
+                           text='请帮我拟方案，让我选择', change_request=True, allow_model_input=True)
+        self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 2)
+        draft = self.intake.get(ticket_id, 'owner')
+        self.assertEqual((draft['status'],draft['id'],draft['questions_asked']), ('AWAITING_APPROVAL',ticket_id,0))
+        goal = draft['goal_contract']
+        self.assertEqual([item['description'] for item in goal['deliverables']],goal_text.split('；')[:2])
+        self.assertEqual([item['description'] for item in goal['preferences']],goal_text.split('；')[2:])
+        self.assertEqual(goal['required_capabilities'][0]['acceptance_role'],'advisory')
+        self.assertEqual(goal['direction_owner'], 'owner')
+        contract = draft['acceptance_contract']
+        self.assertEqual(contract['verification_gaps'], [])
+        self.assertEqual(len(contract['preference_notes']), 2)
+        self.assertEqual(len(contract['human_review_requirements']), 2)
+        self.assertEqual(self.approve(draft)['mandate_revision'], 1)
+
+    def test_venue_context_and_soft_suffix_are_separate_from_operational_controls(self):
+        from superagent import outer_verification as verification
+        self.intake.registry = verification
+        original = '写一份方案。场地有限。最好也附一个公开阅读入口，如果有的话。另做一张海报。'
+        first, _ = self.router_new(original)
+        def propose(role, context, schema):
+            result = self.model(role, context, schema)
+            if role == 'intake_assessor':
+                ref = context['original_request_refs'][0]
+                def item(value):
+                    return dict(description=value,source='USER_EXPLICIT',source_refs=[ref])
+                result['goal_draft'].update(
+                    deliverables=[item('写一份方案'),item('最好也附一个公开阅读入口，如果有的话'),item('另做一张海报')],
+                    constraints=[item('场地有限')])
+                if '不得外发' in context['untrusted_text']['current_message']:
+                    result['goal_draft']['design_conditions'] = [
+                        dict(description='不得外发',source='USER_EXPLICIT',source_refs=[context['event_id']])]
+            else:
+                result.update(criteria=[], verification_gaps=[dict(
+                    requirement_id=item['requirement_id'],reason='交付后从成品核对',evidence_kind='artifact_inspection')
+                    for item in context['goal_contract']['deliverables']])
+            return result
+
+        self.intake.team_model = propose
+        self.intake.drain_ticket(first['ticket_id'],limit=2)
+        ticket = self.intake.get(first['ticket_id'],'owner')
+        goal = ticket['goal_contract']
+        self.assertEqual(ticket['status'],'AWAITING_APPROVAL')
+        self.assertEqual(goal['constraints'],[])
+        self.assertEqual([i['description'] for i in goal['design_conditions']], ['场地有限'])
+        self.assertEqual([i['description'] for i in goal['deliverables']], ['写一份方案','另做一张海报'])
+        self.assertEqual([i['source'] for i in goal['preferences']], ['USER_EXPLICIT'])
+        self.assertTrue(any('场地有限' in row for row in ticket['acceptance_contract']['human_review_requirements']))
+        with self.store.connect() as db:
+            legacy = self.intake._ticket(db,ticket['id'])
+            old_goal = legacy['goal_contract']
+            old_goal['constraints'] = old_goal.pop('design_conditions')
+            self.intake._save(db,legacy)
+        self.intake.submit(source='web',source_event_id='protected-operational-scope',actor_id='owner',
+                           ticket_id=ticket['id'], expected_ticket_revision=ticket['revision'],
+                           text='不得外发',change_request=True,allow_model_input=True)
+        self.intake.drain_ticket(ticket['id'],limit=2)
+        latest = self.intake.get(ticket['id'],'owner')
+        self.assertEqual(latest['status'],'VERIFICATION_GAP')
+        self.assertEqual([i['description'] for i in latest['goal_contract']['constraints']],['不得外发'])
+        self.assertEqual([i['description'] for i in latest['goal_contract']['design_conditions']],['场地有限'])
+
+    def test_optional_format_question_cannot_block_and_user_direction_is_not_a_permission(self):
+        first, _ = self.router_new('为蓝色星球写导读；做海报；最好提供可下载的版本；重要方向由我选择')
+        def propose(role,context,schema):
+            result = self.model(role,context,schema)
+            if role == 'intake_assessor':
+                ref = context['event_id']
+                def anchored(text):
+                    return dict(description=text,source='USER_EXPLICIT',source_refs=[ref])
+                result['goal_draft'].update(deliverables=[anchored('为蓝色星球写导读'),anchored('做海报')],
+                                            preferences=[anchored('最好提供可下载的版本')],
+                                            constraints=[anchored('重要方向由我选择')])
+                result['critical_ambiguities'] = ['下载内容']
+                result['proposed_question'].update(question_text='你想下载书、导读还是海报？',reason='下载对象有歧义',
+                                                   blocking_scope='deliverables')
+                result['question_targets'] = ['最好提供可下载的版本']
+            return result
+        self.intake.team_model = propose
+        self.intake.drain_ticket(first['ticket_id'],limit=2)
+        ticket = self.intake.get(first['ticket_id'],'owner')
+        self.assertEqual((ticket['status'],ticket['questions_asked']),('AWAITING_APPROVAL',0))
+        self.assertEqual(ticket['goal_contract']['constraints'],[])
+        self.assertEqual(ticket['goal_contract']['direction_owner'],'owner')
+        self.assertIn('direction_to_compare',ticket['goal_contract'])
+
+    def test_missing_book_identity_still_requires_one_question(self):
+        first, _ = self.router_new('为那本书写导读；最好提供可下载版本')
+        def propose(role,context,schema):
+            result = self.model(role,context,schema)
+            if role == 'intake_assessor':
+                ref = context['event_id']
+                def anchored(text):
+                    return dict(description=text,source='USER_EXPLICIT',source_refs=[ref])
+                result['goal_draft'].update(deliverables=[anchored('为那本书写导读')],
+                                            preferences=[anchored('最好提供可下载版本')])
+                result['critical_ambiguities'] = ['没有书名']
+                result['proposed_question'].update(question_text='你想了解哪一本书？',reason='需要知道阅读对象',
+                                                   blocking_scope='deliverables')
+                result['question_targets'] = ['为那本书写导读']
+            return result
+        self.intake.team_model = propose
+        self.intake.drain_ticket(first['ticket_id'],limit=2)
+        ticket = self.intake.get(first['ticket_id'],'owner')
+        self.assertEqual((ticket['status'],ticket['questions_asked']),('AWAITING_CLARIFICATION',1))
+
+    def test_user_may_delegate_or_reclaim_proposal_direction_in_same_ticket(self):
+        first, _ = self.router_new('请写展览导读；你帮我决定')
+        self.intake.drain_ticket(first['ticket_id'],limit=2)
+        ticket = self.intake.get(first['ticket_id'],'owner')
+        self.assertEqual(ticket['goal_contract']['direction_owner'],'team')
+        self.intake.submit(source='web',source_event_id='choose-myself',actor_id='owner',ticket_id=ticket['id'],
+                           expected_ticket_revision=ticket['revision'],text='先给我看看方向，让我选择',
+                           allow_model_input=True,change_request=True)
+        self.intake.drain_ticket(ticket['id'],limit=2)
+        current = self.intake.get(ticket['id'],'owner')
+        self.assertEqual(current['goal_contract']['direction_owner'],'owner')
+        self.assertIn('direction_to_compare', current['goal_contract'])
+
+    def test_asking_how_to_verify_a_simple_edit_does_not_force_comparison(self):
+        first, _ = self.router_new('把标题改成会议指南')
+        def propose(role, context, schema):
+            result = self.model(role, context, schema)
+            if role == 'intake_assessor':
+                result['critical_ambiguities'] = ['尚未说明怎样检验']
+                result['proposed_question'].update(question_text='应如何详细验收标题？', options=[],
+                                                   reason='需要设计验收', blocking_scope='acceptance')
+            return result
+        self.intake.team_model = propose
+        self.assertEqual(self.intake.drain_ticket(first['ticket_id'], limit=2), 2)
+        ticket = self.intake.get(first['ticket_id'],'owner')
+        self.assertEqual(ticket['questions_asked'],0)
+        self.assertEqual(ticket['status'],'AWAITING_APPROVAL')
+        self.assertNotIn('direction_to_compare',ticket['goal_contract'])
+
+    def test_independent_deliverable_keeps_required_coverage_when_the_model_paraphrases_it(self):
+        from superagent import outer_verification as verification
+
+        self.intake.registry = verification
+        original = '写一份导读；另请给我做一张可打印的海报；最好有下载链接'
+        first, _ = self.router_new(original)
+        def propose(role, context, schema):
+            result = self.model(role, context, schema)
+            if role == 'intake_assessor':
+                def item(text):
+                    return dict(description=text, source='USER_EXPLICIT', source_refs=[context['event_id']])
+                result['goal_draft'].update(deliverables=[item('写一份导读'),item('制作可打印的海报')],
+                                            preferences=[item('最好有下载链接')])
+                # 即使模型错误地把海报关联给可选项，也不能拿掉一个交付物。
+                result['preference_support'] = [dict(preference_quote='最好有下载链接',derived_description='制作可打印的海报')]
+            else:
+                guide = context['goal_contract']['deliverables'][0]
+                result.update(criteria=[],verification_gaps=[dict(requirement_id=guide['requirement_id'],
+                              evidence_kind='artifact_inspection', reason='读已交付导读核对')])
+            return result
+        self.intake.team_model = propose
+        self.intake.drain_ticket(first['ticket_id'], limit=2)
+        ticket = self.intake.get(first['ticket_id'],'owner')
+        poster = ticket['goal_contract']['deliverables'][1]
+        self.assertEqual(poster['source'],'MODEL_PROPOSED')
+        self.assertNotIn('acceptance_role',poster)
+        self.assertEqual(ticket['status'],'VERIFICATION_GAP')
+        self.assertIn(poster['requirement_id'],ticket['acceptance_contract']['coverage_assessment']['uncovered'])
 
     def test_router_standard_form_rejects_missing_consent_and_remote_form_holds_local(self):
         from outer_workbench import create_task

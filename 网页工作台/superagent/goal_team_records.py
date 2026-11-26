@@ -28,9 +28,9 @@ def public_preference(state, status, *, brief=False):
     record = state.get('pending_preference')
     if not record or record.get('answer') is not None:
         return None
-    keys = ['id', 'revision', 'prompt', 'created_at', 'step', 'requires_option']
+    keys = ['id', 'revision', 'prompt', 'created_at', 'step', 'requires_option', 'decision_kind']
     if not brief:
-        keys += ['candidate_digest', 'options', 'draft_sha256']
+        keys += ['candidate_digest', 'options', 'draft_sha256', 'recommended_option_id']
     public = {key: record[key] for key in keys if key in record}
     handoff = state.get('team_pending_handoff') or {}
     if (not brief and record.get('requires_option') and record.get('draft_sha256')

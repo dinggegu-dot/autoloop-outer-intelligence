@@ -9,6 +9,7 @@ import re
 import sqlite3
 import stat
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -178,16 +179,35 @@ class Store:
             raise Problem('任务路径不能使用符号链接')
         return path
 
-    def _create_workspace(self, task_id, *, generation=1, recoverable=False):
+    def _create_workspace(self, task_id, *, generation=1, recoverable=False, initial_files=None):
         workspace = self.workspace(task_id, generation=generation)
-        # 若事务提交前进程退出，可用同一工单号及已指定代次重试。
-        workspace.mkdir(parents=True, mode=0o700, exist_ok=recoverable)
         guidance = workspace / 'AGENTS.md'
+        instruction = '# 本任务工作区\n\n仅修改本目录内文件。先阅读任务中给出的完整目标、已批准方案和已有成果。不得读取凭据、修改工作台控制记录、调用中台本人接口。外部发布、发送、付费、安装以及范围外写入必须先提出具体审批；业务审批不提升操作系统权限。验收需实际运行，未测内容明确说明。\n'
+        if initial_files is not None:
+            from superagent.goal_checks import _snapshot
+            from superagent.goal_team_run import materialize
+            # 在同一磁盘上完整写好再切换。进程在 SQLite 提交前退出，重试只能复用内容完全一致的一代。
+            files = {**initial_files, 'AGENTS.md': instruction.encode()}
+            workspace.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+            if workspace.exists():
+                try:
+                    previous, occupied = _snapshot(workspace)
+                except (OSError, ValueError):
+                    raise Problem('新版工作区与续改的归档不一致', 409) from None
+                if previous != files or any(not is_dir and name not in files for name, is_dir in occupied.items()):
+                    raise Problem('新版工作区与续改的归档不一致', 409)
+            else:
+                with tempfile.TemporaryDirectory(dir=workspace.parent, prefix='.round-') as directory:
+                    staging = Path(directory) / 'workspace'
+                    materialize(files, staging)
+                    staging.rename(workspace)
+            return workspace
+        workspace.mkdir(parents=True, mode=0o700, exist_ok=recoverable)
         if recoverable and any(path != guidance for path in workspace.iterdir()):
             raise Problem('新授权的工作区必须为空', 409)
         if guidance.is_symlink():
             raise Problem('任务工作区指引不能使用符号链接', 409)
-        guidance.write_text('# 本任务工作区\n\n仅修改本目录内文件。先阅读任务中给出的完整目标、已批准方案和已有成果。不得读取凭据、修改工作台控制记录、调用中台本人接口。外部发布、发送、付费、安装以及范围外写入必须先提出具体审批；业务审批不提升操作系统权限。验收需实际运行，未测内容明确说明。\n')
+        guidance.write_text(instruction)
         return workspace
 
     @staticmethod

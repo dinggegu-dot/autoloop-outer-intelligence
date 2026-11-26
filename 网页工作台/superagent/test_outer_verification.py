@@ -47,6 +47,26 @@ def compile_rows(*criteria, goal_fields=None):
 
 
 class RegistryTests(unittest.TestCase):
+    def test_text_verifier_checks_exact_archived_document_and_words(self):
+        path = '活动/导览 Résumé.md'
+        expected = {'contains': ['白桦', '南门']}
+        row = criterion(verifier_id='text-document', test_spec={'path':path}, expected_result=expected)
+        _, contract = compile_rows(row)
+        self.assertEqual(contract['status'], 'READY_FOR_APPROVAL')
+        checked, = contract['criteria']
+        self.assertEqual(registry.implementation_criterion(checked)['interface'], {'path':path, **expected})
+        archived = '活动/导览 Re\u0301sume\u0301.md'
+        content = '白桦读书会，南门集合'.encode()
+        self.assertEqual(registry._criterion_result(checked, {archived: content}, {})[0], 'PASS')
+        for files in ({}, {'其他.md': content}, {path:b'\xff'}, {path:'白桦'.encode()}, {path:b'\x00'}):
+            with self.subTest(files=files):
+                self.assertEqual(registry._criterion_result(checked, files, {})[0], 'FAIL')
+        readability = {**checked, 'expected_result':{'contains':[]}}
+        self.assertEqual(registry._criterion_result(readability, {path:b' \n'}, {})[0], 'FAIL')
+        for name in ('../越界.md', '/绝对.md', '目录//手册.md', 'AGENTS.md', '.git/说明.md', '程序.py'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                compile_rows({**row, 'test_spec':{'path':name}})
+
     def test_implementation_contract_exposes_public_html_interface_only(self):
         expected = {'title':'活动简报','headings':['安排'],'element_ids':['schedule-v1']}
         html = criterion(verifier_id='html-document', test_spec={'path':'brief.html'}, expected_result=expected)
@@ -154,6 +174,36 @@ class RegistryTests(unittest.TestCase):
         goal['goal_statement'] = '浏览器交互后点击提交并检查结果'
         self.assertEqual(registry.compile_proposal(goal,{'goal_revision':1,'criteria':cli})['status'],
                          'VERIFICATION_GAP')
+
+    def test_deliverable_inspection_preserves_required_external_evidence_and_execution(self):
+        for required in ('必须实测下载链接可用', '提供可运行的命令行工具', '请制作可交互网页'):
+            goal = dict(ticket_id='scope', revision=1, workflow_profile=registry.ROUTER_TEAM,
+                        deliverables=[{'requirement_id':'main','description':required}])
+            for kind in ('artifact_inspection','independent_evidence'):
+                with self.subTest(required=required, kind=kind):
+                    contract = registry.compile_proposal(goal, {
+                        'goal_revision':1, 'criteria':[],
+                        'verification_gaps':[{'requirement_id':'main','reason':'本单缺少独立证据',
+                                              'evidence_kind':kind}],
+                    })
+                    self.assertEqual(contract['status'],'VERIFICATION_GAP')
+                    self.assertFalse(contract['human_review_requirements'])
+                    self.assertIn('main',contract['coverage_assessment']['uncovered'])
+        with self.assertRaises(ValueError):
+            registry.compile_proposal(goal, {'goal_revision':1,'criteria':[], 'verification_gaps':[
+                {'requirement_id':'other-ticket','reason':'未知引用','evidence_kind':'artifact_inspection'}]})
+
+    def test_actual_availability_cannot_be_discharged_as_a_design_condition(self):
+        for text, state in [('场地有限','READY_FOR_APPROVAL'),('酒店必须有今天实时可预订的房间','VERIFICATION_GAP'),
+                            ('务必核实酒店房间仍对外开放','VERIFICATION_GAP'),('需找到持有独立证书的接待方','VERIFICATION_GAP')]:
+            goal = dict(revision=1, workflow_profile=registry.ROUTER_TEAM,
+                        design_conditions=[{'requirement_id':'space','description':text}])
+            contract = registry.compile_proposal(goal,{'goal_revision':1, 'criteria':[],
+                    'verification_gaps':[{'requirement_id':'space','reason':'当前不能取得独立证明',
+                                          'evidence_kind':'independent_evidence'}]})
+            with self.subTest(text=text):
+                self.assertEqual(contract['status'],state)
+                self.assertEqual(bool(contract['human_review_requirements']),state == 'READY_FOR_APPROVAL')
 
     def test_unknown_explicit_constraint_cannot_be_discharged_by_unrelated_proof(self):
         goal, _ = compile_rows(criterion())
@@ -304,10 +354,10 @@ class OuterExecutionTests(unittest.TestCase):
                     candidate_reads=[dict(path=path,sha256=checkpoint['files'][path]) for path in paths])
 
     def write_team_handoff(self, assignment, directory, *, ask=False, quote='true', recover=False, extra=(), assets=None,
-                           keep=False):
+                           keep=False, option_count=3):
         instruction = dict(action='ask' if ask else 'done', summary='选择下一版方向' if ask else '继续完善草稿',
                            options=[{'id':str(index),'label':f'方向 {index}','text':f'样例 {index}'}
-                                    for index in range(3)] if ask else [], retain=[], verify=[])
+                                    for index in range(option_count)] if ask else [], retain=[], verify=[])
         candidate_base = assignment.get('candidate_base')
         files = registry.capture(sealed_workspace(directory,candidate_base))[1] if candidate_base else {}
         for name in ('one.json', *extra):
@@ -543,6 +593,19 @@ class OuterExecutionTests(unittest.TestCase):
         self.assertEqual(result['plan']['comparison_steps'],[1])
         self.assertIn('用户明确要求',result['plan']['route_reason'])
 
+    def test_revising_only_a_date_does_not_repeat_last_rounds_comparison(self):
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion(),goal_fields={
+            'direction_owner':'owner','continued_from':{'change_request':'只把日期改到星期五。'},
+            'required_capabilities':[{'requirement_id':'requirement-one','description':'请先比较两种方案',
+                                      'source':'USER_EXPLICIT','source_refs':[]}]})
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE,workflow_profile=registry.ROUTER_TEAM,team_review_mode=ADAPTIVE_REVIEW))
+        planned = self.plan(['one'],routing={'execution_route':'direct','route_reason':'只改日期','comparison_steps':[]})
+        self.assertEqual(planned['plan']['execution_route'],'direct')
+        assignment,_ = self.launch_team_stage()
+        self.assertEqual(assignment['role_slots'],1)
+
     def test_router_respects_explicit_request_to_skip_comparison(self):
         OuterIntake(Workbench(self.store))
         self.authorize(criterion(),goal_fields={
@@ -561,6 +624,56 @@ class OuterExecutionTests(unittest.TestCase):
         assignment,_ = self.launch_team_stage()
         self.assertEqual((assignment['execution_route'],assignment['role_slots']),('direct',1))
         self.assertNotIn('team_review_mode',assignment)
+
+    def test_proposal_selection_seals_two_directions_and_continues_selected_chinese_file(self):
+        intake = OuterIntake(Workbench(self.store))
+        self.authorize(criterion(),goal_fields={'direction_owner':'owner',
+                                               'direction_to_compare':'请团队比较可选方向。'})
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE, workflow_profile=registry.ROUTER_TEAM, team_review_mode=ADAPTIVE_REVIEW))
+        ticket = {'id':self.ticket,'status':'AUTHORIZED','revision':1,'correlation_id':'event',
+                  'goal_revision':1,'acceptance_revision':1,'mandate_revision':1,'task_id':self.ticket}
+        with self.store.connect() as db:
+            db.execute('INSERT INTO outer_tickets VALUES(?,?,?,?,?)',
+                       (self.ticket,'default','owner',json.dumps(ticket),'time'))
+        self.plan(['one'],routing={'execution_route':'direct','route_reason':'模型误判','comparison_steps':[]})
+        assignment, directory = self.launch_team_stage()
+        self.assertTrue(assignment['team_decision_required'])
+        self.write_team_handoff(assignment,directory,ask=True,extra=('路线说明.md',),option_count=2)
+        task = self.settle_team_from_disk(assignment,'done')
+        question = public_preference(flow(task),task['status'])
+        self.assertEqual((task['status'],question['decision_kind'],question['recommended_option_id']),
+                         ('awaiting_preference','proposal_choice',question['options'][0]['id']))
+        self.assertEqual(len(question['options']),2)
+        self.assertEqual(public_preference(flow(task),task['status'],brief=True)['decision_kind'],'proposal_choice')
+        preview = intake.draft_preview(self.ticket, question['id'], question['revision'],
+                                       question['candidate_digest'], question['draft_sha256'],
+                                       actor_id='owner', relative='路线说明.md')
+        self.assertEqual(preview['path'],'路线说明.md')
+        answer = intake.answer_preference(self.ticket,1,question['id'],question['revision'],
+                                          question['candidate_digest'],{'option_id':question['recommended_option_id']},
+                                          'selected-recommendation',actor_id='owner')
+        continuation, directory = self.launch_team_stage()
+        self.assertEqual(continuation['preference_answer']['event'],answer['event_id'])
+        finished = self.finish_team_stage(continuation,directory)
+        self.assertEqual(finished['status'],'completed')
+        self.assertIn('路线说明.md',finished['goal_delivery']['files'])
+
+    def test_delegation_keeps_independent_comparison_and_advances_without_a_choice(self):
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion(),goal_fields={'direction_owner':'team'})
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE,workflow_profile=registry.ROUTER_TEAM,team_review_mode=ADAPTIVE_REVIEW))
+        self.plan(['one'])
+        assignment, directory = self.launch_team_stage()
+        self.assertEqual(assignment['execution_route'],'compare')
+        self.assertFalse(assignment['team_decision_allowed'])
+        self.write_team_handoff(assignment,directory)
+        task = self.settle_team_from_disk(assignment,'done')
+        self.assertEqual(task['status'],'queued')
+        self.assertIsNone(flow(task).get('pending_preference'))
+        continuation, directory = self.launch_team_stage()
+        self.assertEqual(self.finish_team_stage(continuation,directory)['status'],'completed')
 
     def test_router_adaptive_first_stage_asks_only_when_needed_and_resumes_same_draft(self):
         intake = OuterIntake(Workbench(self.store))

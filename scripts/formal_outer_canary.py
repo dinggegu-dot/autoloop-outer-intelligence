@@ -150,7 +150,7 @@ FIELD_CHECKS = {
     CONSENT: lambda v: v is True,
     "replace_requirement_ids": valid_requirements,
     "withdraw_requirement_ids": valid_requirements,
-    "intent": lambda v: v in ("supplement", "change"),
+    "intent": lambda v: v in ("supplement", "change", "continue"),
     "additional_minutes": lambda v: type(v) is int and v in (0, 15, 30, 60),
     "additional_roles": lambda v: type(v) is int and v in (0, 5, 10),
 }
@@ -168,6 +168,10 @@ def valid_command(command, body):
         return False
     if command in {"pause", "resume", "stop"} and "goal_revision" in body:
         fields = CONTRACT_FIELDS
+    if command == "submit" and body.get("intent") == "continue":
+        return (fields | {"intent", "candidate", "artifact_sha256"} == body.keys()
+                and all(FIELD_CHECKS[key](value) for key, value in body.items())
+                and len(request_bytes(body)) <= MAX_REQUEST)
     optional = {"approve": {"require_signoff"}, "answer_preference": {CONSENT},
                 "submit": {"question_id", "replace_requirement_ids", "withdraw_requirement_ids", "intent"}}.get(command, set())
     if not fields <= body.keys() <= fields | optional:

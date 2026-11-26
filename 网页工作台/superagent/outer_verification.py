@@ -5,6 +5,7 @@ import json
 import platform
 import re
 import sys
+import unicodedata
 from copy import deepcopy
 from html.parser import HTMLParser
 from pathlib import Path
@@ -78,6 +79,13 @@ _REGISTRY = {
         "resource_limits": {"file_bytes": goal_checks.MAX_WORKSPACE_FILE},
         "trust_status": "TRUSTED",
     },
+    "text-document": {
+        "artifact_types": ["file", "text", "markdown"],
+        "capabilities": ["核对归档中指定的 .md 或 .txt 文件，检查 UTF-8 正文非空及约定的逐字片段"],
+        "required_inputs": ["path", "expected_result"], "supported_environments": [LOCAL_DATA],
+        "permission_requirements": ["immutable_artifacts_only"], "runner": "bounded-text-reader-v1",
+        "resource_limits": {"file_bytes": goal_checks.MAX_WORKSPACE_FILE}, "trust_status": "TRUSTED",
+    },
     "blind-projection": {
         "artifact_types": ["file", "data"],
         "capabilities": ["核对匿名成对文本的结构、固定例号顺序和显式来源泄露"],
@@ -150,6 +158,16 @@ def _python_spec(criterion_id, spec, expected):
 
 def _artifact_spec(verifier, spec, expected):
     goal_checks._fields(spec, ("path",))
+    if verifier == "text-document":
+        # 此路径只用于在已封存的文件清单中查找。允许用户给文件取中文名。
+        path = _text(spec["path"], 240)
+        parts = path.split("/")
+        if (len(parts) > goal_checks.MAX_PATH_DEPTH or not path.casefold().endswith((".md", ".txt"))
+                or any(not part or part.startswith(".") or not part.isprintable()
+                       or "\\" in part or part.casefold() == "agents.md" for part in parts)):
+            raise ValueError("文本文档须是归档内的 .md 或 .txt 相对路径")
+        goal_checks._fields(expected, ("contains",))
+        return {"path": path}, {"contains": _list_of_strings(expected["contains"], length=12, max_length=300)}
     path = goal_checks._path(spec["path"])
     if verifier == "json-artifact":
         if not path.endswith(".json") or type(expected) not in (dict, list) or not expected:
@@ -201,7 +219,11 @@ def _distinct_cli_cases(criteria):
 def _behavior_gaps(goal, requirements, criteria):
     gaps = []
     # 静态产物可以支撑格式与内容条件。明确要求的运行行为需额外证据。
-    for item in [*requirements, {"requirement_id": "目标", "description": goal.get("goal_statement", "")}]:
+    statement = goal.get("goal_statement", "")
+    for preference in goal.get("preferences", ()):
+        # 摘要还可能逐字附有一项可选功能。其余交付与运行承诺照常核查。
+        statement = statement.replace(preference["description"], "")
+    for item in [*requirements, {"requirement_id": "目标", "description": statement}]:
         text = item.get("description", "")
         key = item["requirement_id"]
         linked = criteria if key == "目标" else [row for row in criteria if key in row["requirement_ids"]]
@@ -220,6 +242,36 @@ _WORKSPACE_WRITE = {
     "only write within the ticket workspace",
     "do not write outside the ticket workspace",
 }
+
+
+_EXTERNAL_EVIDENCE = re.compile(
+    r"联网|实测|在线(?:核实|核查|验证|确认|可用)|实时|下载|最新(?:行情|报价|库存|价格)|(?:提供|获取).*链接|"
+    r"正版|授权来源|链接.*(?:可用|有效)|核实|核验|现场测量|实地勘察|可预订|可预定|可预约|可订房|库存|仍开放|正在营业|"
+    r"\b(?:download|online|live (?:link|data)|licen[sc]ed|real[- ]time)\b", re.I)
+
+
+_READER_CAN_INSPECT = re.compile(
+    r"方案|文[档章本案]|内容|总结|概述|摘要|材料|导读|资料|海报|图表|报告|说明|计划|手册|写[出明下一]|"
+    r"\.(?:md|txt|pdf|html|png|jpe?g|docx)\b|\b(?:document|report|summary|poster|guide|copy|text)\b", re.I)
+
+
+_SUPPLIED_CONTEXT = re.compile(
+    r"^(?:本次|这次|目前|我们(?:的)?|活动)?(?:场地|场馆|会场|展厅|教室|空间|座位)(?:较小|有限|不大|紧张|不足)[。.!！]?$")
+
+
+def requires_independent_evidence(text):
+    return any(pattern.search(text) for pattern in (_EXECUTABLE, _INTERACTIVE, _EXTERNAL_EVIDENCE))
+
+
+def acceptance_requirements(goal):
+    items, advisory = [], list(goal.get("preferences", ()))
+    preferences = {item["requirement_id"] for item in advisory}
+    for field in ("required_capabilities", "deliverables", "nonfunctional_requirements", "design_conditions"):
+        for item in goal.get(field, ()):
+            support = (field != "deliverables" and item.get("source") == "MODEL_PROPOSED"
+                       and item.get("acceptance_role") == "advisory" and item.get("preference_id") in preferences)
+            (advisory if support else items).append(item)
+    return items, advisory
 
 
 def _explicit_constraints(goal):
@@ -260,16 +312,19 @@ def needs_human_signoff(contract):
     )
 
 
-def _add_html_signoffs(requirements, criteria, gaps):
-    """HTML 结构不能证明原需求所写的正文或业务质量。"""
+def _add_document_signoffs(requirements, criteria, gaps):
+    """文档的结构、文件名或逐字匹配都不能独自证明正文质量。"""
     structural = {}
     reviewed = set()
+    text_ids = set()
     for row in criteria:
         if not row["required"]:
             continue
-        if row["verifier_id"] == "html-document":
+        if row["verifier_id"] in ("html-document", "text-document"):
             for key in row["requirement_ids"]:
                 structural.setdefault(key, set()).update(row["source_refs"])
+                if row["verifier_id"] == "text-document":
+                    text_ids.add(key)
         if _is_human_criterion(row):
             reviewed.update(row["requirement_ids"])
 
@@ -279,17 +334,16 @@ def _add_html_signoffs(requirements, criteria, gaps):
         if key not in structural or key in reviewed:
             continue
         if len(criteria) >= MAX_CRITERIA:
-            gaps.append(f"{key} 只有 HTML 结构检查，需留出验收项核对实际内容")
+            gaps.append(f"{key} 只有文档结构检查，需留出验收项核对实际内容")
             continue
-        criterion_id = next(
-            f"html-content-{index}" for index in range(1, MAX_CRITERIA + 1)
-            if f"html-content-{index}" not in used
-        )
+        prefix = "text-content" if key in text_ids else "html-content"
+        criterion_id = next(f"{prefix}-{index}" for index in range(1, MAX_CRITERIA + 1)
+                            if f"{prefix}-{index}" not in used)
         used.add(criterion_id)
         criteria.append({
             "criterion_id": criterion_id,
             "requirement_ids": [key],
-            "description": "请按原要求核对 HTML 实际内容：" + requirement["description"],
+            "description": "请核对交付内容是否符合这项要求：" + requirement["description"],
             "required": True,
             "verification_type": "HUMAN_REVIEW",
             "verifier_id": "human-review",
@@ -305,8 +359,8 @@ def _add_html_signoffs(requirements, criteria, gaps):
 
 def implementation_criterion(row):
     interface = {key: value for key, value in row["test_spec"].items() if key not in ("args", "files")}
-    if row["verifier_id"] == "html-document":
-        # HTML 的元素 ID、标题是产物必须实现的接口；CLI 测试和盲评数据仍留在验证侧。
+    if row["verifier_id"] in ("html-document", "text-document"):
+        # 标题、元素 ID 和指定原话都是制作者需要知道的公开约定。
         interface.update(row["expected_result"])
     return {key: row[key] for key in ("criterion_id", "requirement_ids", "description", "required", "verifier_id")} | {
         "interface": interface,
@@ -323,8 +377,7 @@ def compile_proposal(goal, proposal):
         raise ValueError("验收草案引用了旧目标版本")
     if "ticket_id" in proposal and proposal["ticket_id"] != goal.get("ticket_id"):
         raise ValueError("验收草案引用了其他工单")
-    items = [item for field in ("required_capabilities", "deliverables", "nonfunctional_requirements")
-             for item in goal.get(field, [])]
+    items, advisory = acceptance_requirements(goal)
     constraints = _explicit_constraints(goal)
     constraint_ids = {item["requirement_id"] for item in constraints}
     controls = authorization_constraint_controls(goal)
@@ -335,8 +388,38 @@ def compile_proposal(goal, proposal):
     if not isinstance(raw, list) or len(raw) > MAX_CRITERIA:
         raise ValueError("验收项数量超出上限")
     known = set(requirements)
+    descriptions = {item["requirement_id"]:item.get("description", "") for item in items}
     environment = environment_capabilities()
-    gaps = _list_of_strings(proposal.get("verification_gaps", []))
+    gap_proposals = proposal.get("verification_gaps", [])
+    preference_notes = []
+    # 场地、版面等条件通过签收具体方案来核对。权限类限制单独受引擎控制。
+    design_ids = {item["requirement_id"] for item in goal.get("design_conditions", ())
+                  if not requires_independent_evidence(item["description"])}
+    inspect_at_delivery = set(design_ids)
+    if goal.get("workflow_profile") == ROUTER_TEAM and gap_proposals and isinstance(gap_proposals[0], dict):
+        if len(gap_proposals) > 32:
+            raise ValueError("验收缺口数量超出上限")
+        optional = {item["requirement_id"] for item in advisory}
+        gaps = []
+        for entry in gap_proposals:
+            if (not isinstance(entry, dict) or entry.get("requirement_id") not in known | optional
+                    or entry.get("evidence_kind") not in ("independent_evidence", "artifact_inspection")):
+                raise ValueError("验收缺口须关联本单的需求或偏好")
+            key, reason = entry["requirement_id"], _text(entry.get("reason"), 300)
+            if key in optional:
+                preference_notes.append({"requirement_id":key, "reason":reason})
+            elif key in design_ids and (entry["evidence_kind"] == "artifact_inspection"
+                                         or _SUPPLIED_CONTEXT.fullmatch(descriptions[key])):
+                continue
+            elif (entry["evidence_kind"] == "artifact_inspection" and key not in constraint_ids
+                  and _READER_CAN_INSPECT.search(descriptions[key]) and not requires_independent_evidence(descriptions[key])):
+                inspect_at_delivery.add(key)
+            else:
+                inspect_at_delivery.discard(key)
+                gaps.append(reason)
+    else:
+        # 兼容旧版验收契约；未带范围的既有缺口继续保留。
+        gaps = _list_of_strings(gap_proposals)
     human = _list_of_strings(proposal.get("human_review_requirements", []))
     ids, mapped, criteria = set(), set(controls), []
     for criterion in raw:
@@ -364,7 +447,7 @@ def compile_proposal(goal, proposal):
         if kind == "DETERMINISTIC" and verifier == "python-json-cli" and type(version) is int and version == 1:
             spec, expected = _python_spec(key, spec, expected)
             availability = ENVIRONMENT if ENVIRONMENT in environment else None
-        elif (kind == "DETERMINISTIC" and verifier in ("json-artifact", "html-document", "blind-projection")
+        elif (kind == "DETERMINISTIC" and verifier in ("json-artifact", "html-document", "text-document", "blind-projection")
               and type(version) is int and version == 1):
             spec, expected = _artifact_spec(verifier, spec, expected)
             availability = LOCAL_DATA
@@ -395,8 +478,29 @@ def compile_proposal(goal, proposal):
             "human_review_required": human_required or kind != "DETERMINISTIC",
             "source_refs": _list_of_strings(criterion.get("source_refs", [])), "environment": availability,
         })
+    if inspect_at_delivery:
+        # 把可从成品判断的条件交给签收人。勾选只能在该版归档后由本人作出。
+        signed_ids = {key for row in criteria if row["required"] and _is_human_criterion(row)
+                      for key in row["requirement_ids"]}
+        for item in items:
+            key = item["requirement_id"]
+            if key not in inspect_at_delivery or key in signed_ids:
+                continue
+            if len(criteria) >= MAX_CRITERIA:
+                gaps.append(f"{key} 缺少可用的成品签收条目")
+                continue
+            identifier = next(f"artifact-review-{n}" for n in range(1, MAX_CRITERIA + 1)
+                              if f"artifact-review-{n}" not in ids)
+            ids.add(identifier)
+            criteria.append(dict(criterion_id=identifier, requirement_ids=[key], required=True,
+                                 description=(f"请核对成品是否考虑了「{item['description']}」" if key in design_ids else item["description"]),
+                                 verification_type="HUMAN_REVIEW",
+                                 verifier_id="human-review", verifier_version=1, test_spec={}, expected_result=None,
+                                 evidence_required=True, human_review_required=True, environment=None,
+                                 source_refs=item.get("source_refs", [])))
+            mapped.add(key)
     if goal.get("workflow_profile") == ROUTER_TEAM:
-        _add_html_signoffs(items, criteria, gaps)
+        _add_document_signoffs(items, criteria, gaps)
     signoff_rows = [row for row in criteria if row["required"] and _is_human_criterion(row)]
     mapped_human = {key for row in signoff_rows for key in (row["criterion_id"], row["description"])}
     if not set(human) <= mapped_human:
@@ -418,6 +522,8 @@ def compile_proposal(goal, proposal):
         "source_refs": _list_of_strings(proposal.get("source_refs", [])),
         "status": "VERIFICATION_GAP" if gaps else "READY_FOR_APPROVAL",
     }
+    if preference_notes:
+        contract["preference_notes"] = preference_notes
     if len(goal_checks._encode(contract).encode("utf-8")) > goal_checks.MAX_CONTRACT_BYTES:
         raise ValueError("验收契约超过 256 KiB")
     return contract
@@ -469,6 +575,20 @@ def _criterion_result(criterion, files, occupied):
         return "INCONCLUSIVE", "需要独立验收或可信运行环境不可用"
     if criterion["environment"] not in environment_capabilities():
         return "ERROR", "批准的验证环境不可用"
+    if verifier == "text-document":
+        path = unicodedata.normalize("NFC", spec["path"])
+        data = next((data for name, data in files.items() if unicodedata.normalize("NFC", name) == path), None)
+        if data is None:
+            return "FAIL", "归档里没有约定的文本文档"
+        try:
+            content = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return "FAIL", "归档文档无法按 UTF-8 读取"
+        if not content.strip() or "\0" in content:
+            return "FAIL", "文档缺少可读正文"
+        if not all(fragment in content for fragment in criterion["expected_result"]["contains"]):
+            return "FAIL", "正文缺少约定的逐字片段"
+        return "PASS", "已读取约定的文本文档并核对指定片段"
     if verifier == "html-document":
         if spec["path"] not in files:
             return "FAIL", "缺少约定的静态 HTML 产物"

@@ -37,6 +37,13 @@ def _requested(variant):
     return {key:variant[key] for key in _SCOPE_FIELDS}
 
 
+def valid_directions(options, *, proposal_choice):
+    count = len(options)
+    return (count in ((2, 3) if proposal_choice else (3,))
+            and all(len({option[field].strip().casefold() for option in options}) == count
+                    for field in ('id', 'label', 'text')))
+
+
 def validate_handoff_scopes(instruction, before=None, before_files=None):
     raw = instruction.get('handoff_scope')
     if raw is None:
