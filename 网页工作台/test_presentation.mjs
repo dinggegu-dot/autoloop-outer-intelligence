@@ -396,12 +396,13 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   ui.control('request-team-plan').onclick();
   assert.equal(ui.events.length,0);
   ui.confirm.onclick(); await flushGoalUI();
-  assert.equal(ui.events[0].body.intent,'change');
+  assert.equal(ui.events[0].body.intent,'proposal');
   assert.equal(ui.events[0].body.allow_model_input,true);
   assert.equal(ui.events[0].body.ticket_id,ticket.id);
-  assert.match(ui.events[0].body.text,/依据原要求重新研判.*重要方向由我选择/);
+  assert.equal(ui.events[0].body.direction_owner,'owner');
+  assert.equal(Object.hasOwn(ui.events[0].body,'text'),false);
   ui.control('delegate-team-plan').onclick(); ui.confirm.onclick(); await flushGoalUI();
-  assert.match(ui.events[1].body.text,/采用团队推荐/);
+  assert.equal(ui.events[1].body.direction_owner,'team');
   assert.equal(ui.events[1].body.ticket_id,ticket.id);
  });
  await t.test('目标确认只展开要交付的结果，可选偏好和建议能分别查阅',async t=>{

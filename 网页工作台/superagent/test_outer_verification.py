@@ -593,6 +593,19 @@ class OuterExecutionTests(unittest.TestCase):
         self.assertEqual(result['plan']['comparison_steps'],[1])
         self.assertIn('用户明确要求',result['plan']['route_reason'])
 
+    def test_workbench_proposal_requests_options_before_the_first_implementation(self):
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion('one'),criterion('two'),
+                       goal_fields={'direction_owner':'owner','proposal_requested':True})
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE,workflow_profile=registry.ROUTER_TEAM,team_review_mode=ADAPTIVE_REVIEW))
+        planned = self.plan(['one'], ['two'], routing={
+            'execution_route':'compare','route_reason':'先实施，再比较','comparison_steps':[2],
+        })
+        self.assertEqual(planned['plan']['comparison_steps'],[1,2])
+        first, _ = self.launch_team_stage()
+        self.assertTrue(first['team_decision_required'])
+
     def test_revising_only_a_date_does_not_repeat_last_rounds_comparison(self):
         OuterIntake(Workbench(self.store))
         self.authorize(criterion(),goal_fields={

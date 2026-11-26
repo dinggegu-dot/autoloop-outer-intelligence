@@ -17,7 +17,7 @@ from .coordination_tools import DESCRIPTIONS, SERVER, _LIMIT as _TOOL_EVIDENCE_B
 from .outer_verification import ROUTER_TEAM, SCOPED_COORDINATOR, acceptance_requirements
 
 
-PROMPT_VERSION = 9
+PROMPT_VERSION = 10
 SCOPED_PROMPT_VERSION = 8
 TXT = {'type': 'string'}
 INT = {'type': 'integer'}
@@ -354,6 +354,7 @@ class CodexTicketTeamModel(CodexOuterModel):
             '有同义文字也不得恢复为现行要求。只接受本轮本人明确重新提出的现行要求。'
             '先查 authorized_intake_materials，再决定是否需要向本人提问。联系人、日期等已明确给出的事实不能再问。'
             '知道用户想得到什么就起草目标和可核对的结果。design_conditions 逐字记录场地、受众、时长、版面等影响成品的现实条件。constraints 仅用于真实的操作、数据、权限或费用边界。验证方法由团队拟，不向用户索取详尽验收方式。'
+            '若快照有 proposal_request，本轮只按既有原话和当前目标整理。方案选择和 proposal_control_refs 均不能写成交付、限制或验收要求。'
             'goal_statement 只概述核心交付。preferences 逐字保留有原文依据的可选偏好，如“最好”“如果方便”；不要把它改述成别的必需交付物、'
             '功能、质量要求或限制。为可选偏好推演的额外做法归 MODEL_PROPOSED，并在 preference_support 写出对应的 preference_quote 原话和该额外做法的完整 derived_description。主任务不能附到这个清单。研究所得事实、链接可用性、设计取舍留待执行；无法事先保证时如实说明。'
             '风格、详略、表现手法等可逆选择留给执行团队比较；若要记录未定方向，blocking_scope 填 direction。'
@@ -362,6 +363,7 @@ class CodexTicketTeamModel(CodexOuterModel):
             'authorized_intake_materials 是材料字段名称，不是 source 的可选值。'
             '材料是本单获准使用的事实来源。只有 current_message 来自当前问题的明确回复时，才将其视为本人答复。'
             if role == 'intake_assessor' else
+            'proposal_control_refs 属于流程操作，不得作为任何验收条目的来源。使用实际要求或原工单资料的事件编号。'
             'verification_gaps 每项填真实 requirement_id、reason 和 evidence_kind。仅靠读已经交付的内容就能核对时填 artifact_inspection；需外部事实、运行实测或权限证据时填 independent_evidence。只为真实必须满足且目前缺乏核验途径的条款留缺口。'
             '标为 acceptance_role=advisory 的团队推测与 preferences 仅供执行时参考，不为它设置必需验收或扩大其他条款。若需记录某偏好的限制，使用该偏好自己的编号。'
             'design_conditions 依据交付物是否回应这些条件来验，不要求证明背景事实。提交摘要、资料整理、海报等可在交付时核对。尚未调查或尚未制作不会构成缺口；'

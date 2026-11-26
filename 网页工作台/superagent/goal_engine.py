@@ -255,6 +255,8 @@ def bind_router_route(task, assignment, planned, result):
     order = explicit_comparison_request(requirements)
     if followup and isinstance(goal.get('round_comparison_request'), bool):
         order = goal['round_comparison_request']
+    if goal.get('proposal_requested'):
+        order = True
     compare_requested = order is True
     skip_comparison = order is False
     route = result.get('execution_route')
@@ -274,6 +276,9 @@ def bind_router_route(task, assignment, planned, result):
         route, reason, selected = 'direct', '用户明确要求按既定做法直接实施。', []
     if goal.get('direction_to_compare') and route == 'direct' and not skip_comparison:
         route, reason, selected = 'compare', '用户目标明确，团队先比较会改变交付结果的方向。', [1]
+    if goal.get('proposal_requested') and 1 not in selected:
+        selected = [1, *selected]
+        reason = '按原单的方案选择，从第一个实施阶段开始比较。'
     planned.update(execution_route=route, route_reason=reason.strip(), comparison_steps=sorted(selected))
     for index, step in enumerate(planned['steps'], 1):
         step['execution_route'] = 'compare' if index in selected else 'direct'
