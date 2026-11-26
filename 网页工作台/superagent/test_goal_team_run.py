@@ -14,6 +14,7 @@ from .goal_team_handoff import CandidateReadUnproven, candidate_read_challenge, 
 from .goal_team_records import ADAPTIVE_REVIEW, PROFILE
 from .goal_team_repair import candidate_verification, prepare_scope, valid_verification
 from .goal_team_run import run_team
+from .team_profiles import new_team_profile
 from .outer_verification import LOCAL_DATA, capture, sha256
 
 
@@ -47,6 +48,10 @@ class TeamRunTest(TestCase):
         }
 
     def test_router_short_path_receives_public_interface_and_attributed_material(self):
+        self.assignment['execution_route'] = 'direct'
+        self.assignment['execution_profile'] = new_team_profile({
+            'implementer':{'runtime':'codex-app-server','model':'gpt-6.2-astra','effort':'high'},
+        })
         self.assignment['preference_answer'] = None
         self.assignment['role_slots'] = 1
         self.assignment['context'].update(
@@ -57,6 +62,8 @@ class TeamRunTest(TestCase):
         self.assignment['context']['approved_criteria'][0]['interface']['element_ids'] = ['schedule-v1']
 
         def invoke(**options):
+            self.assertEqual((options['model'], options['effort'], options['sandbox']),
+                             ('gpt-6.2-astra', 'high', 'workspace-write'))
             data = json.loads(options['prompt'].rsplit('\n',1)[-1])
             self.assertEqual(data['approved_materials'], self.assignment['context']['notes'])
             self.assertEqual(data['approved_criteria'][0]['interface']['element_ids'], ['schedule-v1'])

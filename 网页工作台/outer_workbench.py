@@ -3,6 +3,7 @@ import re
 
 from workbench import Problem
 from superagent.goal_team_records import ADAPTIVE_REVIEW, TEAM_REVIEW_MODES
+from superagent.team_profiles import new_team_profile
 
 
 def create_task(workbench, body, *, source='web', legacy_fixture=False):
@@ -11,6 +12,8 @@ def create_task(workbench, body, *, source='web', legacy_fixture=False):
     if outer_enabled and not enabled:
         raise Problem('请在智能接单入口登记需求', 409)
     if body.get('workflow') != 'outer':
+        if 'team_roles' in body:
+            raise Problem('请在团队工单中配置小队', 409)
         if 'team_review_mode' in body:
             raise Problem('请在目标模式下选择审稿方式', 409)
         if enabled:
@@ -41,6 +44,16 @@ def create_task(workbench, body, *, source='web', legacy_fixture=False):
         if source != 'web' or not team_enabled or (mode == ADAPTIVE_REVIEW and not route_team):
             raise Problem('当前入口未启用团队审稿', 409)
         fields['team_review_mode'] = mode
+    if 'team_roles' in body:
+        if source != 'web' or not route_team:
+            raise Problem('当前入口未启用小队配置', 409)
+        try:
+            choices = body['team_roles']
+            if choices is None:
+                raise ValueError('请选择有效的小队配置')
+            fields['execution_profile'] = new_team_profile(choices)
+        except ValueError as error:
+            raise Problem(str(error)) from None
     request = body.get('request_id')
     if not fields['goal'] or not isinstance(request, str) or not re.fullmatch('[a-f0-9-]{36}', request):
         raise Problem('请填写工单目标，并使用有效的请求编号')

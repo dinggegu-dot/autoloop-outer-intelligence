@@ -974,7 +974,7 @@ class OuterIntake:
         message = json.loads(event['body'])
         request = message.get('workbench_request')
         if routed:
-            frozen = new_team_profile()
+            frozen = (request or {}).get('execution_profile') or new_team_profile()
             ticket['ticket_team'] = {'id': ticket_id, 'workflow_profile': ROUTER_TEAM}
             ticket['coordinator_profile'] = 'scoped-v1'
             ticket['approval_terms'].update(execution_profile=frozen, execution_model=frozen['roles']['lead'],

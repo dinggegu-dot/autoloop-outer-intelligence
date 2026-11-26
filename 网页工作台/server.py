@@ -142,6 +142,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response({'csrf':self.server.csrf}, headers=[
                 ('Set-Cookie', 'odyssey_session_'+str(self.server.server_port)+'='+self.server.session_token+'; HttpOnly; SameSite=Strict; Path=/api/')
             ])
+        if route == '/api/outer/team-options':
+            if not self.session():
+                return self.json_response({'error':'会话已过期，请刷新'}, 403)
+            wb = self.server.workbench
+            if not (getattr(wb, 'outer_workbench_entry', False) and getattr(wb, 'outer_goal_team', False)):
+                return self.json_response({'error':'当前入口未启用小队配置'}, 404)
+            from superagent.team_profiles import team_options
+            return self.json_response(team_options())
         if route == '/api/outer':
             if not self.session():
                 return self.json_response({'error':'会话已过期，请刷新'},403)

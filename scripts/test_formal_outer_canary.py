@@ -49,6 +49,10 @@ class FormalOuterCanaryTests(unittest.TestCase):
     def test_custom_orders_use_exact_schema_and_limits(self):
         self.assertTrue(valid_custom_order(CUSTOM_ORDER))
         self.assertTrue(valid_custom_order(dict(CUSTOM_ORDER, team_review_mode="review_and_decide")))
+        teams = {"implementer":{"runtime":"codex-app-server", "model":"gpt-6.2-astra", "effort":"high"}}
+        self.assertTrue(valid_custom_order(dict(CUSTOM_ORDER, team_roles=teams)))
+        self.assertFalse(valid_custom_order(dict(CUSTOM_ORDER, team_roles={"lead":{"executable":"/bin/sh"}})))
+        self.assertFalse(valid_custom_order(dict(CUSTOM_ORDER, team_roles={"lead":None})))
         self.assertTrue(valid_custom_order(dict(CUSTOM_ORDER, goal="目" * 6000, acceptance="好" * 4000)))
         for invalid in (dict(CUSTOM_ORDER, goal=" \n"), dict(CUSTOM_ORDER, goal="目" * 6001),
                         dict(CUSTOM_ORDER, name="a" * 81), dict(CUSTOM_ORDER, acceptance="a" * 4001),

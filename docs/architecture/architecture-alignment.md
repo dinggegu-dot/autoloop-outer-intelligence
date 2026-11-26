@@ -6,6 +6,8 @@
 
 网页原单可直接取消未结束的工单。取消复用绑定工单版本的停办命令。引擎关闭待办，结算时拒绝旧执行代次的回执。等待签收的当前候选记录为取消时未签收，已签收版本继续由固定归档提供。[用户操作](../product/router-ticket-teams.md)
 
+团队配置在新建工单时由服务端按角色和已验证的 Coding Agent 目录校验，冻结到同一份待批准的授权中。Router 继续安排任务，内层通过同一调用契约使用负责人和其他角色的配置。兼容历史执行档案。当前目录仅启用 Codex，新增适配器前单独验证模型身份、工作区权限、时限、实物回执和资料授权。[角色配置](../product/router-ticket-teams.md#角色与替换)
+
 **结论（2026-11-19）**　保留事件驱动的外层判断、程序控制的授权与状态转换、按派工运行的 Codex 执行器，以及绑定产物版本的独立验收。候选版已经用这套机制交付过两种本地 CLI 工具。把同样的结论推广到陌生的多阶段软件、交互式产品或主观质量，目前缺少真实端到端证据。
 
 本页是后续 Codex 的架构入口。交接稿保留提出决定时的理由，本页记录证据支持到哪里。核对基准是 PR #4 的代码提交 `4bc67be7b93733103bdaa1e445bc0d3281d8c8af`。原稿引用的 `af48958` 比它早一个提交；原稿正文保留，仅规范了 Markdown 换行。核对时 GitHub 显示 PR 为 Open，目标分支为 `main`，源分支为 `codex/v2-outer-intelligence`。Git 远端的 PR head 与本地基准一致。[交接稿 V1.0](design-handoff-v1.0.md) · [PR #4](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/4) · [两版之间的变更](https://github.com/dinggegu-dot/autoloop-outer-intelligence/compare/af48958...4bc67be)

@@ -238,6 +238,151 @@ export function mountTeamReviewControl(anchor, initial='') {
   return sync;
 }
 
+export function mountTeamProfileControl(anchor, loadOptions, {initial=null, onSave=null}={}) {
+  const panel=el('details',null,'team-profile-options');
+  const summary=el('summary');
+  const status=el('p',null,'goal-muted');
+  status.setAttribute('role','status');
+  const reset=el('button',onSave?'恢复默认':'使用系统默认','team-profile-reset');
+  reset.type='button';
+  reset.hidden=true;
+  const save=el('button','保存默认小队','team-profile-save');
+  save.type='button';
+  save.hidden=true;
+  const feedback=el('p',null,'goal-muted');
+  feedback.setAttribute('role','status');
+  const rows=el('div',null,'team-profile-rows');
+  const actions=el('div',null,'team-profile-actions');
+  actions.append(reset,save);
+  panel.hidden=true;
+  panel.append(summary,status,rows,actions,feedback);
+  anchor.after(panel);
+  const fields=new Map();
+  const unavailableMessage='已保存的部分小队选项当前不可用。请恢复默认后重新选择。';
+  let loading=false, pending=initial, unavailable=false, help='';
+
+  const choices=()=>{
+    if (!fields.size || unavailable) return pending;
+    const result={};
+    for (const [role,field] of fields) {
+      const {runtime,model,effort,defaults}=field;
+      if (runtime.value===defaults.runtime && !model.value && !effort.value) continue;
+      result[role]={runtime:runtime.value,model:model.value || defaults.model,effort:effort.value};
+    }
+    return Object.keys(result).length ? result : null;
+  };
+  const refreshSummary=()=>{
+    const selection=choices();
+    const label=onSave ? '编辑默认小队' : '小队配置';
+    summary.textContent=selection ? label+' · 已调整 '+Object.keys(selection).length+' 个角色'
+      : label+(onSave?'':'（选填）');
+  };
+  const labelSelect=(label,select)=>{
+    const control=el('label');
+    select.setAttribute('aria-label',label);
+    control.append(el('span',label),select);
+    return control;
+  };
+  const fill=(select,options)=>select.replaceChildren(...options.map(([value,name])=>new Option(name,value)));
+  const load=async()=>{
+    if (fields.size || loading || !panel.open) return;
+    loading=true;
+    status.textContent='正在读取小队选项…';
+    try {
+      const {roles,defaults,efforts,agents}=await loadOptions();
+      for (const [role,name] of Object.entries(roles)) {
+        const runtime=el('select'), model=el('select'), effort=el('select');
+        const defaultModel=defaults.roles[role];
+        const defaultRuntime=defaults.role_runtimes?.[role] || defaults.runtime;
+        const row=el('section',null,'team-profile-role');
+        row.dataset.teamRole=role;
+        row.setAttribute('role','group');
+        row.setAttribute('aria-label',name);
+        row.append(el('h3',name));
+        const roleAgents=Object.entries(agents).filter(([,agent])=>agent.roles.includes(role));
+        fill(runtime,roleAgents.map(([id,agent])=>[id,agent.label]));
+        runtime.value=defaultRuntime;
+        const updateAgent=()=>{
+          const agent=agents[runtime.value];
+          const inherit=runtime.value===defaultRuntime;
+          const defaultEffort=role==='lead' ? '随任务调整' : efforts[defaults.efforts[role]];
+          fill(model,[
+            ...(inherit ? [['','默认 · '+agent.models[defaultModel]]] : []),
+            ...Object.entries(agent.models),
+          ]);
+          fill(effort,[
+            ...(inherit ? [['','默认 · '+defaultEffort]] : []),
+            ...agent.efforts.map(value=>[value,efforts[value]]),
+          ]);
+        };
+        updateAgent();
+        runtime.addEventListener('input',updateAgent);
+        if (roleAgents.length>1) row.append(labelSelect('Coding Agent',runtime));
+        row.append(labelSelect('模型',model),labelSelect('思考强度',effort));
+        for (const field of [model,effort]) field.addEventListener('input',refreshSummary);
+        runtime.addEventListener('input',refreshSummary);
+        rows.append(row);
+        fields.set(role,{runtime,model,effort,defaults:{runtime:defaultRuntime,model:defaultModel},updateAgent});
+      }
+      const labels=Object.values(agents).map(agent=>agent.label);
+      help=(labels.length===1 ? '当前 Coding Agent 为 '+labels[0]+'。' : '')
+        +'每张工单按需要调用相应角色。';
+      apply(pending);
+      reset.hidden=false;
+      save.hidden=!onSave;
+    } catch {
+      status.textContent='暂时无法读取小队选项。重新展开可重试，也可以直接用默认小队。';
+    } finally {
+      loading=false;
+    }
+  };
+  const apply=selection=>{
+    pending=selection;
+    unavailable=fields.size && Object.keys(selection || {}).some(role=>!fields.has(role));
+    for (const [role,field] of fields) {
+      const choice=selection?.[role];
+      field.runtime.value=choice?.runtime || field.defaults.runtime;
+      if (!field.runtime.value) {
+        unavailable=true;
+        field.runtime.value=field.defaults.runtime;
+      }
+      field.updateAgent();
+      field.model.value=choice?.model===field.defaults.model && !choice?.effort ? '' : (choice?.model || '');
+      field.effort.value=choice?.effort || '';
+      for (const select of [field.model,field.effort]) {
+        if (select.selectedIndex<0) {
+          unavailable=true;
+          select.selectedIndex=0;
+        }
+      }
+    }
+    status.textContent=unavailable ? unavailableMessage : help;
+    refreshSummary();
+  };
+  reset.addEventListener('click',()=>{
+    apply(null);
+    feedback.textContent='';
+    panel.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  save.addEventListener('click',()=>{
+    feedback.textContent=unavailable ? unavailableMessage : onSave(choices());
+  });
+  panel.addEventListener('input',()=>{feedback.textContent='';});
+  panel.addEventListener('toggle',load);
+  refreshSummary();
+  return {
+    choices() {
+      if (unavailable) throw Error(unavailableMessage);
+      return choices();
+    },
+    apply,
+    show(enabled) {
+      panel.hidden=!enabled;
+      if (!enabled) panel.open=false;
+    },
+  };
+}
+
 export function projectTeamHandoffs(row) {
   if (!canReadInnerRepairs(row)) return [];
   const flow=row.execution?.goal_execution || {};
@@ -854,13 +999,20 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     copy(budget,'允许范围',Array.isArray(mandate.scope)?mandate.scope.map(renderValue).join('\n'):mandate.scope);
     textList(budget,'禁止操作',mandate.forbidden_operations);
     if (Number.isFinite(mandate.budget_seconds)) copy(budget,'执行时间上限',mandate.budget_seconds+' 秒');
-    if (mandate.execution_model) copy(budget,'执行模型',mandate.execution_model);
+    if (!mandate.execution_profile && mandate.execution_model) copy(budget,'执行模型',mandate.execution_model);
     const review=Object.hasOwn(teamReviewModes,mandate.team_review_mode) && teamReviewModes[mandate.team_review_mode];
     if (review) copy(budget,'团队审稿',[review.label,review.scope].join('\n'));
     const config=mandate.execution_profile;
     if(config?.roles){
-      const roleNames={lead:'负责人',advisor:'顾问',design_advisor:'复杂设计顾问',implementer:'执行',reviewer:'复核'};
-      textList(budget,'角色与模型',Object.entries(config.roles).map(([role,model])=>(roleNames[role]||role)+' · '+model));
+      const roleNames={lead:'负责人',advisor:'只读顾问',design_advisor:'复杂设计顾问',implementer:'执行者',reviewer:'复核者'};
+      const efforts={medium:'中等',high:'高'};
+      textList(budget,'小队配置',Object.entries(config.roles).map(([role,model])=>{
+        const runtime=config.role_runtimes?.[role] || config.runtime;
+        const strength=role==='lead' && config.efforts && config.comparison_lead_effort!==config.efforts.lead
+          ? '常规'+efforts[config.efforts.lead]+'，比选'+efforts[config.comparison_lead_effort]
+          : efforts[config.efforts?.[role]];
+        return [roleNames[role] || role,runtime==='codex-app-server' ? 'Codex' : runtime,model,strength].filter(Boolean).join(' · ');
+      }));
       if(config.max_roles_per_assignment)copy(budget,'每次派工角色轮次上限',String(config.max_roles_per_assignment));
       if(config.max_roles_per_ticket)copy(budget,'整单角色轮次上限',String(mandate.team_role_limit ?? config.max_roles_per_ticket));
     }
@@ -1113,7 +1265,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     if (row.ticket_team) {
       const names={lead:'负责人',implementer:'执行者',advisor:'只读顾问',design_advisor:'只读顾问',reviewer:'独立验收者'};
       const used=[...new Set((execution?.team_activity || []).filter(call=>call.status==='completed' && names[call.role] && call.model)
-        .map(call=>names[call.role]+' '+call.model))];
+        .map(call=>[names[call.role],call.model,{medium:'中等',high:'高'}[call.effort]].filter(Boolean).join(' ')))];
       if (used.length) parent.append(el('p','已完成的角色调用 · '+used.join(' · '),'goal-muted'));
     }
     if (!steps.length) parent.append(el('p','尚无已登记的执行步骤。','goal-muted'));
