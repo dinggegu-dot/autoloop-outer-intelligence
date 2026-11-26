@@ -305,21 +305,153 @@ body:has(.goal-formal) > .mast .brand i {
 body:has(.goal-formal.has-ticket) > .mast #map-link { display: none; }
 body:has(.goal-formal) > .mast nav a { padding: 7px 11px; border-radius: 8px; }
 body:has(.goal-formal) > .mast nav a[href="/workbench"] { background: #edf3f8; }
-.goal-team.goal-formal .goal-ticket { border-radius: 18px; }
-.goal-team.goal-formal .goal-now { border-color: transparent; }
-.goal-team.goal-formal .goal-nav-links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
+/* 团队名册与原单使用相同的标题、状态和操作顺序。装饰图来自本机原工作台。 */
+.goal-formal .goal-sidebar { gap:18px; align-content:start; }
+.goal-formal .goal-book-title {
+  position:relative; isolation:isolate; overflow:hidden; display:flex; align-items:center;
+  min-height:104px; padding:20px clamp(20px,3vw,38px); border:1px solid var(--goal-line);
+  border-radius:18px; background:#f3f8fa;
 }
-.goal-team.goal-formal .goal-nav-links .goal-button { color: var(--goal-run-ink); }
-.goal-team.goal-formal .goal-nav-links .goal-button:hover { background: var(--goal-selected); }
-@media (min-width: 960px) {
-  .goal-team.goal-formal.has-ticket { grid-template-columns: minmax(215px,.72fr) minmax(0,2.28fr); }
-  .goal-team.goal-formal .goal-sidebar .goal-card { padding: 12px; }
+.goal-formal .goal-book-title::before, .goal-formal .goal-book-title::after {
+  content:""; position:absolute; z-index:-1; inset-block:0; inset-inline-end:0; width:48%; pointer-events:none;
 }
-@media (max-width: 480px) {
-  body:has(.goal-formal) > .mast nav { gap: 3px; margin-left: 0; }
-  body:has(.goal-formal) > .mast nav a { padding: 6px 8px; }
+.goal-formal .goal-book-title::before {
+  background:linear-gradient(90deg,#f3f8fa 0%,#f3f8fa99 36%,transparent 77%),
+    url('/assets/odyssey/metro-scene.png') 52% 48% / cover;
+  opacity:.58;
+}
+.goal-formal .goal-book-title::after {
+  inset-inline-end:5%; width:72px;
+  background:url('/assets/odyssey/metro-person.png') center bottom -10px / auto 95% no-repeat;
+}
+.goal-formal .goal-book-title h1, .goal-formal .goal-detail-head h1 {
+  color:var(--goal-ink); font-size:clamp(1.55rem,3vw,2.3rem); line-height:1.25;
+  letter-spacing:-.035em; margin:0; overflow-wrap:anywhere;
+}
+.goal-formal .goal-book-title h1 { width:58%; }
+.goal-formal .goal-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; }
+.goal-formal .goal-toolbar input { flex:1 1 210px; width:auto; max-width:400px; }
+.goal-formal .goal-toolbar .goal-actions { flex:1 1 auto; margin:0; gap:2px; }
+.goal-formal .goal-toolbar .goal-button { color:var(--goal-muted); background:transparent; border:1px solid transparent; }
+.goal-formal .goal-toolbar .goal-button[aria-pressed=true] {
+  color:var(--goal-run-ink); background:#e5eef4; border-color:#b3c8d6;
+}
+.goal-formal .goal-toolbar .goal-button:hover { background:var(--goal-selected); }
+.goal-formal .goal-toolbar .goal-connection { flex-basis:100%; }
+.goal-formal:not(.has-ticket) .goal-queues, .goal-formal:not(.has-ticket) .goal-queue,
+.goal-formal.has-ticket .goal-queue { grid-template-columns:minmax(0,1fr); }
+.goal-formal .goal-queue { --station-ink:var(--goal-muted); --station-wash:var(--goal-soft); gap:0; }
+.goal-formal .goal-decision { --station-ink:var(--goal-wait-ink); --station-wash:var(--goal-wait); }
+.goal-formal .goal-flight { --station-ink:var(--goal-run-ink); --station-wash:var(--goal-run); }
+.goal-formal .goal-delivery { --station-ink:var(--goal-green-ink); --station-wash:var(--goal-green); }
+.goal-formal .goal-queue-title { margin-block-end:8px; }
+.goal-formal .goal-queue-title h2 { font-size:1.09rem; }
+.goal-formal .goal-queue :is(.goal-chip,.goal-count) { color:var(--station-ink); background:var(--station-wash); }
+.goal-formal .goal-queue .goal-card {
+  position:relative; display:grid; grid-template-columns:minmax(0,1fr) minmax(5rem,auto) minmax(6rem,auto);
+  align-items:center; gap:8px 20px; border:1px solid var(--goal-line); border-radius:0;
+  padding:12px 18px; min-height:62px; background:var(--goal-surface);
+}
+.goal-formal .goal-card + .goal-card { border-top:0; }
+.goal-formal .goal-queue-title + .goal-card { border-radius:12px 12px 0 0; }
+.goal-formal .goal-queue .goal-card:last-child { border-end-start-radius:12px; border-end-end-radius:12px; }
+.goal-formal .goal-queue .goal-card:is(:hover,:focus-within,.is-selected) { background:#f0f5f8; }
+.goal-formal .goal-ledger-info { min-width:0; }
+.goal-formal .goal-ledger-info h3 { margin:0; }
+.goal-formal .goal-ledger-open {
+  font:inherit; font-weight:690; color:var(--goal-ink); cursor:pointer; text-align:start;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+  padding:0; background:none; border:none; border-radius:0; overflow-wrap:anywhere;
+}
+.goal-formal .goal-ledger-open::after { content:""; position:absolute; inset:0; }
+.goal-formal .goal-card:has(.goal-ledger-open:focus-visible) { z-index:1; outline:3px solid var(--goal-focus); outline-offset:1px; }
+.goal-formal .goal-ledger-description {
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; overflow:hidden;
+  color:var(--goal-muted); font-size:.86rem; margin:3px 0 0;
+}
+.goal-formal .goal-ledger-action { color:var(--station-ink); text-align:end; font-size:.88rem; font-weight:650; }
+.goal-formal .goal-ledger-action::after { content:" ›"; }
+.goal-formal .goal-card .goal-chip { justify-self:start; align-self:center; }
+.goal-team.goal-formal.has-ticket { grid-template-columns:minmax(0,1fr); }
+.goal-formal.has-ticket .goal-sidebar { display:none; }
+.goal-formal .goal-ticket { width:100%; padding:clamp(14px,2.5vw,32px); border-radius:18px; }
+.goal-formal .goal-nav-links { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; }
+.goal-formal .goal-nav-links .goal-button { color:var(--goal-run-ink); min-height:42px; padding:5px 8px; }
+.goal-formal .goal-nav-links .goal-button:hover { background:var(--goal-selected); }
+.goal-formal .goal-detail-head {
+  --guide-image:url('/assets/odyssey/mario-sticker.png'); position:relative;
+  border-block-end:1px solid var(--goal-line); padding:10px 0 17px; margin:0;
+}
+.goal-formal .goal-ticket[data-station="decision"] .goal-detail-head { --guide-image:url('/assets/odyssey/cap-person.png'); }
+.goal-formal .goal-ticket[data-station="delivery"] .goal-detail-head { --guide-image:url('/assets/odyssey/power-moon.png'); }
+.goal-formal .goal-ticket[data-station="dock"] .goal-detail-head { --guide-image:url('/assets/odyssey/ship.png'); }
+.goal-formal .goal-detail-head::before {
+  content:""; pointer-events:none; position:absolute; inset-inline-end:8px; top:9px; width:78px; height:77px;
+  background:var(--guide-image) center / contain no-repeat;
+}
+.goal-formal .goal-detail-head :is(h1,.goal-actions) { padding-inline-end:100px; }
+.goal-formal .goal-detail-head .goal-actions { gap:3px 10px; }
+.goal-formal .goal-detail-head .goal-actions small { font-family:inherit; letter-spacing:0; }
+.goal-formal .goal-detail-head .goal-button { padding-inline:5px; min-height:42px; }
+.goal-formal .goal-workflow { margin:10px 0 0; column-gap:12px; }
+.goal-formal .goal-workflow li { padding:4px 0 0; border-top:2px solid var(--goal-line); }
+.goal-formal .goal-workflow [aria-current=step] { border-color:var(--goal-primary); }
+.goal-formal .goal-workflow small { display:inline; margin-inline-start:4px; }
+.goal-formal .goal-now { background:#f4f7f9; padding:clamp(14px,2vw,22px); margin-block:18px; }
+.goal-formal [data-station="decision"] .goal-now { border-inline-start:4px solid var(--goal-primary); }
+.goal-formal .goal-tabs { gap:2px 10px; }
+.goal-formal .goal-tabs .goal-button { color:var(--goal-muted); }
+.goal-formal .goal-tabs .goal-button[aria-current=page] { color:var(--goal-ink); }
+.goal-formal .goal-content { position:relative; padding:8px 0; margin-block:12px; }
+.goal-formal .goal-content:focus-visible { outline:0; }
+.goal-formal .goal-content:focus-visible::before {
+  content:""; position:absolute; inset-inline-start:-8px; top:11px;
+  width:3px; height:1.5em; border-radius:2px; background:var(--goal-focus);
+}
+.goal-formal .goal-content > :first-child { margin-block-start:0; }
+.goal-formal .goal-content > h3:first-child {
+  position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+}
+.goal-formal button:hover:not(:focus-visible) { outline:none; }
+.goal-formal .goal-file { padding:10px 14px; border:1px solid var(--goal-line); border-radius:10px; }
+.goal-formal .goal-file > details { border:0; margin:0; padding:0; }
+.goal-formal .goal-file > [role=status]:empty { display:none; }
+@media (min-width:700px) {
+  .goal-formal .goal-file:has(> details:not([open])) { grid-template-columns:minmax(0,1fr) minmax(0,auto); align-items:center; }
+  .goal-formal .goal-file > [role=status] { grid-column:1/-1; }
+}
+@media (min-width:1120px) {
+  .goal-team.goal-formal.has-ticket { grid-template-columns:clamp(225px,22vw,280px) minmax(0,1fr); align-items:start; }
+  .goal-formal.has-ticket .goal-sidebar { display:grid; gap:12px; }
+  .goal-formal.has-ticket .goal-book-title { min-height:58px; padding:8px 14px; }
+  .goal-formal.has-ticket .goal-book-title h1 { font-size:1.15rem; }
+  .goal-formal.has-ticket .goal-book-title::after { width:36px; }
+  .goal-formal.has-ticket .goal-toolbar input { max-width:none; }
+  .goal-formal.has-ticket .goal-toolbar .goal-button { font-size:.78rem; padding:5px 7px; min-height:36px; }
+  .goal-formal.has-ticket .goal-queue .goal-card { grid-template-columns:minmax(0,1fr); gap:4px; padding:10px 12px; }
+  .goal-formal.has-ticket .goal-ledger-info h3 { font-size:.91rem; }
+  .goal-formal.has-ticket .goal-queue-title h2 { font-size:.94rem; }
+  .goal-formal.has-ticket :is(.goal-ledger-action,.goal-ledger-description) { display:none; }
+  .goal-formal.has-ticket .goal-count,.goal-formal.has-ticket .goal-card .goal-chip { font-size:.75rem; }
+}
+@media (max-width:640px) {
+  .goal-formal .goal-book-title { min-height:86px; padding-inline:16px; }
+  .goal-formal .goal-toolbar input { max-width:none; }
+  .goal-formal .goal-toolbar .goal-actions { flex-basis:100%; }
+  .goal-formal .goal-toolbar .goal-button { min-height:40px; padding:5px 9px; }
+  .goal-formal .goal-queue .goal-card { padding:12px; gap:5px 12px; grid-template-columns:minmax(0,1fr) auto; }
+  .goal-formal .goal-ledger-info { grid-column:1/-1; }
+  .goal-formal .goal-ledger-open { font-size:1rem; }
+  .goal-formal .goal-ledger-action { font-size:.8rem; }
+  .goal-formal .goal-detail-head::before { width:50px; height:50px; inset-inline-end:0; }
+  .goal-formal .goal-detail-head h1 { padding-inline-end:60px; }
+  .goal-formal .goal-detail-head .goal-actions { padding-inline-end:0; }
+  .goal-formal .goal-tabs { gap:2px; }
+  .goal-formal .goal-tabs .goal-button { font-size:.83rem; padding-inline:8px; }
+  .goal-formal .goal-workflow { gap:6px; }
+  .goal-formal .goal-workflow small { display:block; margin:0; }
+}
+@media (max-width:480px) {
+  body:has(.goal-formal) > .mast nav { gap:3px; margin-left:0; }
+  body:has(.goal-formal) > .mast nav a { padding:6px 8px; }
 }

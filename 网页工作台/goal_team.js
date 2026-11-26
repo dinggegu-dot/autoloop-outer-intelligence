@@ -8,6 +8,7 @@ const queues = {
   dock: ['已暂停与停止', '没有已暂停或停止的工单'],
   unknown: ['待核对', '没有待核对的工单'],
 };
+const formalQueueLabels = {decision:'待我决定',dock:'暂停或停止'};
 const tabs = { progress: '进度', artifacts: '成果与验收', decisions: '决定与记录' };
 const anchors = {
   mission: 'progress', decision: 'progress', scope: 'progress', criteria: 'progress',
@@ -617,6 +618,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     if (event) url.searchParams.set('outer_event',event);
     if (anchor) url.searchParams.set('goal_panel',anchor);
     if (regularId) url.searchParams.set('task',regularId);
+    if (formalModelInputConsent && filter) url.searchParams.set('station',filter);
     url.hash = 'tasks';
     history[replace?'replaceState':'pushState'](history.state,'',url);
   }
@@ -625,10 +627,13 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       btn.setAttribute('aria-pressed',String(btn.dataset.filter===filter));
   }
   function showFilters() {
-    const options = [['','工作台'],['all','全部工单'],['decision','待我处理'],['dock','已暂停与停止'],['unknown','待核对']];
+    const options = formalModelInputConsent ?
+      [['','全部工单'],...Object.entries(queues).map(([key,[label]])=>[key,formalQueueLabels[key] || label])] :
+      [['','工作台'],['all','全部工单'],['decision','待我处理'],['dock','已暂停与停止'],['unknown','待核对']];
     for (const [key,label] of options) {
       const btn = button(label,()=>{
         filter=key; syncFilter(); drawList();
+        if (formalModelInputConsent) writeRoute({id:focused,event:eventId,anchor:focused?section:'',regularId:activeRegular,replace:true});
       });
       btn.dataset.filter=key; filterBar.append(btn);
     }
@@ -676,7 +681,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       (!filter || filter==='all' || row.station===filter));
     const counts = new Map();
     for (const row of shown) counts.set(row.title,(counts.get(row.title)||0)+1);
-    const layout = filter==='all' ? Object.keys(queues) : filter ? [filter] : ['decision','flight','delivery'];
+    const layout = filter && filter!=='all' ? [filter] :
+      formalModelInputConsent || filter==='all' ? Object.keys(queues) : ['decision','flight','delivery'];
     const unconfirmed = !connected || !regularFresh;
     const key = JSON.stringify([focused,activeRegular,shown,layout,connected,regularFresh,unconfirmed && checkedAt,Boolean(data)]);
     if (key===listKey) return;
@@ -685,12 +691,17 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     queueBox.replaceChildren();
     connection.textContent = !data ? '正在读取工单' : unconfirmed
       ? '连接中断 · 上次更新 '+(checkedAt || '待核对') : '';
+    if (formalModelInputConsent && !filter && !shown.length) {
+      const message=!data || unconfirmed ? '正在核对工单列表。' : match ? '没有匹配的工单。' : '目前还没有团队工单。';
+      queueBox.append(el('p',message,'goal-empty'));
+    }
     for (const station of layout) {
       const [label,empty] = queues[station];
       const queue = el('section',null,'goal-queue goal-'+station); queue.setAttribute('aria-labelledby','goal-queue-'+station);
       const head = el('div',null,'goal-queue-title');
-      const heading = el('h2',label); heading.id = 'goal-queue-'+station;
+      const heading = el('h2',(formalModelInputConsent && formalQueueLabels[station]) || label); heading.id = 'goal-queue-'+station;
       const group = sortQueue(shown.filter(row=>row.station===station),station);
+      if (formalModelInputConsent && !filter && !group.length) continue;
       const count = el('span',unconfirmed ? '—' : String(group.length),'goal-count');
       head.append(heading,count); queue.append(head);
       if (!group.length) queue.append(el('p',unconfirmed?'暂未取得队列状态。':empty,'goal-empty'));
@@ -698,6 +709,22 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         const tile = el('article',null,'goal-card');
         const selected = (card.regular ? activeRegular : focused) === card.id;
         if (selected) tile.classList.add('is-selected');
+        const go = button(card.action,()=>open(card.id,card.anchor,card.regular),station==='decision'?'primary':'');
+        go.id = (card.regular?'goal-regular-':'goal-open-')+card.id;
+        go.setAttribute('aria-label',card.action+' · '+card.title);
+        if (selected) go.setAttribute('aria-current','true');
+        if (formalModelInputConsent) {
+          const heading=el('h3');
+          go.textContent=card.title; go.className='goal-ledger-open'; go.title=card.title;
+          heading.append(go);
+          const info=el('div',null,'goal-ledger-info');
+          info.append(heading);
+          if (counts.get(card.title)>1) info.append(el('small',card.id.slice(-8),'goal-muted'));
+          if (station==='decision' && card.reason) info.append(el('p',card.reason,'goal-ledger-description'));
+          const action=el('span',card.action,'goal-ledger-action'); action.setAttribute('aria-hidden','true');
+          tile.append(info,el('span',card.label,'goal-chip'),action);
+          queue.append(tile); continue;
+        }
         tile.append(el('span',card.label,'goal-chip'),el('h3',card.title));
         if (counts.get(card.title)>1) tile.append(el('small',card.id.slice(-8),'goal-muted'));
         if (station==='decision' && card.reason && card.next && card.next!==card.reason) {
@@ -709,10 +736,6 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
           if (card.next && card.next!==card.reason) tile.append(el('p',card.next));
         }
         if (card.at && station==='delivery') tile.append(el('small',time(card.at),'goal-muted'));
-        const go = button(card.action,()=>open(card.id,card.anchor,card.regular),station==='decision'?'primary':'');
-        go.id = (card.regular?'goal-regular-':'goal-open-')+card.id;
-        go.setAttribute('aria-label',card.action+' · '+card.title);
-        if (selected) go.setAttribute('aria-current','true');
         tile.append(go); queue.append(tile);
       }
       queueBox.append(queue);
@@ -1163,11 +1186,11 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     parent.append(box);
   }
   function displayFiles(row, candidate, parent, label, downloadable=true) {
-    if (candidate.artifact_sha256) {
-      const meta=details('归档摘要 SHA-256','summary-'+candidate.assignment);
-      meta.append(el('code',candidate.artifact_sha256)); parent.append(meta);
-    }
     const files=Object.entries(candidate.files || {});
+    const meta=(candidate.artifact_sha256 || (formalModelInputConsent && files.some(([,sha])=>typeof sha==='string'))) ?
+      details('归档摘要 SHA-256','summary-'+candidate.assignment) : null;
+    if (candidate.artifact_sha256) meta.append(el('code',candidate.artifact_sha256));
+    if (meta && !formalModelInputConsent) parent.append(meta);
     for (const [path,sha] of files) {
       const file=el('div',null,'goal-file');
       if (downloadable && candidate.assignment) {
@@ -1175,9 +1198,13 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         downloadFile(row.id,candidate.assignment,path,file,'下载 '+label+' · '+path);
       }
       else file.append(el('strong',path));
-      if (typeof sha==='string') file.append(el('code',sha,'goal-muted'));
+      if (typeof sha==='string') {
+        if (formalModelInputConsent) meta.append(el('h4',path),el('code',sha,'goal-muted'));
+        else file.append(el('code',sha,'goal-muted'));
+      }
       parent.append(file);
     }
+    if (meta && formalModelInputConsent) parent.append(meta);
   }
   function lockedBlindResult(review, parent) {
     const actor=review.lock?.operator_kind==='acceptance_test'?'测试操作员':'本人';
@@ -1684,7 +1711,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       return;
     }
     const model=project(row), header=el('header',null,'goal-detail-head');
-    const heading=el('h2',model.title); heading.id='goal-ticket-title'; heading.tabIndex=-1;
+    main.dataset.station=model.station;
+    const heading=el(formalModelInputConsent?'h1':'h2',model.title); heading.id='goal-ticket-title'; heading.tabIndex=-1;
     const identity=el('div',null,'goal-actions');
     identity.append(el('span',model.label,'goal-chip'),el('small',time(model.at),'goal-muted'));
     const copyId=button('工单 '+row.id.slice(-8),async()=>{
@@ -1708,6 +1736,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     // 同一版待定方向的表单和预览保持挂载，后台更新不重置阅读位置、选区和焦点。
     const keepDirection=directionKey && openDirection?.key===directionKey;
     const now=keepDirection ? openDirection.now : el('section',null,'goal-now');
+    if (formalModelInputConsent) now.hidden=model.station!=='decision' && connected &&
+      !model.reason && !model.next && !view.decision_items?.length && !view.pause && !view.resume && !(row.status==='PAUSED' && view.stop);
     const summary=el('div');
     const nowTitle=el('h3',model.station==='decision'?'等你决定':'现在与下一步'); nowTitle.id='goal-section-decision'; nowTitle.tabIndex=-1;
     summary.append(nowTitle);
@@ -1759,6 +1789,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     }
     const nav=tabNav(row);
     const content=el('section',null,'goal-content'); content.id='goal-section-'+panel;
+    content.setAttribute('aria-labelledby','goal-tab-'+panel);
     if (panel==='progress') displayProgress(row,content);
     else if (panel==='artifacts') displayArtifacts(row,content);
     else displayDecisions(row,content);
@@ -1769,7 +1800,9 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       main.lastChild.replaceWith(content);
     } else {
       if (!directionKey) openDirection=null;
-      main.replaceChildren(navigation,header,now,nav,content);
+      if (formalModelInputConsent && model.station==='delivery' && panel==='artifacts') {
+        main.replaceChildren(navigation,header,nav,content,now);
+      } else main.replaceChildren(navigation,header,now,nav,content);
     }
     restorePosition(main,saved); focusSection();
   }
@@ -1815,6 +1848,11 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   }
   showFilters();
   search.oninput=drawList;
+  if (formalModelInputConsent) {
+    const banner=el('header',null,'goal-book-title');
+    banner.append(el('h1','团队工单簿')); sidebar.append(banner);
+    filterBar.setAttribute('role','group'); filterBar.setAttribute('aria-label','按工单状态筛选');
+  }
   queueHead.append(search,filterBar,connection);
   sidebar.append(queueHead,queueBox);
   root.classList.add('goal-team');

@@ -1,0 +1,38 @@
+{
+  "baseline": "f5d5e0f79a6915cf770b9696a4d7a3b861a1ca4d",
+  "source": "本机 Google Chrome，正式前端渲染，同一组合成工单。纵向位置单位为 CSS 像素。",
+  "home": [
+    {
+      "width": 1440,
+      "before_ordinary_section_top": 1188,
+      "after_ordinary_switch_top": 308,
+      "empty_panel_height": 60,
+      "third_decision_returns_with_focus": true,
+      "page_errors": []
+    },
+    {
+      "width": 390,
+      "before_ordinary_section_top": 1998,
+      "after_ordinary_switch_top": 515,
+      "empty_panel_height": 102,
+      "third_decision_returns_with_focus": true,
+      "page_errors": []
+    }
+  ],
+  "views": {
+    "ordinary_detail_top_at_390": [
+      474,
+      147
+    ],
+    "role_width_at_390": [
+      93,
+      324
+    ],
+    "closed_journal_switch_height": 44,
+    "horizontal_overflow_in_tested_views": 0
+  },
+  "recovery": {
+    "verified_program_groups": 9,
+    "kept_intervening_order": true
+  }
+}
