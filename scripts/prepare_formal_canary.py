@@ -126,7 +126,10 @@ def frontend(formal, front):
         </section>
         <!--OUTER-HOME-APPROVALS-END--><details id="historical-approval-panel"''')
     for old, new in (('>待审批 <span id="game-open"', '>普通工单审批 <span id="game-open"'),
-                     ('</span> 待审批 <span class="nav-count red"', '</span> 普通工单审批 <span class="nav-count red"'),
+                     ('<button class="nav-item" data-view="approvals">', '<button class="nav-item" data-view="approvals" aria-label="普通工单审批">'),
+                     ('</span> 待审批 <span class="nav-count red"',
+                      '</span> <span class="nav-approvals-full">普通工单审批</span>'
+                      '<span class="nav-approvals-compact">工单审批</span> <span class="nav-count red"'),
                      ('aria-label="查看待审批事项"', 'aria-label="查看普通工单审批"')):
         html = replace_once(html, old, new)
     html = replace_once(html, '<div id="live-agents"></div>', """<section class="panel full-panel" id="formal-default-team">

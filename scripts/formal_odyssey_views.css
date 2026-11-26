@@ -178,6 +178,13 @@
   #view-library .library-head { padding: 14px 16px; min-height: 112px; }
   #view-library .library-head > div { width: 68%; }
 }
+/* 底栏每项等宽，手机用短标签避免侵入相邻入口。 */
+.sidebar .nav-approvals-compact { display:none; }
+@media (max-width:600px) {
+  .sidebar .nav-approvals-full { display:none; }
+  .sidebar .nav-approvals-compact { display:block; }
+}
+
 /* 次级页面把空间留给审批、角色和记录；新建入口始终可用。 */
 .workspace:has(:is(#view-agents,#view-activity,#view-approvals):not([hidden])) #new-task {
   width:auto; min-height:42px; flex:none; margin:0; padding-inline:12px;
