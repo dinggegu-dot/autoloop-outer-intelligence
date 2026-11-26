@@ -45,6 +45,12 @@ def dispatch(service, source, command, body):
                                      source=source, source_event_id=body['request_id'])
     if command == 'submit':
         intent = body.get('intent')
+        if intent == 'proposal':
+            if set(body) != {'intent','direction_owner','ticket_id','revision','request_id','allow_model_input'}:
+                raise Problem('请选择原工单的方案处理方式')
+            return service.submit(source=source, source_event_id=body['request_id'], actor_id=OWNER,
+                                  text='', ticket_id=body['ticket_id'], expected_ticket_revision=body['revision'],
+                                  change_request=True, direction_owner=body['direction_owner'], **consent)
         if intent is not None and (intent not in ('supplement', 'change', 'continue') or not body.get('ticket_id')):
             raise Problem('请选择本工单的补充资料或修改要求')
         reference = None

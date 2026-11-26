@@ -130,6 +130,24 @@ _DELEGATE_DIRECTION = re.compile(
     r'(?:按|采用|就用)团队推荐(?:的)?(?:方案|方向)?|you decide|choose for me)$', re.I)
 _OWNER_DIRECTION = re.compile(r'^(?:.*(?:让我|由我|我来|给我)(?:先)?(?:选择|选方向|选方案|挑选)|重要方向由我选择)$')
 
+_LEGACY_PROPOSAL_MESSAGES = {
+    '请团队依据原要求重新研判。复杂任务请先比较方案。重要方向由我选择。': 'owner',
+    '请团队依据原要求重新研判。复杂任务请先比较方案。采用团队推荐。': 'team',
+}
+_PROPOSAL_ONLY = frozenset(_literal_requirement(clause)
+                           for message in _LEGACY_PROPOSAL_MESSAGES for clause in message.rstrip('。').split('。'))
+
+
+def _proposal_direction(message, source):
+    if source == 'web' and message.get('change_request'):
+        return message.get('direction_owner') or _LEGACY_PROPOSAL_MESSAGES.get(message.get('text'))
+    return None
+
+
+def _is_proposal_requirement(description, refs, proposal_refs):
+    return (_literal_requirement(description) in _PROPOSAL_ONLY
+            or bool(refs) and set(refs).issubset(proposal_refs))
+
 
 def _grounded_preference(item, source_text):
     # 只移动能在原话中定位的可选要求，不能顺带豁免相邻的必需交付。
@@ -349,11 +367,19 @@ class OuterIntake:
     def submit(self, *, source, source_event_id, actor_id, text, source_thread_id=None, tenant='default',
                ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None,
                withdraw_requirement_ids=None, workbench_request=None, goal_team=False, allow_model_input=False,
-               route_team=False, change_request=False, continuation=None):
+               route_team=False, change_request=False, continuation=None, direction_owner=None):
         identity = self._source(source, source_event_id, actor_id, tenant, source_thread_id)
-        _string(text, '原始需求', 6000)
         _, _, actor, tenant, thread = identity
         allow_model_input = source == 'web' and allow_model_input is True
+        if direction_owner is None:
+            _string(text, '原始需求', 6000)
+        else:
+            if (direction_owner not in ('owner','team') or not ticket_id or not allow_model_input
+                    or not change_request or text != '' or any(value is not None for value in (
+                        source_thread_id, question_id, replace_requirement_ids, withdraw_requirement_ids,
+                        workbench_request, continuation))):
+                raise Problem('请在原单确认方案处理方式及送模范围', 409)
+            _revision(expected_ticket_revision, '工单版本')
         if route_team and (source not in ('web', 'dsh') or not goal_team or workbench_request is None
                            or (source == 'web' and workbench_request.get('allow_model_input') is not True)):
             raise Problem('团队工单须在网页确认本单资料范围后登记', 409)
@@ -392,6 +418,7 @@ class OuterIntake:
                 'replace_requirement_ids': replace_requirement_ids,
                 **({'withdraw_requirement_ids': withdraw_requirement_ids} if withdraw_requirement_ids else {}),
                 **({'change_request': True} if change_request is True else {}),
+                **({'direction_owner': direction_owner} if direction_owner is not None else {}),
                 **({'continue_from': continuation} if continuation is not None else {}),
                 **({'allow_model_input': True} if allow_model_input is True else {}),
                 **({'force_new': True, 'workbench_request': workbench_request} if workbench_request is not None else {}),
@@ -424,6 +451,11 @@ class OuterIntake:
                 card_question = card['question_id'] if card else None
                 explicit_decision = question_id or card_question or replace_requirement_ids or withdraw_requirement_ids or change_request
                 team = ticket.get('ticket_team')
+                if direction_owner is not None and (
+                        not team or ticket['status'] != 'VERIFICATION_GAP' or question or db.execute(
+                            "SELECT 1 FROM outer_events WHERE ticket=? AND id!=? AND role IS NOT NULL "
+                            "AND state IN ('PENDING','RUNNING') LIMIT 1", (ticket_id,row['id'])).fetchone()):
+                    raise Problem('该工单状态已变化，或团队已在重新整理，请刷新原单', 409)
                 if team:
                     if source != 'web' and not linked:
                         raise Problem('消息需要绑定原工单会话', 409)
@@ -966,7 +998,7 @@ class OuterIntake:
                                   *(ticket['relevant_thread_refs'][-6:] if ticket else []),
                                   *(item['event_id'] for item in materials),event['id']]))
         rows = db.execute(
-            'SELECT id,body FROM outer_events WHERE id IN (' + ','.join('?' for _ in refs) + ')',
+            'SELECT id,source,body FROM outer_events WHERE id IN (' + ','.join('?' for _ in refs) + ')',
             refs).fetchall()
         allowed = ['CREATE_DRAFT', 'IGNORE', 'ESCALATE'] if message.get('force_new') else self._allowed(ticket)
         approved_summary, plan_revision = None, 0
@@ -1010,6 +1042,25 @@ class OuterIntake:
         if ticket and (team := ticket.get('ticket_team')):
             context.update(ticket_team=team, workflow_profile=ROUTER_TEAM,
                            team_review_mode=ticket['approval_terms'].get('team_review_mode'))
+            proposal_owner = _proposal_direction(message, event['source'])
+            if proposal_owner:
+                context['proposal_request'] = proposal_owner
+                context['team_review_mode'] = ADAPTIVE_REVIEW
+                context.pop('propose_supersessions', None)
+                context['untrusted_text']['current_message'] = ''
+            proposal_refs = {row['id'] for row in rows
+                             if _proposal_direction(json.loads(row['body']), row['source'])}
+            for ref in proposal_refs:
+                context['untrusted_text']['prior_messages'].pop(ref, None)
+            if proposal_refs or proposal_owner:
+                context['proposal_control_refs'] = sorted(proposal_refs)
+                if current := context['goal_contract']:
+                    context['goal_contract'] = {**current, **{
+                        field: [item for item in current.get(field, ()) if not _is_proposal_requirement(
+                            item['description'], item['source_refs'], proposal_refs)]
+                        for field in _FIELDS
+                    }}
+                    context['constraints'] = context['goal_contract']['constraints']
             if self._intake_can_use_materials(ticket):
                 context['authorized_intake_materials'] = materials
             for item in materials:
@@ -1037,7 +1088,7 @@ class OuterIntake:
             from .outer_verification import authorization_constraint_controls
             context['enforced_constraint_controls'] = authorization_constraint_controls(ticket['goal_contract'])
             context['verifier_catalogue'] = self._registry().catalogue()
-            context['prior_acceptance'] = ticket['acceptance_contract']
+            context['prior_acceptance'] = None if context.get('proposal_request') else ticket['acceptance_contract']
         elif not ticket and not message.get('force_new'):
             context['candidate_tickets'] = [
                 {'id': candidate['id'], 'summary': (candidate['goal_contract'] or {}).get('goal_statement', '')[:300],
@@ -1326,6 +1377,11 @@ class OuterIntake:
             # 一轮中的授权随补充保留；签收后下轮的取舍重新依据当轮原话。
             new_round = (ticket.get('work_round') or {}).get('event') == event['id']
             goal.update(_direction_policy(untrusted['current_message'], {} if new_round else prior))
+            if proposal_owner := snapshot.get('proposal_request'):
+                goal.update(direction_owner=proposal_owner, proposal_requested=True,
+                            direction_to_compare='先比较可行方案，再按本单登记的方式确定方向。')
+            elif not new_round and prior.get('proposal_requested'):
+                goal['proposal_requested'] = True
             if record:
                 from .goal_engine import explicit_comparison_request
                 comparison = explicit_comparison_request([untrusted['current_message']])
@@ -1347,6 +1403,12 @@ class OuterIntake:
             if len(requirements) > 12:
                 raise ValueError('目标条目超出上限')
             previous = {item['description']: item for item in prior.get(field, [])}
+            if ticket.get('ticket_team'):
+                proposal_refs = snapshot.get('proposal_control_refs', ())
+                requirements = [item for item in requirements if not _is_proposal_requirement(
+                    item['description'], item['source_refs'], proposal_refs)]
+                previous = {key:item for key,item in previous.items() if not _is_proposal_requirement(
+                    key, item['source_refs'], proposal_refs)}
             normalized = []
             for item in requirements:
                 description = _string(item['description'], '目标条目', 500)
@@ -1531,6 +1593,8 @@ class OuterIntake:
                       status='AWAITING_CLARIFICATION' if next_question else 'ASSESSING')
         if event['id'] not in ticket['relevant_thread_refs']:
             ticket['relevant_thread_refs'].append(event['id'])
+        if snapshot.get('proposal_request'):
+            ticket['approval_terms']['team_review_mode'] = ADAPTIVE_REVIEW
         if ticket['task_id']:
             ticket['approval_terms'] = {
                 **ticket['approval_terms'],
@@ -1552,14 +1616,24 @@ class OuterIntake:
         refs = set(snapshot['relevant_thread_refs'])
         if not set(result['source_refs']).issubset(refs) or len(result['criteria']) > 40:
             raise ValueError('验收引用或数量无效')
-        proposal = {**result, 'criteria': []}
+        proposal_refs = set(snapshot.get('proposal_control_refs', ()))
+        proposal = {**result, 'criteria': [],
+                    'source_refs':[ref for ref in result['source_refs'] if ref not in proposal_refs]}
+        skipped = set()
         for raw in result['criteria']:
             item = dict(raw)
             if not set(item['source_refs']).issubset(refs) or not item['description'].strip():
                 raise ValueError('验收条目来源无效')
+            if proposal_refs and _is_proposal_requirement(item['description'], item['source_refs'], proposal_refs):
+                skipped.update((item['criterion_id'], item['description']))
+                continue
+            item['source_refs'] = [ref for ref in item['source_refs'] if ref not in proposal_refs]
             item['test_spec'] = json.loads(item.pop('test_spec_json'))
             item['expected_result'] = json.loads(item.pop('expected_result_json'))
             proposal['criteria'].append(item)
+        if skipped:
+            proposal['human_review_requirements'] = [
+                item for item in result['human_review_requirements'] if item not in skipped]
         goal = ticket['goal_contract']
         compiled = self._registry().compile_proposal(goal, proposal)
         if not isinstance(compiled, dict) or compiled.get('status') not in (

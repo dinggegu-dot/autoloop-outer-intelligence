@@ -1055,13 +1055,12 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   function requestTeamPlan(row,parent) {
     const feedback=actionStatus(parent);
     const actions=el('div',null,'goal-actions');
-    const send=direction=>{
-      const text='请团队依据原要求重新研判。复杂任务请先比较方案。'+direction+'。';
-      const submit=consent=>perform(row,'submit',{intent:'change',text,...consent},feedback,'已请团队重新研判。',null,'progress');
-      askModelInputConsent('团队将收到这条指示，并重新查看本单已获准使用的要求。','同意并继续',submit,text);
+    const send=(direction_owner,description)=>{
+      const submit=consent=>perform(row,'submit',{intent:'proposal',direction_owner,...consent},feedback,'已记录方案选择，团队正在整理本单。',null,'progress');
+      askModelInputConsent('团队会重新查看这张单已获准使用的要求。','同意并继续',submit,description);
     };
-    actions.append(writeButton('先给我方案','goal-request-team-plan',()=>send('重要方向由我选择'),true),
-      writeButton('让团队选方案','goal-delegate-team-plan',()=>send('采用团队推荐')));
+    actions.append(writeButton('先给我方案','goal-request-team-plan',()=>send('owner','比较后由我选择方案'),true),
+      writeButton('让团队选方案','goal-delegate-team-plan',()=>send('team','比较后由团队采用推荐方案')));
     parent.append(actions);
   }
   function approval(row, parent) {

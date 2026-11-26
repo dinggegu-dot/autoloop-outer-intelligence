@@ -283,6 +283,83 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertEqual(len(contract['human_review_requirements']), 2)
         self.assertEqual(self.approve(draft)['mandate_revision'], 1)
 
+    def test_workbench_proposal_choice_recovers_old_button_contamination(self):
+        from outer_channels import dispatch
+        from superagent import outer_verification as verification
+
+        self.intake.registry = verification
+        original_text = '请写读书会导读并画一张海报'
+        first, _ = self.router_new(original_text)
+        ticket_id = first['ticket_id']
+        old_text = '请团队依据原要求重新研判。复杂任务请先比较方案。采用团队推荐。'
+        old_clause = '复杂任务请先比较方案。'
+        recovering = False
+
+        def propose(role, context, schema):
+            result = self.model(role, context, schema)
+            if role == 'intake_assessor':
+                ref = context['original_request_refs'][0]
+                result['goal_draft'].update(goal_statement=original_text, deliverables=[
+                    dict(description=original_text, source='USER_EXPLICIT', source_refs=[ref])])
+                if recovering:
+                    self.assertEqual(context['proposal_request'], 'owner')
+                    self.assertEqual(context['untrusted_text']['current_message'], '')
+                    self.assertNotIn(old_text, context['untrusted_text']['prior_messages'].values())
+                    self.assertEqual(context['goal_contract']['constraints'], [])
+                    # 模型即使把流程字段又抄回条款，编译器也要剔除。
+                    result['goal_draft']['constraints'] = [dict(description=old_clause, source='MODEL_PROPOSED',
+                                                                  source_refs=[context['event_id']])]
+            else:
+                row, = context['goal_contract']['deliverables']
+                kind = 'artifact_inspection' if recovering else 'independent_evidence'
+                result.update(criteria=[], verification_gaps=[dict(requirement_id=row['requirement_id'],
+                    reason='读取实际导读和海报', evidence_kind=kind)])
+                if recovering:
+                    criterion = dict(requirement_ids=[row['requirement_id']], required=True, verification_type='HUMAN_REVIEW',
+                                     verifier_id='human-review', verifier_version=1, test_spec_json='{}',
+                                     expected_result_json='null', evidence_required=['检查成品'], human_review_required=True)
+                    result['criteria'] = [
+                        dict(criterion, criterion_id='fake-process', description=old_clause,
+                             source_refs=[context['event_id']]),
+                        dict(criterion, criterion_id='real-delivery', description='核对实际导读和海报',
+                             source_refs=row['source_refs']),
+                    ]
+                    result['human_review_requirements'] = ['fake-process','real-delivery']
+            return result
+
+        self.intake.team_model = propose
+        self.assertEqual(self.intake.drain_ticket(ticket_id, limit=2), 2)
+        with self.store.connect() as db:
+            draft = self.intake._ticket(db,ticket_id)
+            identity = self.intake._source('web', 'legacy-choice', 'owner', 'default', None)
+            old, _ = self.intake._insert(db, identity, ticket_id, {'text':old_text, 'change_request':True})
+            self.intake._finish(db, old, 'DONE', {'action':'VERIFICATION_GAP'}, draft, deliver=False)
+            draft['relevant_thread_refs'].append(old['id'])
+            draft['goal_contract'].update(direction_owner='team', constraints=[
+                dict(description=old_clause, source='USER_EXPLICIT', source_refs=[old['id']],
+                     requirement_id='req-'+'a'*32)])
+            self.intake._save(db,draft)
+        recovering = True
+        request = dict(ticket_id=ticket_id, revision=draft['revision'], request_id=str(uuid4()),
+                       intent='proposal', direction_owner='owner', allow_model_input=True)
+        with self.assertRaises(Problem):
+            dispatch(self.intake, 'web', 'submit', dict(request, revision=draft['revision']-1))
+        receipt = dispatch(self.intake,'web','submit',request)
+        self.assertTrue(dispatch(self.intake,'web','submit',request)['duplicate'])
+        with self.assertRaises(Problem):
+            dispatch(self.intake,'web','submit',dict(request,request_id=str(uuid4()),direction_owner='team'))
+        self.assertEqual(receipt['ticket_id'],ticket_id)
+        self.assertEqual(self.intake.drain_ticket(ticket_id,limit=2),2)
+        ready = self.intake.get(ticket_id,'owner')
+        self.assertEqual(ready['status'],'AWAITING_APPROVAL')
+        goal = ready['goal_contract']
+        self.assertEqual((goal['direction_owner'],goal['proposal_requested']),('owner',True))
+        self.assertEqual(goal['constraints'],[])
+        self.assertEqual([row['description'] for row in goal['deliverables']],[original_text])
+        self.assertEqual(ready['acceptance_contract']['verification_gaps'],[])
+        self.assertEqual([row['criterion_id'] for row in ready['acceptance_contract']['criteria']],['real-delivery'])
+        self.assertEqual(self.approve(ready)['mandate']['team_review_mode'],'adaptive_review')
+
     def test_venue_context_and_soft_suffix_are_separate_from_operational_controls(self):
         from superagent import outer_verification as verification
         self.intake.registry = verification

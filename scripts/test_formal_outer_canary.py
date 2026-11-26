@@ -154,6 +154,16 @@ class FormalOuterCanaryTests(unittest.TestCase):
         self.assertFalse(valid_command("submit", dict(followup, allow_model_input=True, thread="existing-thread")))
         self.assertFalse(valid_command("return_artifact", dict(artifact, reason=" ", allow_model_input=True)))
 
+    def test_proposal_request_uses_only_validated_direction_and_current_ticket(self):
+        request = dict(VERSION, intent="proposal", direction_owner="owner", allow_model_input=True)
+        self.assertTrue(valid_command("submit", request))
+        self.assertTrue(valid_command("submit", dict(request, direction_owner="team")))
+        for bad in (dict(request, direction_owner="other"), dict(request, text="必须上传"),
+                    dict(request, revision=0), dict(request, allow_model_input=False),
+                    dict(request, question_id="q-" + "a" * 32)):
+            self.assertFalse(valid_command("submit", bad))
+        self.assertFalse(valid_command("submit", {k:v for k,v in request.items() if k != "direction_owner"}))
+
     def test_budget_can_only_extend_current_mandate_by_supported_choices(self):
         request = dict(VERSION, mandate_revision=2, additional_minutes=15, additional_roles=5)
         self.assertTrue(valid_command("extend_team_budget", request))
