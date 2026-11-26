@@ -130,7 +130,10 @@ def frontend(formal, front):
                      ('aria-label="查看待审批事项"', 'aria-label="查看普通工单审批"')):
         html = replace_once(html, old, new)
     html = replace_once(html, '写下你想得到的结果。默认由 Codex 规划、执行和独立审核，实施前由你确认方案。',
-                        '写下你想得到的结果，以及怎样算完成。')
+                        '只要写下想得到的结果。需要取舍时，团队会带着方案回来。')
+    html = replace_once(html, '描述你想要的结果，以及怎样才算做好。', '例如，帮我做一份适合第一次来访的旅行计划。')
+    html = replace_once(html, '完成标准、名称与执行设置</summary>', '补充要求与执行设置（选填）</summary>')
+    html = replace_once(html, '怎样算完成？（选填）', '已经想好的完成标准（选填）')
     dialog = '</span></button></form></dialog>'
     # 插在旧提交按钮后，保留表单的默认回车操作。
     html = replace_once(html, dialog, '''</span></button><!--OUTER-CANARY-BEGIN--><details id="outer-sample-orders" class="model-fields"><summary>合成试单</summary><div class="wb-actions">
@@ -147,7 +150,7 @@ def frontend(formal, front):
 <option value="review">主动比较双方案，由团队判断</option>
 <option value="review_and_decide">分步交付，第 2 步请我定方向</option>
 </select>
-<p class="draft-warning" id="outer-team-review-hint" hidden>请写明至少两步可以分别验收的成果。</p>
+<p class="draft-warning" id="outer-team-review-hint" hidden>团队分步交付，到第 2 步请你选方向。</p>
 </div><!--OUTER-INTAKE-ADVANCED-END--><fieldset class="model-fields"><legend>角色与模型</legend><div class="wb-actions">''')
     html = replace_once(html, '<p class="draft-warning" id="task-form-status">',
                         '''<!--OUTER-TEAM-OPTIONS-BEGIN--><div id="outer-team-settings" hidden>

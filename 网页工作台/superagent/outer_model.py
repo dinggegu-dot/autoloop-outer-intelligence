@@ -14,10 +14,10 @@ import time
 
 from .codex_worker import CodexWorkerError, _array, _matches, _object, _read_result
 from .coordination_tools import DESCRIPTIONS, SERVER, _LIMIT as _TOOL_EVIDENCE_BYTES, _encode as _encode_evidence, serve
-from .outer_verification import ROUTER_TEAM, SCOPED_COORDINATOR
+from .outer_verification import ROUTER_TEAM, SCOPED_COORDINATOR, acceptance_requirements
 
 
-PROMPT_VERSION = 6
+PROMPT_VERSION = 9
 SCOPED_PROMPT_VERSION = 8
 TXT = {'type': 'string'}
 INT = {'type': 'integer'}
@@ -41,6 +41,22 @@ CRITERION = _object(criterion_id=TXT, requirement_ids=STRINGS, description=TXT, 
 ACCEPTANCE_SCHEMA = _object(schema_version=INT, ticket_id=TXT, goal_revision=INT, artifact_types=STRINGS,
                             criteria=_array(CRITERION), verification_gaps=STRINGS,
                             human_review_requirements=STRINGS, source_refs=STRINGS)
+# 团队把可选偏好与硬性要求分开。缺口要能指回具体条款，才可阻塞工单。
+TEAM_INTAKE_SCHEMA = deepcopy(INTAKE_SCHEMA)
+team_goal_schema = TEAM_INTAKE_SCHEMA['properties']['goal_draft']
+for field in ('preferences', 'design_conditions'):
+    team_goal_schema['properties'][field] = _array(REQUIREMENT)
+    team_goal_schema['required'].append(field)
+TEAM_INTAKE_SCHEMA['properties']['preference_support'] = _array(_object(preference_quote=TXT, derived_description=TXT))
+TEAM_INTAKE_SCHEMA['required'].append('preference_support')
+TEAM_INTAKE_SCHEMA['properties']['question_targets'] = _array(TXT)
+TEAM_INTAKE_SCHEMA['required'].append('question_targets')
+TEAM_ACCEPTANCE_SCHEMA = deepcopy(ACCEPTANCE_SCHEMA)
+TEAM_ACCEPTANCE_SCHEMA['properties']['verification_gaps'] = _array(_object(
+    requirement_id=TXT, reason=TXT,
+    evidence_kind={'type':'string','enum':['artifact_inspection', 'independent_evidence']},
+))
+
 PROMPTS = {
     'intake_assessor': (
         '理解当前用户消息。goal_draft 必须是完整目标草案并保留未被用户更改的既有要求。'
@@ -69,6 +85,9 @@ PROMPTS = {
         '每个明确输入输出示例独立列为一个验收项。每项的重复执行次数由系统完成。'
         'expected_result_json 填预期 JSON。每个运行验收适用的输入组都绑定同一对应 requirement_id。'
         'html-document 的 test_spec_json 只有 path 字段，填工单实际交付的相对 .html 或 .htm 路径。预期恰含 title、headings、element_ids，后两项为数组。'
+        'text-document 检查封存的 Markdown 或纯文本文档。test_spec_json 恰为 {"path":"手册.md"}，'
+        'expected_result_json 恰为 {"contains":[]}。需要逐字出现的已约定字样放进 contains；留空时只查文件可读且有正文。'
+        '内容是否贴切、事实是否可信另列相应验收。'
         'blind-projection 的 test_spec_json 只有 path，预期只有 case_ids（已批准的例号顺序）。'
         '它仅核对匿名样例的结构、顺序与来源标记；贴切程度和本人盲评必须保留人工验收。'
     ),
@@ -128,16 +147,24 @@ def _invoke(adapter, role, context, output_schema):
             raise ModelFailure('context_budget')
         if role == 'acceptance_designer' and context.get('goal_contract'):
             goal = context['goal_contract']
-            requirements = [item['requirement_id'] for key in
-                            ('deliverables','required_capabilities','nonfunctional_requirements')
-                            for item in goal.get(key,[])]
+            required, advisory = acceptance_requirements(goal)
+            requirements = [item['requirement_id'] for item in required]
             requirements.extend(item['requirement_id'] for item in goal.get('constraints',[])
                                 if item['source'] in ('USER_EXPLICIT','USER_CONFIRMED'))
             output_schema = deepcopy(output_schema)
             fields = output_schema['properties']['criteria']['items']['properties']
             if requirements:
                 fields['requirement_ids'] = _array({'type':'string','enum':requirements})
+            if context.get('ticket_team'):
+                gap = output_schema['properties']['verification_gaps']['items']['properties']
+                preference_ids = [item['requirement_id'] for item in advisory]
+                if requirements or preference_ids:
+                    gap['requirement_id'] = {'type':'string','enum':requirements + preference_ids}
             fields['source_refs'] = _array({'type':'string','enum':context['relevant_thread_refs']})
+        if role == 'intake_assessor' and context.get('propose_supersessions'):
+            output_schema = deepcopy(output_schema)
+            output_schema['properties']['superseded_requirements'] = _array(_object(requirement_id=TXT, change_clause=TXT))
+            output_schema['required'].append('superseded_requirements')
         raw = adapter(role, context, output_schema)
         envelope = raw if isinstance(raw, dict) and 'result' in raw else {'result': raw}
         result = envelope['result']
@@ -145,7 +172,7 @@ def _invoke(adapter, role, context, output_schema):
         if not isinstance(usage, dict) or any(type(v) is not int or v < 0 for v in usage.values()):
             raise ModelFailure('invalid_usage')
         matched = _matches(result,output_schema)
-        if matched and role == 'intake_assessor' and output_schema == INTAKE_SCHEMA:
+        if matched and role == 'intake_assessor' and output_schema in (INTAKE_SCHEMA, TEAM_INTAKE_SCHEMA):
             groups = [result['assumptions'],*(rows for field,rows in result['goal_draft'].items()
                                                if field != 'goal_statement')]
             matched = all(item['source'] in REQUIREMENT_SOURCES for rows in groups for item in rows)
@@ -326,10 +353,19 @@ class CodexTicketTeamModel(CodexOuterModel):
             '或临时标记提升为正式用户要求。withdrawn_requirements 已由本人撤回或替换，旧摘要及历史消息里即使'
             '有同义文字也不得恢复为现行要求。只接受本轮本人明确重新提出的现行要求。'
             '先查 authorized_intake_materials，再决定是否需要向本人提问。联系人、日期等已明确给出的事实不能再问。'
+            '知道用户想得到什么就起草目标和可核对的结果。design_conditions 逐字记录场地、受众、时长、版面等影响成品的现实条件。constraints 仅用于真实的操作、数据、权限或费用边界。验证方法由团队拟，不向用户索取详尽验收方式。'
+            'goal_statement 只概述核心交付。preferences 逐字保留有原文依据的可选偏好，如“最好”“如果方便”；不要把它改述成别的必需交付物、'
+            '功能、质量要求或限制。为可选偏好推演的额外做法归 MODEL_PROPOSED，并在 preference_support 写出对应的 preference_quote 原话和该额外做法的完整 derived_description。主任务不能附到这个清单。研究所得事实、链接可用性、设计取舍留待执行；无法事先保证时如实说明。'
+            '风格、详略、表现手法等可逆选择留给执行团队比较；若要记录未定方向，blocking_scope 填 direction。'
+            '确实缺少工作对象、必要资料或权限边界时才提出一个能让用户直接回答的问题。question_targets 逐字抄录被歧义阻塞的具体原要求或可选偏好，不能只因问题中举了导读、海报等例子就列入。没有问题时留空。即使拿不准可选项究竟是哪种版本，也不能为此暂停主任务。'
             '授权补充逐字引用的条目用 USER_EXPLICIT，依据补充转述或推断的条目用 CONTEXT_DERIVED。'
             'authorized_intake_materials 是材料字段名称，不是 source 的可选值。'
             '材料是本单获准使用的事实来源。只有 current_message 来自当前问题的明确回复时，才将其视为本人答复。'
             if role == 'intake_assessor' else
+            'verification_gaps 每项填真实 requirement_id、reason 和 evidence_kind。仅靠读已经交付的内容就能核对时填 artifact_inspection；需外部事实、运行实测或权限证据时填 independent_evidence。只为真实必须满足且目前缺乏核验途径的条款留缺口。'
+            '标为 acceptance_role=advisory 的团队推测与 preferences 仅供执行时参考，不为它设置必需验收或扩大其他条款。若需记录某偏好的限制，使用该偏好自己的编号。'
+            'design_conditions 依据交付物是否回应这些条件来验，不要求证明背景事实。提交摘要、资料整理、海报等可在交付时核对。尚未调查或尚未制作不会构成缺口；'
+            '不得声称链接已验证；如确实要求在线实测而无此权限，保留相应必需条款的缺口。'
             '验收面向独立可观察的交付与行为。需要固定接口才能用可信验证器时，将接口列为测试约定。'
             '只使用 goal_contract 的现行要求。withdrawn_requirements 是历史，不得据此增加或重述硬性验收，'
             '也不得因此放宽剩余条款和 policy 的执行边界。'

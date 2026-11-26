@@ -16,10 +16,11 @@ from .goal_team_records import (
     public_coordination_decision, public_preference, public_progress, role_limit,
 )
 from .outer_model import (
-    ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, REQUIREMENT_SOURCES, CodexOuterModel, CodexTicketTeamModel, ModelFailure, role_invoke,
+    ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, TEAM_ACCEPTANCE_SCHEMA, TEAM_INTAKE_SCHEMA, REQUIREMENT_SOURCES, CodexOuterModel, CodexTicketTeamModel, ModelFailure, role_invoke,
 )
-from .outer_verification import ROUTER_TEAM
+from .outer_verification import ROUTER_TEAM, requires_independent_evidence
 from .team_profiles import new_team_profile
+from .ticket_rounds import changes_old_requirement, round_view, start_round, verified_input
 
 
 operator_kind = ContextVar('outer_operator_kind', default='owner')
@@ -33,7 +34,7 @@ _LEASE_SECONDS = 145
 _TICKET_LIMIT = 12
 _MAX_SOURCE_ID = 220
 _FIELDS = ('deliverables', 'required_capabilities', 'nonfunctional_requirements',
-           'constraints', 'assumptions', 'out_of_scope')
+           'constraints', 'assumptions', 'out_of_scope', 'preferences', 'design_conditions')
 _OPERATIONS = ('pause', 'resume', 'stop')
 _CLAUSE_BREAKS = re.compile(r'[\n。！？；，、：;!?,:]+')
 _PEM = re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)', re.DOTALL)
@@ -118,6 +119,80 @@ def _verbatim_clause(description, source):
 
 def _literal_requirement(text):
     return ' '.join(text.split()).strip('。！？；，、：.!?;,:').casefold()
+
+
+_OPTIONAL_CLAUSE = re.compile(
+    r'^(?:最好|尽量|尽可能|优先考虑|更倾向于?|更喜欢|可选[：:]?|如果(?:可以|方便|有条件)|'
+    r'如(?:果)?有(?:可能|条件|合适的|可用的)|有条件的话|能给.{1,40}更好|'
+    r'ideally\b|preferably\b|if (?:possible|available)\b|nice to have\b|I(?: would|\'d) prefer\b)', re.I)
+_DELEGATE_DIRECTION = re.compile(
+    r'^(?:请)?(?:你(?:们)?(?:来|帮我|自己)?(?:决定|选|选择|定方向|拍板)|(?:方案|方向)?(?:由|交给)(?:你们?|团队)(?:来)?(?:决定|选|选择|定)|'
+    r'(?:按|采用|就用)团队推荐(?:的)?(?:方案|方向)?|you decide|choose for me)$', re.I)
+_OWNER_DIRECTION = re.compile(r'^(?:.*(?:让我|由我|我来|给我)(?:先)?(?:选择|选方向|选方案|挑选)|重要方向由我选择)$')
+
+
+def _grounded_preference(item, source_text):
+    # 只移动能在原话中定位的可选要求，不能顺带豁免相邻的必需交付。
+    text = item['description'].strip(' 。！？.!?')
+    optional = _OPTIONAL_CLAUSE.match(text) or re.search(r'(?:更好|为佳|非必需|不强求|也可以没有|可有可无|is optional)$', text, re.I)
+    if not optional:
+        return False
+    parts = [part.strip() for part in _CLAUSE_BREAKS.split(text) if part.strip()]
+    conditional_prefix = r'如果(?:可以|方便)|有条件的话|if (?:possible|available)'
+    conditional_suffix = r'如果(?:有|方便|可以)(?:的话)?|如有的话|没有也(?:可以|行)|if (?:possible|available)'
+    if len(parts) != 1 and not (len(parts) == 2 and (re.fullmatch(conditional_prefix,parts[0],re.I)
+                                                     or re.fullmatch(conditional_suffix,parts[1],re.I))):
+        return False
+    for ref in item['source_refs']:
+        original = [part.strip() for part in _CLAUSE_BREAKS.split(source_text.get(ref,'').strip(' 。！？.!?'))]
+        if any(original[index:index + len(parts)] == parts for index in range(len(original))):
+            return True
+    return False
+
+
+_OPERATIONAL_LIMIT = re.compile(
+    r'隐私|保密|个人信息|个人资料|身份信息|工作区|读写|读取|写入|访问|联网|网络工具|外发|外传|外部发送|'
+    r'上传|发送|发布|部署|安装|删除|调用|授权|权限|付费|支付|付款|花钱|扣款|消费|真实支出|账户|凭据|密钥|密码|'
+    r'\b(?:privacy|personal data|network|upload|publish|send|install|pay|spend|permission|access|write|read|delete)\b', re.I)
+_DESIGN_CONTEXT = re.compile(
+    r'场地|场馆|展厅|会场|教室|展台|版面|版幅|纸张|页面尺寸|印刷尺寸|受众|听众|读者年龄|座位|'
+    r'活动时长|可用空间|空间有限|字号|字数|海报尺寸|\b(?:venue|floor space|page size|audience)\b', re.I)
+
+
+def _separate_design_conditions(goal):
+    conditions = {item['description']:item for item in goal['design_conditions']}
+    controls = {}
+    for item in [*goal['constraints'], *goal['design_conditions']]:
+        description = item['description']
+        if (not _OPERATIONAL_LIMIT.search(description)
+                and (_OWNER_DIRECTION.fullmatch(description.strip(' 。.!！'))
+                     or _DELEGATE_DIRECTION.fullmatch(description.strip(' 。.!！')))):
+            conditions.pop(description,None)
+            continue
+        if _OPERATIONAL_LIMIT.search(description):
+            controls.setdefault(description, item)
+            conditions.pop(description,None)
+        elif requires_independent_evidence(description):
+            if description not in {row['description'] for row in goal['required_capabilities']}:
+                goal['required_capabilities'].append(item)
+            conditions.pop(description,None)
+        elif description in conditions or _DESIGN_CONTEXT.search(description):
+            conditions.setdefault(description,item)
+        else:
+            controls.setdefault(description,item)
+    goal['constraints'] = list(controls.values())
+    goal['design_conditions'] = list(conditions.values())
+
+
+def _direction_policy(current_message, previous):
+    clauses = [part.strip() for part in _CLAUSE_BREAKS.split(current_message)]
+    if any(_OWNER_DIRECTION.fullmatch(part) for part in clauses):
+        return {'direction_owner':'owner', 'direction_to_compare':'用户要求先看团队拟出的方向，再作选择。'}
+    policy = {key:previous[key] for key in ('direction_owner', 'direction_to_compare') if key in previous}
+    if any(_DELEGATE_DIRECTION.fullmatch(part) for part in clauses):
+        policy['direction_owner'] = 'team'
+    policy.setdefault('direction_owner','owner')
+    return policy
 
 
 def _revision(number, name):
@@ -274,7 +349,7 @@ class OuterIntake:
     def submit(self, *, source, source_event_id, actor_id, text, source_thread_id=None, tenant='default',
                ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None,
                withdraw_requirement_ids=None, workbench_request=None, goal_team=False, allow_model_input=False,
-               route_team=False, change_request=False):
+               route_team=False, change_request=False, continuation=None):
         identity = self._source(source, source_event_id, actor_id, tenant, source_thread_id)
         _string(text, '原始需求', 6000)
         _, _, actor, tenant, thread = identity
@@ -282,6 +357,12 @@ class OuterIntake:
         if route_team and (source not in ('web', 'dsh') or not goal_team or workbench_request is None
                            or (source == 'web' and workbench_request.get('allow_model_input') is not True)):
             raise Problem('团队工单须在网页确认本单资料范围后登记', 409)
+        if continuation is not None:
+            if (not ticket_id or not allow_model_input or not change_request or not isinstance(continuation, dict)
+                    or set(continuation) != {'assignment', 'artifact_sha256'} or question_id or replace_requirement_ids
+                    or withdraw_requirement_ids or workbench_request is not None):
+                raise Problem('请在原单选择已交付版本，确认发送本轮修改意见', 409)
+            _revision(expected_ticket_revision, '工单版本')
         if question_id is not None:
             question_id = _string(question_id, '澄清问题编号', _MAX_SOURCE_ID)
         for ids in (replace_requirement_ids, withdraw_requirement_ids):
@@ -311,6 +392,7 @@ class OuterIntake:
                 'replace_requirement_ids': replace_requirement_ids,
                 **({'withdraw_requirement_ids': withdraw_requirement_ids} if withdraw_requirement_ids else {}),
                 **({'change_request': True} if change_request is True else {}),
+                **({'continue_from': continuation} if continuation is not None else {}),
                 **({'allow_model_input': True} if allow_model_input is True else {}),
                 **({'force_new': True, 'workbench_request': workbench_request} if workbench_request is not None else {}),
                 **({'goal_team': True} if workbench_request is not None and goal_team else {}),
@@ -359,6 +441,16 @@ class OuterIntake:
                                                        (row['id'],)).fetchone())
                 if expected_ticket_revision is not None:
                     self._compare(ticket, expected_ticket_revision)
+                if continuation is not None:
+                    start_round(db, ticket, row, continuation)
+                    self._save(db, ticket)
+                elif change_request and team and ticket['status'] == 'AUTHORIZED' and ticket.get('task_id'):
+                    # 以前浏览器上的“修改要求”也走同一条续改流程。
+                    status = db.execute("SELECT json_extract(body,'$.status') FROM tasks WHERE id=?", (ticket_id,)).fetchone()
+                    if status and status[0] == 'completed' and not withdraw_requirement_ids:
+                        _revision(expected_ticket_revision, '工单版本')
+                        start_round(db, ticket, row, None)
+                        self._save(db, ticket)
                 if replace_requirement_ids:
                     current_goal = ticket['goal_contract'] or {}
                     known = {item['requirement_id'] for field in _FIELDS for item in current_goal.get(field, [])}
@@ -435,7 +527,10 @@ class OuterIntake:
 
     @staticmethod
     def _intake_can_use_materials(ticket):
-        return ticket and ticket.get('ticket_team') and not ticket.get('task_id') and not ticket.get('needs_model_consent')
+        if not ticket or not ticket.get('ticket_team') or ticket.get('needs_model_consent'):
+            return False
+        return not ticket.get('task_id') or bool(ticket.get('work_round') and ticket['status'] in (
+            'ASSESSING','AWAITING_CLARIFICATION','AWAITING_APPROVAL','VERIFICATION_GAP','NEEDS_ATTENTION'))
 
     @staticmethod
     def _intake_materials(db,event):
@@ -589,18 +684,21 @@ class OuterIntake:
                 if release := release_view(db, task):
                     ticket['development_delivery'] = release
                 previous = []
-                for gen,reviews,delivery in db.execute("""SELECT revision,json_extract(body,'$.goal_execution.artifact_reviews'),
-                        json_extract(body,'$.goal_delivery') FROM outer_revisions WHERE ticket=? AND kind='execution_archive'
+                for gen,reviews,delivery,work_round,change_request in db.execute("""SELECT revision,json_extract(body,'$.goal_execution.artifact_reviews'),
+                        json_extract(body,'$.goal_delivery'),json_extract(body,'$.work_round_number'),
+                        json_extract(body,'$.goal_execution.outer.goal_contract.continued_from.change_request')
+                        FROM outer_revisions WHERE ticket=? AND kind='execution_archive'
                         ORDER BY revision""",(ticket_id,)):
                     records=json.loads(reviews or '[]')
                     if delivery and not records:
                         records=[dict(json.loads(delivery),state='automatic',sequence=1)]
-                    previous.extend(dict(mandate_revision=gen,**{k:r.get(k) for k in (
+                    previous.extend(dict(mandate_revision=gen,round=work_round or 1,change_request=change_request,**{k:r.get(k) for k in (
                         'sequence','state','assignment','artifact_sha256','files','reason')}) for r in records)
                 if previous: ticket['prior_deliveries']=previous
             if ticket.get('ticket_team'):
                 ticket['subscription'] = self._subscription(db, ticket_id, tenant, task)
             self._project_action_state(db, ticket, task)
+        ticket.pop('work_round', None)
         if is_blind_goal(task):
             ticket['blind_review'] = self.workbench.blind_review().get(ticket_id,actor_id=actor,tenant=tenant)
             ticket['blind_history'] = self.workbench.blind_review().history(ticket_id,actor_id=actor,tenant=tenant)
@@ -654,9 +752,11 @@ class OuterIntake:
                                 draft_unaffected=allowed and draft_sealed and row['id'] not in draft_refs))
         return dict(bindings=bindings, entries=entries)
 
-    def _project_action_state(self, db, ticket, task):
+    def _project_action_state(self, db, ticket, task, *, brief=False):
         state = task.get('goal_execution') or {}
         status = task.get('status')
+        if ticket.get('ticket_team'):
+            ticket['continuation'] = round_view(ticket, task, brief=brief)
         ticket.update(public_progress(task), coordination_decision=public_coordination_decision(task),
                       observation_stale=observation_stale(state))
         if status in ('blocked','budget_exhausted') and not is_blind_goal(task):
@@ -764,7 +864,8 @@ class OuterIntake:
                              last_business_at=max(draft['updated_at'],
                                                   (state.get('decisions') or [{}])[-1].get('at', '')),
                              pending_preference=public_preference(state, task.get('status'), brief=True))
-                self._project_action_state(db, draft, task)
+                self._project_action_state(db, draft, task, brief=True)
+                draft.pop('work_round', None)
                 if is_blind_goal(task):
                     draft['blind_status'] = self.workbench.blind_review().brief(db,draft,task)
                 if task.get('status') == 'completed' and task.get('goal_delivery'):
@@ -893,6 +994,19 @@ class OuterIntake:
                             'prior_messages': {row['id']: _model_text(json.loads(row['body']).get('text', ''), 1000)
                                                for row in rows if row['id'] != event['id']}},
         )
+        if ticket and (record := ticket.get('work_round')):
+            if (message.get('change_request') and not message.get('replace_requirement_ids')
+                    and event['role'] == 'intake_assessor'):
+                context['propose_supersessions'] = ('遇到和本轮修改直接冲突的旧要求，把旧 requirement_id 和本轮中明确要求修改的'
+                                                  '完整分句列入 superseded_requirements。其余旧要求沿用。没有直接替换时填空数组。')
+            context['completed_work_refs'] = [record['base']['assignment']]
+            context['work_round'] = record['number']
+            context['continuation'] = {
+                'source_round': record['source_round'], 'files': list(record['base']['files']),
+                'change_request': _model_text(record['request']),
+                'instruction': '这是对已交付文件的续改。整合先前要求和本轮意见，沿用无关内容。明确冲突时以本轮要求为准，'
+                               '在新目标中完整列出仍有效的要求。当前轮获批后只将上轮交付文件作为起点，重新验收。',
+            }
         if ticket and (team := ticket.get('ticket_team')):
             context.update(ticket_team=team, workflow_profile=ROUTER_TEAM,
                            team_review_mode=ticket['approval_terms'].get('team_review_mode'))
@@ -935,7 +1049,10 @@ class OuterIntake:
         return context
 
     def _remaining(self, db, ticket, event=None):
-        if ticket:
+        if ticket and (record := ticket.get('work_round')):
+            rows = db.execute("SELECT result FROM outer_invocations WHERE ticket=? AND json_extract(snapshot,'$.work_round')=?",
+                              (ticket['id'], record['number'])).fetchall()
+        elif ticket:
             rows = db.execute('SELECT result FROM outer_invocations WHERE ticket=? OR (event=? AND ticket IS NULL)',
                               (ticket['id'], event['id'] if event else None)).fetchall()
         else:
@@ -1086,8 +1203,10 @@ class OuterIntake:
             event, lease, snapshot = claim
             role = event['role']
             try:
+                schemas = ((TEAM_INTAKE_SCHEMA, TEAM_ACCEPTANCE_SCHEMA) if ticket_id else
+                           (INTAKE_SCHEMA, ACCEPTANCE_SCHEMA))
                 response = role_invoke(self.team_model if ticket_id else self.model, role, snapshot,
-                                       INTAKE_SCHEMA if role == 'intake_assessor' else ACCEPTANCE_SCHEMA)
+                                       schemas[0] if role == 'intake_assessor' else schemas[1])
             except ModelFailure as error:
                 response = error.receipt()
             self._settle(event['id'], lease, snapshot, response)
@@ -1183,11 +1302,37 @@ class OuterIntake:
             ref = original['event_id']
             actual_text[ref] += '\n' + original.get('acceptance', '')
         replacements = set(json.loads(event['body']).get('replace_requirement_ids') or ())
+        if snapshot.get('propose_supersessions'):
+            eligible = {item['requirement_id']: item['description'] for field in ('deliverables','required_capabilities',
+                        'nonfunctional_requirements','preferences') for item in prior.get(field, ())}
+            for replacement in result['superseded_requirements']:
+                if (replacement['requirement_id'] not in eligible or
+                        not _verbatim_clause(replacement['change_clause'], untrusted['current_message'])):
+                    raise ValueError('续改提案替换旧要求须引用本轮修改原话')
+                # 模型只能建议撤销。新增、保留或无法唯一指向旧条款的意见一律沿用原要求。
+                targets = [key for key, old in eligible.items()
+                           if changes_old_requirement(replacement['change_clause'], old)]
+                if targets == [replacement['requirement_id']]:
+                    replacements.add(replacement['requirement_id'])
         goal = dict(ticket_id=ticket['id'], goal_statement=statement, revision=ticket['goal_revision'] + 1,
                     source_refs=sorted(source_keys), created_at=now(), created_by='intake_assessor', status='DRAFT')
         withdrawn = []
         if ticket.get('ticket_team'):
             goal['workflow_profile'] = ROUTER_TEAM
+            if record := ticket.get('work_round'):
+                goal['continued_from'] = {'round':record['source_round'], 'event':record['event'],
+                                          'files':list(record['base']['files']),
+                                          'change_request':_model_text(record['request'])}
+            # 一轮中的授权随补充保留；签收后下轮的取舍重新依据当轮原话。
+            new_round = (ticket.get('work_round') or {}).get('event') == event['id']
+            goal.update(_direction_policy(untrusted['current_message'], {} if new_round else prior))
+            if record:
+                from .goal_engine import explicit_comparison_request
+                comparison = explicit_comparison_request([untrusted['current_message']])
+                if comparison is None and not new_round:
+                    comparison = prior.get('round_comparison_request')
+                if comparison is not None:
+                    goal['round_comparison_request'] = comparison
             withdrawn = [*prior.get('withdrawn_requirements', ()), *(
                 dict(item, field=field, withdrawn_by=event['id'])
                 for field in _FIELDS for item in prior.get(field, ())
@@ -1196,8 +1341,9 @@ class OuterIntake:
             if withdrawn:
                 goal['withdrawn_requirements'] = withdrawn
         withdrawn_text = {_literal_requirement(item['description']) for item in withdrawn}
-        for field in _FIELDS:
-            requirements = raw[field] + (result['assumptions'] if field == 'assumptions' else [])
+        fields = _FIELDS if ticket.get('ticket_team') else tuple(field for field in _FIELDS if field not in ('preferences','design_conditions'))
+        for field in fields:
+            requirements = raw.get(field, []) + (result['assumptions'] if field == 'assumptions' else [])
             if len(requirements) > 12:
                 raise ValueError('目标条目超出上限')
             previous = {item['description']: item for item in prior.get(field, [])}
@@ -1238,12 +1384,60 @@ class OuterIntake:
             if len(normalized) > 12:
                 raise ValueError('合并后目标条目超出上限')
             goal[field] = normalized
+        if ticket.get('ticket_team'):
+            _separate_design_conditions(goal)
+            # 当前模型和旧草案都可能把“最好有”原样列为必需。仅在原文有锚点时纠正分类。
+            preferences = {}
+            for item in goal['preferences']:
+                description = item['description']
+                if _grounded_preference(item, actual_text):
+                    preferences[description] = dict(item, source='USER_EXPLICIT') if item['source'] == 'MODEL_PROPOSED' else item
+                elif not any(row['description'] == description for field in
+                             ('deliverables','required_capabilities','nonfunctional_requirements') for row in goal[field]):
+                    # 分组出错不能吞掉另一项正式交付。拿不出可选原话时继续要求覆盖。
+                    field = 'required_capabilities' if goal['deliverables'] else 'deliverables'
+                    goal[field].append(item)
+            for field in ('deliverables', 'required_capabilities', 'nonfunctional_requirements'):
+                required = []
+                for item in goal[field]:
+                    description = item['description']
+                    if _grounded_preference(item, actual_text):
+                        preferences[description] = dict(item, source='USER_EXPLICIT') if item['source'] == 'MODEL_PROPOSED' else item
+                    else:
+                        required.append(item)
+                        preferences.pop(description, None)
+                goal[field] = required
+            if not goal['deliverables'] and preferences:
+                # 只有一个礼貌提出的成果时，它仍然给出了本单要做的事。
+                for item in raw['deliverables']:
+                    outcome = preferences.pop(item['description'], None)
+                    if outcome:
+                        goal['deliverables'].append(outcome)
+                        break
+            goal['preferences'] = list(preferences.values())
+            if len(result['preference_support']) > 24:
+                raise ValueError('偏好关联建议数量超出上限')
+            linked = {link['derived_description']:preferences[link['preference_quote']]
+                      for link in result['preference_support'] if link['preference_quote'] in preferences}
+            # 来源是模型并不能说明某条是可选的。必须连到一条有用户原话的偏好，
+            # 且这条额外做法和偏好来自同一消息。交付物、明确功能和权限不能借此免验。
+            for field in ('required_capabilities', 'nonfunctional_requirements'):
+                rows = []
+                for item in goal[field]:
+                    pref = linked.get(item['description'])
+                    if (pref and pref['source'] in _PROTECTED_SOURCES and item['source'] == 'MODEL_PROPOSED'
+                            and set(item['source_refs']).intersection(pref['source_refs'])):
+                        item = dict(item, acceptance_role='advisory', preference_id=pref['requirement_id'])
+                    elif 'acceptance_role' in item:
+                        item = {key:value for key,value in item.items() if key not in ('acceptance_role','preference_id')}
+                    rows.append(item)
+                goal[field] = rows
         if not goal['deliverables'] and not any(result['proposed_question'].values()):
             raise ValueError('草案没有可核查交付物')
         if prior:
             changes = {}
-            for field in _FIELDS:
-                old = {item['description'] for item in prior[field]}
+            for field in fields:
+                old = {item['description'] for item in prior.get(field, ())}
                 new = {item['description'] for item in goal[field]}
                 if old != new:
                     changes[field] = {'added': sorted(new - old), 'removed': sorted(old - new)}
@@ -1263,6 +1457,9 @@ class OuterIntake:
         if not set(candidates).issubset(visible) or not set(result['relation_evidence_refs']).issubset(snapshot['relevant_thread_refs']):
             raise ValueError('无效工单或事件引用')
         if action in ('IGNORE', 'ANSWER_STATUS', 'ESCALATE'):
+            if action == 'ESCALATE' and ticket and ticket.get('work_round') and ticket['status'] == 'ASSESSING':
+                self._needs_attention(db, event, ticket, _model_text(result['reason'], 500) or '本轮修改需要核对')
+                return
             state = 'NEEDS_ATTENTION' if action == 'ESCALATE' else 'DONE'
             self._finish(db, event, state, {'action': action}, ticket, deliver=action != 'IGNORE')
             return
@@ -1293,19 +1490,37 @@ class OuterIntake:
             self._record_revision(db, ticket['id'], 'clarification_answer', prior_question['goal_revision'], answer)
         question = result['proposed_question']
         next_question = None
-        if question['question_text'].strip():
+        defer_question = False
+        if ticket.get('ticket_team') and goal['deliverables'] and question['question_text'].strip():
+            if question['blocking_scope'] not in ('permissions', 'cost', 'irreversible'):
+                from .outer_verification import acceptance_requirements
+                required, advisory = acceptance_requirements(goal)
+                target_text = {_literal_requirement(text) for text in result['question_targets']}
+                advisory_text = {_literal_requirement(item['description']) for item in advisory}
+                core_text = {_literal_requirement(item['description']) for item in required}
+                only_advisory = bool(target_text) and target_text <= (advisory_text - core_text)
+                defer_question = only_advisory or question['blocking_scope'] in ('direction','acceptance')
+        if defer_question:
+            if question['blocking_scope'] == 'direction':
+                goal['direction_to_compare'] = _string(question['question_text'], '待比较的方向', 500)
+            # 验收方法由下一角色自行拟定，无须让简单要求进入比较路线。
+        elif question['question_text'].strip():
             if (not result['critical_ambiguities'] or question['blocking_scope'] not in _IMPACTS
                     or len(question['options']) > 6 or ticket['questions_asked'] >= _MAX_QUESTIONS):
                 raise ValueError('澄清超出预算或缺少关键影响')
             txt = _string(question['question_text'], '澄清问题', 500)
+            work_round = (ticket.get('work_round') or {}).get('number', 1)
             asked = {json.loads(row[0])['question_text'] for row in db.execute(
-                "SELECT body FROM outer_revisions WHERE ticket=? AND kind='clarification'", (ticket['id'],))}
+                "SELECT body FROM outer_revisions WHERE ticket=? AND kind='clarification' "
+                "AND coalesce(json_extract(body,'$.work_round'),1)=?", (ticket['id'], work_round))}
             if txt in asked:
                 raise ValueError('不得重复已经回答的问题')
             next_question = dict(question_id=_id('q-'), goal_revision=goal['revision'],
                                  question_text=txt, reason=_string(question['reason'], '澄清原因', 500),
                                  options=[_string(item, '问题选项', 240) for item in question['options']],
                                  blocking_scope=question['blocking_scope'], answer_status='PENDING')
+            if work_round > 1:
+                next_question['work_round'] = work_round
             self._record_revision(db, ticket['id'], 'clarification', goal['revision'], next_question)
             ticket['questions_asked'] += 1
         elif result['critical_ambiguities']:
@@ -1673,7 +1888,10 @@ class OuterIntake:
         self._record_revision(db, ticket['id'], 'execution_archive', ticket['mandate_revision'], previous)
         active = self.store._initialize_outer(outer, profile)
         generation = outer['mandate_revision']
-        self.store._create_workspace(ticket['id'], generation=generation, recoverable=True)
+        record = ticket.get('work_round')
+        work_round = record['number'] if record else previous.get('work_round_number', 1)
+        files = verified_input(db, self.store, ticket) if record else None
+        self.store._create_workspace(ticket['id'], generation=generation, recoverable=True, initial_files=files)
         # 审计记录保留旧产物和执行，但新版从独立工作区与空证据链开始。
         active.update(revisions=state['revisions'], stop_generation=state['stop_generation'] + 1)
         root = previous.copy()
@@ -1681,7 +1899,7 @@ class OuterIntake:
                       'estimated_seconds', 'role_receipts', 'last_run_id'):
             root.pop(field, None)
         root.update(name=options['name'], goal=options['goal'], acceptance=options['acceptance'],
-                    goal_execution=active, workspace_generation=generation, status='created', phase='plan',
+                    goal_execution=active, workspace_generation=generation, work_round_number=work_round, status='created', phase='plan',
                     approval=None, plan=None, paused=False, error='', step=0,
                     time_budget_seconds=outer['mandate']['budget_seconds'], elapsed_seconds=0,
                     time_accounting_since=now(), artifacts=[], checks=[], review=None, calls=0,

@@ -376,6 +376,77 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   assert.deepEqual(body.answer,{option_id:'edit',text:''});
   assert.equal(Object.hasOwn(body,'allow_model_input'),false);
  });
+ await t.test('复杂单列出两种方案，只向当前问题提交负责人推荐的选项',async t=>{
+  const proposal={...question,requires_option:true,decision_kind:'proposal_choice',
+   recommended_option_id:'overview',options:[{id:'depth',label:'深度解读',text:'围绕一个主题展开'},
+    {id:'overview',label:'全书导览',text:'先了解全书主题'}]};
+  const ui=await mount(t,{...ticket,pending_preference:proposal,ticket_team:{id:ticket.id}});
+  assert.equal(ui.root.querySelector('.goal-proposal-badge').textContent,'团队推荐');
+  assert.equal(ui.root.querySelector('legend').textContent,'你想采用哪个方案？');
+  ui.control('use-recommendation').onclick();
+  await flushGoalUI();
+  assert.equal(ui.events.length,1);
+  assert.deepEqual(ui.events[0].body.answer,{option_id:'overview',text:''});
+  assert.equal(ui.events[0].body.question_id,question.id);
+  assert.equal(ui.events[0].body.candidate_digest,question.candidate_digest);
+ });
+ await t.test('旧验收缺口可沿用原话重新研判，实际提交仍需发送许可',async t=>{
+  const ui=await mount(t,{...ticket,status:'VERIFICATION_GAP',journey:{station:'decision',modify:true},
+   ticket_team:{id:ticket.id}});
+  ui.control('request-team-plan').onclick();
+  assert.equal(ui.events.length,0);
+  ui.confirm.onclick(); await flushGoalUI();
+  assert.equal(ui.events[0].body.intent,'change');
+  assert.equal(ui.events[0].body.allow_model_input,true);
+  assert.equal(ui.events[0].body.ticket_id,ticket.id);
+  assert.match(ui.events[0].body.text,/依据原要求重新研判.*重要方向由我选择/);
+  ui.control('delegate-team-plan').onclick(); ui.confirm.onclick(); await flushGoalUI();
+  assert.match(ui.events[1].body.text,/采用团队推荐/);
+  assert.equal(ui.events[1].body.ticket_id,ticket.id);
+ });
+ await t.test('目标确认只展开要交付的结果，可选偏好和建议能分别查阅',async t=>{
+  const required={description:'一页导览'}, suggestion={description:'使用横向排版',acceptance_role:'advisory'};
+  const preference={requirement_id:'opt',description:'尽量使用可打印格式'};
+  const row={...ticket,status:'AWAITING_APPROVAL',ticket_team:{id:ticket.id},journey:{station:'decision',approve:true},
+   approval_terms:{budget_seconds:900},goal_contract:{deliverables:[required,suggestion],preferences:[preference]},
+   acceptance_contract:{preference_notes:[{requirement_id:'opt',reason:'导出条件允许时提供'}]}};
+  const ui=await mount(t,row);
+  const now=ui.root.querySelector('.goal-now');
+  assert.deepEqual(now.children.find(node=>node.tag==='ul').children.map(node=>node.textContent),['一页导览']);
+  const scope=ui.control('section-scope');
+  assert.equal(scope.open,false);
+  assert.ok(scope.querySelectorAll('li').some(item=>item.textContent==='使用横向排版'));
+  assert.ok(scope.querySelectorAll('li').some(item=>item.textContent==='尽量使用可打印格式 · 导出条件允许时提供'));
+  assert.equal(ui.control('approve').textContent,'确认并交给团队');
+ });
+ await t.test('已交付原单的下一轮绑定实际版本，取消后保留输入',async t=>{
+  const base={assignment:'abc',artifact_sha256:'digest1',files:{'手册.md':'file1'}};
+  const row={...ticket,ticket_team:{id:ticket.id},journey:{station:'delivery'},
+   continuation:{round:1,can_start:true,base},execution:{status:'completed',goal_delivery:{...base,sequence:1}}};
+  const ui=await mount(t,row,{panel:'continue'});
+  assert.ok(ui.control('open-continuation'));
+  assert.ok(ui.control('section-continue').open);
+  ui.fill('continue-text','再补一段亲子路线');
+  ui.control('start-round').onclick(); ui.cancel.onclick();
+  assert.equal(ui.events.length,0);
+  assert.equal(ui.control('continue-text').value,'再补一段亲子路线');
+  ui.control('start-round').onclick(); ui.confirm.onclick(); await flushGoalUI();
+  const {request_id,...payload}=ui.events[0].body;
+  assert.ok(request_id);
+  assert.deepEqual(payload,{ticket_id:ticket.id,revision:ticket.revision,intent:'continue',
+   text:'再补一段亲子路线',candidate:base.assignment,artifact_sha256:base.artifact_sha256,allow_model_input:true});
+ });
+ await t.test('第二轮正在整理时第一轮的交付可回看，不能误认作新成果',async t=>{
+  const base={assignment:'abc',artifact_sha256:'digest1',sequence:1,state:'accepted',files:{'手册.md':'file1'}};
+  const row={...ticket,ticket_team:{id:ticket.id},status:'ASSESSING',journey:{station:'flight'},
+   continuation:{round:2,execution_round:1,source_round:1,can_start:false,base,request:'补充交通'},
+   execution:{status:'completed',goal_delivery:base,goal_execution:{artifact_reviews:[base]}}};
+  const ui=await mount(t,row,{panel:'artifacts'});
+  assert.equal(ui.control('open-continuation'),undefined);
+  assert.ok(ui.root.querySelectorAll('p').some(node=>node.textContent==='第 2 轮尚未交付。'));
+  assert.ok(ui.control('section-versions').querySelectorAll('summary').some(node=>node.textContent==='第 1 轮 · 交付 v1'));
+  assert.deepEqual(ui.events,[]);
+ });
  await t.test('正式固定试单显示预设样例，提交只带选项',async t=>{
   const ui=await mount(t,{...fixed,pending_preference:question});
   assert.equal(ui.control('preference-text'),undefined);

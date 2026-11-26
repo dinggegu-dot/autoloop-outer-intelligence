@@ -8,7 +8,7 @@ from superagent.goal_engine import StaleCoordination
 from superagent.goal_team_handoff import (
     CandidateReadUnproven, DRAFT_OBSERVATIONS, HANDOFF_SCOPE, candidate_read_challenge, check_handoff_candidate,
     draft_read_recorded, explicit_keep_answer, handoff_read_paths, select_handoff_scope,
-    validate_draft_observations, validate_handoff_scopes,
+    validate_draft_observations, validate_handoff_scopes, valid_directions,
 )
 from superagent.goal_team_records import (
     MIN_REPAIR_ASSIGNMENT_SECONDS, PREFERENCE_REVIEW_MODES, TEAM_REVIEW_MODES,
@@ -583,7 +583,7 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
         if len(preserved) + allowed < len(DRAFT_ROLE_ORDER):
             raise Problem('草稿审阅缺少剩余角色轮次')
         if ((decision_allowed and (review_mode not in PREFERENCE_REVIEW_MODES or model_context['owner_preference']))
-                or (decision_required and review_mode != 'review_and_decide')):
+                or (decision_required and review_mode not in PREFERENCE_REVIEW_MODES)):
             raise Problem('本步选择状态与派工登记不一致')
         independent_context = {key:model_context[key] for key in
                                ('goal','stage','approved_criteria','approved_goal_contract')}
@@ -612,7 +612,7 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
         comparison = drafting_role(2,
             'lead', '比较负责人方案与顾问独立方案，说明具体采纳与舍弃的理由。'
             '在工作区写出本步可审阅的实际初稿。需要本人选择时，先把共同部分做成真实初稿，'
-            '并给出基于该草稿的可选方向，留待本人决定。',
+            '并给出基于该草稿的可选方向，留待本人决定。不同方向会改变的正文、版式或实现留在选定后制作。',
             {**model_context, **stage_context, 'lead_plan':lead_plan, 'independent_plan':independent_plan,
              'decision_allowed':decision_allowed, 'decision_required':decision_required,
              'previous_checkpoint':baseline_checkpoint},
@@ -648,8 +648,15 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
             decision_note = (
                 '本步必须由本人选择，交回 ask。' if decision_required else
                 '只有存在新的实质取舍确需本人判断时才交回 ask；可以自行决定就交 done，options 留空。'
-            ) + '交回 ask 时附三组有实质差别的 options，说明各自影响，summary 写清要本人决定的问题。'
+            )
+            count_note = '两个或三个' if assignment.get('direction_owner') == 'owner' else '三个'
+            decision_note += f'交回 ask 时附{count_note}有实质差别的 options，说明各自影响，summary 写清要本人决定的问题。'
             lead_actions = ('ask',) if decision_required else ('done','ask')
+        if assignment.get('direction_owner') == 'owner':
+            decision_note += ('把推荐方向放第一项，写清理由。每项说明实际会得到什么、适合谁、会牺牲什么。'
+                              '只给能改变交付结果的具体方向，不能用“沿用、修改、其他”代替方案。')
+        elif assignment.get('direction_owner') == 'team':
+            decision_note += '本人已委托选方向。在 summary 说明最终推荐与理由，以该方向继续制作。'
         instruction = drafting_role(4,
             'lead', '打开同一封存草稿，对顾问的实物意见说明采纳或舍弃。'
             '在 verify、retain 用自然语言概括复查和保留项。用 handoff_scope.variants 写可自动核对的范围。'
@@ -665,10 +672,8 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
         )
         options = instruction['options']
         asks_owner = instruction['action'] == 'ask'
-        if asks_owner and (len(options) != MAX_OPTIONS or any(
-                len({row[field].strip().casefold() for row in options}) != MAX_OPTIONS
-                for field in ('label','text'))):
-            raise Problem('待本人决定的草稿必须给出三组有区别的选择')
+        if asks_owner and not valid_directions(options, proposal_choice=assignment.get('direction_owner') == 'owner'):
+            raise Problem('待本人决定的草稿缺少彼此有区别的选择')
         if (not asks_owner and options) or not any(item.strip() for item in instruction['verify']):
             raise Problem('负责人没有提交与本步决定状态匹配的执行清单')
         if capture(directory/'sealed')[0] != draft:

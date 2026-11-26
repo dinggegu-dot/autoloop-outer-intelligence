@@ -140,6 +140,37 @@
 .goal-team .goal-option:has(input:checked) { background: var(--goal-green); border-color: var(--goal-primary); }
 .goal-team input[type=checkbox], .goal-team input[type=radio] { width: auto; min-height: auto; accent-color: var(--goal-primary); flex: none; }
 .goal-sample-text { display: block; margin-top: 3px; white-space: pre-wrap; }
+.goal-proposal-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,16rem),1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+.goal-proposal-cards > .goal-option {
+  margin: 0;
+  padding: 14px;
+  overflow-wrap: anywhere;
+}
+.goal-proposal-cards .goal-direction-label { margin: 0; }
+.goal-proposal-badge {
+  display: inline-block;
+  margin-inline-start: 7px;
+  padding: 2px 7px;
+  border-radius: 1em;
+  background: #faeed5;
+  color: #744e17;
+  font-size: .75rem;
+  font-weight: 650;
+  vertical-align: middle;
+}
+.goal-team details.goal-continue-form {
+  margin-block: 14px;
+  padding-inline: 14px;
+  background: #fffaf0;
+  border-color: #e2d4b7;
+}
+.goal-continue-form :is(p,label) { max-width: 68ch; }
+.goal-continue-form .goal-feedback:empty { display: none; }
 .goal-team details { margin: 10px 0 4px; padding: 0 10px 7px; border: 1px solid var(--goal-line); border-radius: 8px; }
 .goal-team summary { min-height: 44px; padding: 9px 0; cursor: pointer; color: var(--goal-ink); font-weight: 680; }
 .goal-team ul, .goal-team ol { padding-inline-start: 22px; }
@@ -193,6 +224,15 @@
 .goal-draft-image { display: block; max-width: 100%; max-height: 52vh; object-fit: contain; }
 .goal-draft-observations li + li { margin-block-start: 8px; }
 .goal-team .goal-direction { display: block; margin: 10px 0 4px; padding: 0; cursor: default; }
+.goal-proposal-cards > .goal-direction { margin: 0; }
+.goal-proposal-cards .goal-direction > details {
+  margin: 0 10px;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--goal-line);
+  border-radius: 0;
+}
+.goal-proposal-cards .goal-direction > details > summary { color: var(--goal-muted); font-size: .83rem; }
 .goal-team .goal-direction-label {
   display: flex;
   align-items: baseline;
