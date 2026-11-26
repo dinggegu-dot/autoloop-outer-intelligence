@@ -154,6 +154,24 @@ class FormalOuterCanaryTests(unittest.TestCase):
         self.assertFalse(valid_command("submit", dict(followup, allow_model_input=True, thread="existing-thread")))
         self.assertFalse(valid_command("return_artifact", dict(artifact, reason=" ", allow_model_input=True)))
 
+    def test_upgrade_probe_still_checks_a_fixed_article_if_the_first_version_has_changed(self):
+        from urllib.error import HTTPError
+        from deploy_formal_canary import require_readable_afr_article
+        from unittest.mock import Mock
+
+        articles = [dict(kind='article', id='old', revision='1'),dict(kind='article', id='current', revision='2')]
+        stale = HTTPError('fixture',409,'已换版',{},None)
+        fetch = Mock(side_effect=[stale, {'item':articles[1]}])
+        require_readable_afr_article(fetch, articles)
+        self.assertEqual(fetch.call_count,2)
+        self.assertIn('id=current&revision=2',fetch.call_args.args[0])
+        with self.assertRaisesRegex(RuntimeError,'没有可读取的固定版本'):
+            require_readable_afr_article(Mock(side_effect=stale),articles)
+        with self.assertRaisesRegex(RuntimeError,'固定版本无法读取'):
+            require_readable_afr_article(Mock(return_value={'item':articles[0]}),articles[1:])
+        with self.assertRaises(HTTPError):
+            require_readable_afr_article(Mock(side_effect=HTTPError('fixture',503,'不可用',{},None)),articles)
+
     def test_proposal_request_uses_only_validated_direction_and_current_ticket(self):
         request = dict(VERSION, intent="proposal", direction_owner="owner", allow_model_input=True)
         self.assertTrue(valid_command("submit", request))
