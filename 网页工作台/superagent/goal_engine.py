@@ -219,6 +219,14 @@ _COMPARE_REQUEST = re.compile(
 _COMPARE_NEGATION = re.compile(r'无需|不用|不必|不要|不需要|不作|免于|no need to|do not|never', re.I)
 
 
+def explicit_comparison_request(requirements):
+    clauses = [clause for text in requirements for clause in re.split(r'[。！？；，;,.!]', text)
+               if _COMPARE_REQUEST.search(clause.strip())]
+    if clauses:
+        return any(not _COMPARE_NEGATION.search(clause) for clause in clauses)
+    return None
+
+
 def bind_router_route(task, assignment, planned, result):
     mandate = flow(task)['outer']['mandate']
     if mandate.get('workflow_profile') != ROUTER_TEAM or mandate.get('team_review_mode') != ADAPTIVE_REVIEW:
@@ -244,12 +252,11 @@ def bind_router_route(task, assignment, planned, result):
     if followup := goal.get('continued_from'):
         # 本轮只改日期时，上轮已兑现的“先比较”不再是一项新的流程指令。
         requirements = [followup['change_request']]
-    comparison_clauses = [
-        clause for text in requirements for clause in re.split(r'[。！？；，;,.!]', text)
-        if _COMPARE_REQUEST.search(clause.strip())
-    ]
-    compare_requested = any(not _COMPARE_NEGATION.search(clause) for clause in comparison_clauses)
-    skip_comparison = bool(comparison_clauses) and not compare_requested
+    order = explicit_comparison_request(requirements)
+    if followup and isinstance(goal.get('round_comparison_request'), bool):
+        order = goal['round_comparison_request']
+    compare_requested = order is True
+    skip_comparison = order is False
     route = result.get('execution_route')
     reason = result.get('route_reason')
     selected = result.get('comparison_steps')

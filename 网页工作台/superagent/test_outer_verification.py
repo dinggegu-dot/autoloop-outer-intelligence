@@ -606,6 +606,17 @@ class OuterExecutionTests(unittest.TestCase):
         assignment,_ = self.launch_team_stage()
         self.assertEqual(assignment['role_slots'],1)
 
+    def test_later_explicit_choice_in_the_current_round_overrides_its_initial_request(self):
+        OuterIntake(Workbench(self.store))
+        self.authorize(criterion(),goal_fields={'continued_from':{'change_request':'直接改日期'},
+                     'direction_owner':'owner','round_comparison_request':True})
+        self.store.change(self.ticket,lambda task:flow(task)['outer']['mandate'].update(
+            execution_profile=PROFILE,workflow_profile=registry.ROUTER_TEAM,team_review_mode=ADAPTIVE_REVIEW))
+        planned = self.plan(['one'],routing={'execution_route':'direct','route_reason':'仅改日期','comparison_steps':[]})
+        self.assertEqual(planned['plan']['execution_route'],'compare')
+        assignment,_ = self.launch_team_stage()
+        self.assertTrue(assignment['team_decision_required'])
+
     def test_router_respects_explicit_request_to_skip_comparison(self):
         OuterIntake(Workbench(self.store))
         self.authorize(criterion(),goal_fields={

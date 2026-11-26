@@ -1326,6 +1326,13 @@ class OuterIntake:
             # 一轮中的授权随补充保留；签收后下轮的取舍重新依据当轮原话。
             new_round = (ticket.get('work_round') or {}).get('event') == event['id']
             goal.update(_direction_policy(untrusted['current_message'], {} if new_round else prior))
+            if record:
+                from .goal_engine import explicit_comparison_request
+                comparison = explicit_comparison_request([untrusted['current_message']])
+                if comparison is None and not new_round:
+                    comparison = prior.get('round_comparison_request')
+                if comparison is not None:
+                    goal['round_comparison_request'] = comparison
             withdrawn = [*prior.get('withdrawn_requirements', ()), *(
                 dict(item, field=field, withdrawn_by=event['id'])
                 for field in _FIELDS for item in prior.get(field, ())
