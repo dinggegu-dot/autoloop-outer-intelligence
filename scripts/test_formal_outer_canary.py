@@ -125,6 +125,19 @@ class FormalOuterCanaryTests(unittest.TestCase):
         self.assertFalse(valid_command("get", {"ticket_id": "../another-order"}))
         self.assertFalse(valid_command("lock_blind_ballot", BINDING))
 
+    def test_stopping_a_draft_works_with_new_and_pre_upgrade_web_payloads(self):
+        for versions in ({"goal_revision":0,"acceptance_revision":0},
+                         {"goal_revision":1,"acceptance_revision":0}):
+            legacy = dict(VERSION, **versions)
+            for command in ("pause","resume","stop"):
+                with self.subTest(command=command, versions=versions):
+                    self.assertTrue(valid_command(command, VERSION))
+                    self.assertTrue(valid_command(command, legacy))
+                    self.assertFalse(valid_command(command, dict(legacy, revision=0)))
+                    self.assertFalse(valid_command(command, dict(legacy, goal_revision=False)))
+                    self.assertFalse(valid_command(command, dict(legacy, acceptance_revision=-1)))
+            self.assertFalse(valid_command("approve", legacy))
+
     def test_followup_free_text_requires_fresh_explicit_consent(self):
         direction = dict(BINDING, question_id="b"*32, question_revision=1, candidate_digest="c"*64)
         self.assertTrue(valid_command("answer_preference", {**direction, "answer": {"option_id": "keep-draft", "text": ""}}))
