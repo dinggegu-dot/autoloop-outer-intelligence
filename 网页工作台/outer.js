@@ -368,7 +368,7 @@ export function mountOuter(request,notice,openTask){
     if(!by('revisions')){const msg=element('p','这张工单当前不可修改。');msg.id='revisions';detail.append(msg);}
     if(v.pause)action(detail,'暂停此单',()=>command('pause'));
     if(v.resume)action(detail,'继续此单',()=>command('resume'));
-    if(v.stop)action(detail,'停止此单',async()=>{if(confirm('停止这张工单？'))await command('stop');});
+    if(v.stop)action(detail,'取消工单',async()=>{if(confirm('取消这张工单？原单记录和已交付文件仍可查看。'))await command('stop');});
   }
   let initial=true, destination=location.hash.slice(1);
   function focusSection(d){

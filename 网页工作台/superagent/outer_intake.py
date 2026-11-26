@@ -446,6 +446,8 @@ class OuterIntake:
                                                 'choices':choices, 'router_selection':True})
             elif ticket_id is not None:
                 ticket = self._ticket(db, ticket_id, actor, tenant)
+                if ticket['status'] == 'STOPPED':
+                    raise Problem('这张工单已取消', 409)
                 question = ticket.get('question')
                 card = self._card(db, source, tenant, thread) if linked else None
                 card_question = card['question_id'] if card else None
@@ -488,8 +490,8 @@ class OuterIntake:
                     known = {item['requirement_id'] for field in _FIELDS for item in current_goal.get(field, [])}
                     if not set(replace_requirement_ids).issubset(known):
                         raise Problem('被替换要求已更新或不存在', 409)
-                if ticket['status'] in ('PAUSED', 'STOPPED'):
-                    raise Problem('工单已暂停或停止', 409)
+                if ticket['status'] == 'PAUSED':
+                    raise Problem('工单已暂停', 409)
                 if question_id and card_question and question_id != card_question:
                     raise Problem('卡片与指定澄清问题不一致', 409)
                 selected_question = question_id or card_question
@@ -2056,6 +2058,10 @@ class OuterIntake:
             state['stop_requested'] = True
             if task['status'] not in ('completed', 'rejected'):
                 task.update(paused=True, status='stopping' if active else 'paused')
+            if operation == 'stop':
+                for review in state.get('artifact_reviews', ()):
+                    if review['state'] == 'pending':
+                        review.update(state='cancelled', decided_at=now(), event=event_id, source=source)
         decision(task, 'outer_' + operation, event=event_id, source=source, generation=state['stop_generation'])
         task['updated_at'] = now()
         db.execute('UPDATE tasks SET body=?,updated_at=? WHERE id=?',

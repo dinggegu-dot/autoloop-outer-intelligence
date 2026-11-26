@@ -58,7 +58,7 @@ class TicketRoundsTest(unittest.TestCase):
                         revision=row['revision'], goal_revision=row['goal_revision'],
                         acceptance_revision=row['acceptance_revision'], require_signoff=True))
 
-    def sign(self, identifier, data):
+    def offer(self, identifier, data):
         self.counter += 1
         candidate = f'{self.counter:032x}'
         root = self.store.root / 'goal-attempts' / identifier / candidate / 'verified'
@@ -77,8 +77,12 @@ class TicketRoundsTest(unittest.TestCase):
                 **{key:ticket[key] for key in ('goal_revision','acceptance_revision','mandate_revision')})]
 
         self.store.change(identifier, offer)
+        return candidate, checkpoint['digest']
+
+    def sign(self, identifier, data):
+        candidate, digest = self.offer(identifier, data)
         dispatch(self.intake, 'web', 'accept_artifact', dict(ticket_id=identifier,request_id=str(uuid4()),
-                 revision=ticket['revision'],candidate=candidate,artifact_sha256=checkpoint['digest']))
+                 revision=self.latest(identifier)['revision'],candidate=candidate,artifact_sha256=digest))
         return candidate
 
     def request(self, text, identifier=None):
@@ -90,6 +94,38 @@ class TicketRoundsTest(unittest.TestCase):
 
     def submit(self, body):
         return dispatch(self.intake, 'web', 'submit', body)
+
+    def test_can_cancel_a_waiting_candidate_and_download_previous_signed_edition(self):
+        original = self.latest(self.ticket)
+        first = original['continuation']['base']['assignment']
+        self.assertFalse(original['journey']['stop'])
+        self.submit(self.request('增加一页简述'))
+        self.intake.drain_ticket(self.ticket,limit=2)
+        self.approve(self.ticket)
+        candidate, digest = self.offer(self.ticket,b'unsigned second edition')
+        waiting = self.latest(self.ticket)
+        self.assertTrue(waiting['journey']['artifact_review'])
+        self.assertTrue(waiting['journey']['stop'])
+        request = dict(ticket_id=self.ticket,revision=waiting['revision'],request_id=str(uuid4()))
+        dispatch(self.intake,'web','stop',request)
+        self.assertTrue(dispatch(self.intake,'web','stop',request)['duplicate'])
+        stopped = self.latest(self.ticket)
+        self.assertEqual((stopped['status'],stopped['journey']['station'],stopped['journey']['label']),
+                         ('STOPPED','dock','已取消'))
+        self.assertFalse(any(stopped['journey'][key] for key in ('approve','pause','resume','stop','artifact_review')))
+        self.assertEqual(self.store.get(self.ticket)['goal_execution']['artifact_reviews'][-1]['state'],'cancelled')
+        for command, args in (
+                ('accept_artifact',dict(candidate=candidate,artifact_sha256=digest)),
+                ('submit',dict(intent='supplement',text='旧页面发来意见',allow_model_input=True)),
+                ('resume',{})):
+            with self.subTest(command=command), self.assertRaises(Problem):
+                dispatch(self.intake,'web',command,dict(request,request_id=str(uuid4()),revision=stopped['revision'],**args))
+        self.assertEqual(self.wb.artifact_bytes(self.ticket,self.filename,candidate=first)[1], b'first edition')
+        with patch('workbench.is_blind_goal',return_value=True), patch.object(self.wb.blind_review(),'get',return_value=None):
+            self.wb.require_public_artifact(self.ticket,first)
+            for hidden in (candidate,'f'*32):
+                with self.subTest(hidden=hidden), self.assertRaisesRegex(Problem,'匿名评阅完成前'):
+                    self.wb.require_public_artifact(self.ticket,hidden)
 
     def test_original_ticket_survives_three_deliveries_and_old_budget(self):
         original = self.request('改成三项说明')

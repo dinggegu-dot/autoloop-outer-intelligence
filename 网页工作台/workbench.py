@@ -498,6 +498,16 @@ class Workbench:
     def require_public_artifact(self, task_id, candidate=None):
         task = self.store.get(task_id)
         if is_blind_goal(task) and task['status'] != 'completed':
+            if candidate is not None:
+                try:
+                    record = self._artifact_delivery(task,candidate)
+                except Problem as error:
+                    if error.status != 404:
+                        raise
+                else:
+                    # 已签收的固定版本可下载，当前候选继续使用自己的盲评状态。
+                    if record.get('state') == 'accepted':
+                        return
             view = self.blind_review().get(task_id, actor_id='owner')
             if (not view or view['status'] != 'locked' or not view['current']
                     or (candidate is not None and view['candidate'] != candidate)):
