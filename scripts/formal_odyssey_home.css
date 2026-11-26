@@ -1,0 +1,123 @@
+/* 正式安装版首页复用王国地图里已经安装的场景与角色。 */
+.task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) .page-heading {
+  position:relative; isolation:isolate; overflow:hidden; display:grid; align-content:center;
+  justify-items:start; gap:13px; min-height:174px; margin:0 0 22px;
+  padding:22px clamp(18px,3vw,40px); border:1px solid #d7e1dc; border-radius:20px;
+  color:#213b50; background:#fffaf1;
+}
+.task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) .page-heading::before {
+  content:""; position:absolute; z-index:-2; inset:0 0 0 30%; pointer-events:none;
+  background:linear-gradient(90deg,#fffaf1 0%,rgba(255,250,241,.87) 12%,rgba(255,250,241,.08) 47%,transparent 75%),
+             url("/assets/odyssey/cascade-scene.jpg") center 56% / cover no-repeat;
+}
+.task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) .page-heading::after {
+  content:""; position:absolute; z-index:-1; right:8%; top:4%; height:90%; width:20%; pointer-events:none;
+  background:url("/assets/odyssey/ship.png") center / contain no-repeat;
+  filter:drop-shadow(2px 6px 6px #172d3829); transform:rotate(5deg);
+}
+.task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) .page-heading h1 {
+  font-size:clamp(29px,3vw,44px); letter-spacing:-.05em; margin:0;
+}
+.task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) #page-subtitle { display:none; }
+.task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) #new-task {
+  width:auto; min-height:42px; margin:0; padding:0 16px; border-radius:12px;
+}
+#view-tasks[data-desk-list]:not([hidden]):not(:has(.formal-ordinary-detail)) {
+  display:grid; grid-template-columns:minmax(0,0.88fr) minmax(0,1.32fr);
+  grid-template-rows:auto auto; align-items:start; column-gap:clamp(14px,2vw,28px); row-gap:0;
+}
+#view-tasks[data-desk-list] > :is(#formal-home-decisions,#formal-goal-home,#live-tasks,#desk-order-switch) { min-width:0; }
+#view-tasks[data-desk-list] #formal-home-decisions { grid-column:1; grid-row:1 / 3; }
+#desk-order-switch { grid-column:2; grid-row:1; display:flex; flex-wrap:wrap; align-items:center;
+  justify-content:space-between; gap:4px 10px; padding:0 0 10px; }
+#desk-order-switch[hidden], #desk-order-switch [hidden] { display:none; }
+#desk-order-switch > div { display:inline-flex; gap:2px; padding:3px; background:#e8edf1; border-radius:14px; }
+#desk-order-switch button { min-height:38px; border-radius:11px; padding:6px 13px; background:transparent;
+  color:#506470; font-weight:650; font-size:14px; }
+#desk-order-switch button[aria-pressed=true] { color:#233d50; background:white; box-shadow:0 1px 4px #233d5022; }
+#desk-order-switch a { display:inline-flex; align-items:center; gap:3px; min-height:40px; color:#415e70; font-size:13px; text-decoration:none; }
+#desk-order-switch a:hover { text-decoration:underline; }
+#view-tasks[data-desk-list] > :is(#formal-goal-home,#live-tasks) { grid-column:2; grid-row:2; }
+#view-tasks[data-desk-list] > .legacy-panel { grid-column:1/-1; }
+#view-tasks[data-desk-list=team]:not(:has(.formal-ordinary-detail)) > #live-tasks,
+#view-tasks[data-desk-list=ordinary] > #formal-goal-home,
+#view-tasks:has(.formal-ordinary-detail) > :is(#desk-order-switch,#formal-home-decisions,#formal-goal-home) { display:none; }
+#view-tasks #formal-home-decisions, #view-tasks #formal-goal-home {
+  border:1px solid #d9e2e7; border-radius:17px; background:#fff; margin:0 0 15px;
+}
+#view-tasks #formal-home-decisions { display:grid; gap:0; padding:0 18px 8px; align-content:start; }
+#view-tasks #formal-home-decisions[hidden], #view-tasks #formal-goal-home[hidden] { display:none; }
+#formal-home-decisions > .goal-queue-title { min-height:58px; gap:8px; border-bottom:1px solid #ebedef; }
+#formal-home-decisions > .goal-queue-title::before { content:""; width:33px; height:32px; flex:none;
+  background:url("/assets/odyssey/red-cappy.png") center / contain no-repeat; }
+#view-tasks #formal-home-decisions h2 { font-size:20px; }
+#formal-home-decisions .goal-queue-title .goal-count { align-self:center; }
+#formal-home-decisions > :is(.goal-empty,.goal-connection:not(:empty)) { padding:12px 0; }
+#view-tasks #formal-home-decisions .goal-home-list { display:grid; grid-template-columns:minmax(0,1fr); gap:0; }
+#view-tasks #formal-home-decisions .goal-home-list[hidden] { display:none; }
+#view-tasks #formal-home-decisions .goal-card {
+  display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start;
+  gap:4px 10px; padding:14px 0; border:0; border-radius:0; background:transparent;
+}
+#formal-home-decisions .goal-card + .goal-card { border-top:1px solid #e9edf0 !important; }
+#formal-home-decisions .goal-card h4 { grid-column:1; grid-row:1; font-size:16px; line-height:1.45; }
+#formal-home-decisions .goal-card .goal-chip { grid-column:2; grid-row:1; max-width:9em; justify-self:end; font-size:12px; }
+#formal-home-decisions .goal-card :is(p,small) { grid-column:1/-1; margin:0; font-size:13px; line-height:1.5; }
+#formal-home-decisions .goal-card .goal-button { grid-column:1/-1; justify-self:start; min-height:36px;
+  margin:4px 0 0; padding:4px 12px; border:0; color:#91291f; background:#fbece7; border-radius:8px; }
+#formal-home-decisions .goal-card .goal-button:hover { background:#f7ded6; }
+.desk-more-decisions { border-top:1px solid #e4e9ed; }
+.desk-more-decisions summary { cursor:pointer; min-height:40px; padding:9px 0; color:#405b6a; font-size:14px; }
+#view-tasks #formal-goal-home { display:block; padding:0 18px 6px; }
+#view-tasks[data-desk-list=ordinary] #formal-goal-home, #view-tasks:has(.formal-ordinary-detail) #formal-goal-home,
+#view-tasks:has(.formal-ordinary-detail) #formal-home-decisions { display:none; }
+#formal-goal-home > h2 { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+#formal-goal-home .goal-home-groups, #formal-goal-home .goal-home-list { display:block; }
+#formal-goal-home .goal-queue { display:block; padding:12px 0 2px; }
+#formal-goal-home .goal-queue + .goal-queue { border-top:1px solid #dfe7eb; margin-top:8px; }
+#formal-goal-home .goal-queue-title { min-height:30px; gap:7px; }
+#formal-goal-home .goal-queue-title h3 { font-size:16px; }
+#formal-goal-home .goal-queue-title::before { content:""; width:22px; height:26px; flex:none; background:center / contain no-repeat; }
+#formal-goal-home .goal-flight .goal-queue-title::before { background-image:url("/assets/odyssey/ship.png"); }
+#formal-goal-home .goal-delivery .goal-queue-title::before { background-image:url("/assets/odyssey/power-moon.png"); }
+#formal-goal-home .goal-home-list .goal-card { display:block; border:0; border-radius:0; padding:0; }
+#formal-goal-home .goal-card + .goal-card { border-top:1px solid #eef1f3; }
+.desk-ticket-link { display:grid; grid-template-columns:minmax(0,1fr) auto 10px; align-items:center;
+  gap:9px; min-height:46px; padding:5px 0; text-decoration:none; color:#18323f; border-radius:5px; }
+#formal-goal-home .desk-ticket-link h4 { font-size:14px; font-weight:620; line-height:1.5; margin:0; }
+.desk-ticket-link:hover h4 { text-decoration:underline; text-underline-offset:3px; }
+.desk-ticket-link .goal-chip { align-self:center; max-width:9em; font-size:11px; }
+.desk-row-arrow { color:#687f8e; font-size:20px; }
+.desk-short-id { font-weight:400; color:#526875; }
+#formal-goal-home .goal-queue > a, #formal-goal-home .goal-actions a {
+  min-height:36px; padding:4px 0; border:0; color:#415e70; background:transparent; font-size:13px;
+}
+#formal-goal-home .goal-empty { padding:8px 0; }
+#desk-order-switch :focus-visible, .desk-ticket-link:focus-visible { outline:2px solid #2c73a0; outline-offset:2px; }
+@media(min-width:1001px) {
+  #view-tasks[data-desk-list]:not(:has(.formal-ordinary-detail)):has(#formal-home-decisions > .goal-empty:not([hidden])) { display:block; }
+  #view-tasks #formal-home-decisions:has(> .goal-empty:not([hidden])) { display:flex; flex-wrap:wrap; align-items:center; gap:10px 18px; padding:0 18px; }
+  #formal-home-decisions:has(> .goal-empty:not([hidden])) > .goal-queue-title { border:0; }
+  #view-tasks:has(#formal-home-decisions > .goal-empty:not([hidden])) #formal-goal-home .goal-home-groups {
+    display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px;
+  }
+  #view-tasks:has(#formal-home-decisions > .goal-empty:not([hidden])) #formal-goal-home .goal-queue + .goal-queue { border-top:0; margin-top:0; }
+}
+@media(max-width:1000px) {
+  #view-tasks[data-desk-list]:not([hidden]):not(:has(.formal-ordinary-detail)) { display:block; }
+  #desk-order-switch { padding-top:2px; }
+}
+@media(max-width:600px) {
+  .task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) .page-heading {
+    min-height:122px; gap:9px; padding:13px 16px; border-radius:14px; margin-bottom:12px;
+  }
+  .task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) .page-heading::before { left:25%; background-position:center, 60% center; }
+  .task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) .page-heading::after { right:9%; }
+  .task-home .workspace:has(#formal-home-decisions:not([hidden])):not(:has(.formal-ordinary-detail)) .page-heading h1 { font-size:27px; }
+  #view-tasks #formal-home-decisions, #view-tasks #formal-goal-home { padding-inline:12px; }
+  #view-tasks #formal-home-decisions .goal-card { padding-block:9px; }
+  #formal-home-decisions > .goal-queue-title { min-height:46px; }
+  #formal-home-decisions .goal-card .goal-button { min-height:40px; }
+  #desk-order-switch button { min-height:42px; }
+}

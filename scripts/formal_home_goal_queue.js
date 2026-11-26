@@ -44,6 +44,9 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
   const codexStatus = document.getElementById('formal-home-codex-status');
   const decisionCount = decisions.querySelector('.goal-count');
   const decisionList = decisions.querySelector('ul');
+  const extraDecisions = decisions.querySelector('.desk-more-decisions');
+  const extraLabel = extraDecisions.querySelector('summary');
+  const extraList = extraDecisions.querySelector('ul');
   const decisionEmpty = decisions.querySelector('.goal-empty');
   const retry = decisions.querySelector('button');
   const heading = root.querySelector('h2');
@@ -53,6 +56,17 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
   const approvalLink = approvals.querySelector('a');
   const approvalStatus = approvals.querySelector('[role=status]');
   const taskView = root.closest('.view-panel');
+  const listSwitch = document.getElementById('desk-order-switch');
+  const listButtons = [...listSwitch.querySelectorAll('[data-desk-list]')];
+  const ledgerLink = listSwitch.querySelector('a');
+  let selectedList = 'team';
+  function showList(name) {
+    selectedList = name;
+    taskView.dataset.deskList = name;
+    for (const button of listButtons) button.setAttribute('aria-pressed',String(button.dataset.deskList === name));
+    ledgerLink.hidden = name !== 'team';
+  }
+  for (const button of listButtons) button.addEventListener('click',()=>showList(button.dataset.deskList));
   const approvalView = approvals.closest('.view-panel');
   const stations = [
     ['flight', '正在推进', '当前没有正在推进的团队工单。'],
@@ -70,19 +84,15 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
   let inFlight = false, queueKey, decisionKey, projection, importAttempt = 0;
   let ordinaryRows = [], codexRows = [], codexError = '';
 
-  function card(row) {
+  function card(row, repeatedTitle) {
     const item = create('li', '', 'goal-card');
     const title = create('h4', row.title);
     title.title = row.title;
-    item.append(title, create('span', row.label, 'goal-chip'));
     const ordinary = Boolean(row.key);
     const ref = ordinary ? row.id.slice(0,11) : row.id.slice(-8);
     const scope = ordinary ? '普通工单' : row.routerTeam ? '团队工单' : '历史团队工单';
-    item.append(create('small', scope+' '+ref, 'goal-muted'));
-    if (row.station === 'decision') {
-      if (row.reason) item.append(create('p', row.reason, 'goal-muted'));
-    }
-    const action = create(ordinary ? 'button' : 'a', row.action, 'goal-button');
+    const isDecision = row.station === 'decision';
+    const action = create(ordinary ? 'button' : 'a', isDecision ? row.action : '', isDecision ? 'goal-button' : 'desk-ticket-link');
     if (ordinary) {
       action.type = 'button';
       action.addEventListener('click', ()=>openOrdinary(row.id,row.panel,row.anchor));
@@ -91,14 +101,37 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
     }
     action.dataset.homeKey = row.key || 'codex:'+row.id;
     action.setAttribute('aria-label', row.action+' · '+row.title+' · '+scope+' '+ref);
+    const state = create('span', row.label, 'goal-chip');
+    if (isDecision) {
+      item.append(state, title);
+      if (row.reason && row.reason !== row.label && row.reason !== row.action) item.append(create('p', row.reason, 'goal-muted'));
+      if (repeatedTitle) item.append(create('small',scope+' '+ref,'goal-muted'));
+    } else {
+      action.append(title, state);
+      if (repeatedTitle) title.append(create('small',' · '+ref,'desk-short-id'));
+      const arrow = create('span','›','desk-row-arrow');
+      arrow.setAttribute('aria-hidden','true');
+      action.append(arrow);
+    }
     item.append(action);
     return item;
+  }
+
+  function makeCards(rows, visible = rows) {
+    const seen = new Set(), repeated = new Set();
+    for (const row of rows) {
+      if (seen.has(row.title)) repeated.add(row.title);
+      seen.add(row.title);
+    }
+    return visible.map(row=>card(row,repeated.has(row.title)));
   }
 
   function restoreFocus(active, scope, fallback) {
     if (active.isConnected && !active.closest('[hidden]')) return;
     const replacement = Array.from(scope.querySelectorAll('[data-home-key]'))
       .find(action=>action.dataset.homeKey===active.dataset.homeKey);
+    const folded = replacement?.closest('details:not([open])');
+    if (folded) folded.open = true;
     (replacement || fallback).focus({preventScroll:true});
   }
 
@@ -109,14 +142,19 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
     const key = JSON.stringify(rows.map(row=>[row.key,row.id,row.routerTeam,row.title,row.label,row.reason,row.panel,row.anchor,row.action]));
     if (key !== decisionKey) {
       decisionKey = key;
-      decisionList.replaceChildren(...rows.map(card));
+      const cards = makeCards(rows);
+      decisionList.replaceChildren(...cards.slice(0,2));
+      extraList.replaceChildren(...cards.slice(2));
+      extraDecisions.hidden = cards.length <= 2;
+      if (extraDecisions.hidden) extraDecisions.open = false;
+      setText(extraLabel,'其余 '+Math.max(0,cards.length-2)+' 张待办');
     }
     retry.hidden = !codexError;
     decisionList.hidden = !rows.length;
     decisionCount.hidden = !rows.length;
     setText(decisionCount,rows.length+' 张');
     decisionEmpty.hidden = Boolean(rows.length || ordinaryStatus.textContent || codexStatus.textContent);
-    if (preserve) restoreFocus(active,decisionList,decisionHeading);
+    if (preserve) restoreFocus(active,decisions,decisionHeading);
   }
 
   function draw(groups, projected = [], otherCounts = {}, message = '') {
@@ -137,7 +175,7 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
         group.append(header);
         if (rows.length) {
           const list = create('ul', '', 'goal-home-list');
-          list.append(...rows.slice(0,previewLimit).map(card));
+          list.append(...makeCards(rows,rows.slice(0,previewLimit)));
           group.append(list);
           if (rows.length > previewLimit) {
             const more = create('a', '查看全部'+rows.length+'张'+label+'工单', 'goal-button');
@@ -156,6 +194,9 @@ function mountFormalGoalQueue(decisions, root, renewSession, openOrdinary) {
     const approvalLabel = codexRows.length ? '查看 '+codexRows.length+' 张待我决定的团队工单' : '查看待决定的团队工单';
     setText(approvalLink,approvalLabel);
     root.hidden = groups === null;
+    listSwitch.hidden = groups === null;
+    if (groups !== null) showList(selectedList);
+    else delete taskView.dataset.deskList;
     approvals.hidden = groups === null && !message;
     for (const {link,label} of otherLinks) {
       const count = otherCounts[link.dataset.station] || 0;

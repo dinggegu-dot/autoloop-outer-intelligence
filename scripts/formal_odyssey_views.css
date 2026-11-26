@@ -1,0 +1,191 @@
+/* 进入普通工单后，阅读区占用原队列的位置；切回列表后沿用原来的选单按钮。 */
+#view-tasks:has(#section-ordinary-detail) > :is(#formal-home-decisions, #formal-goal-home),
+#live-tasks:has(#section-ordinary-detail) > .wb-panel > :is(.wb-header, .queue-filters) {
+  display: none;
+}
+#section-ordinary-detail > [data-close-ordinary] {
+  margin: 0 0 10px;
+  padding-inline: 12px;
+}
+#section-ordinary-detail > .mission-workspace > .wb-detail-heading {
+  padding: clamp(18px, 2.4vw, 30px);
+  background: linear-gradient(100deg, #fff7ee 0%, #fff 78%);
+  border-bottom: 1px solid var(--ux-line);
+  border-radius: 21px 21px 0 0;
+}
+#section-ordinary-detail .wb-detail-heading h2 { max-width: 32em; overflow-wrap: anywhere; }
+#section-ordinary-detail .next-action { margin-block-start: 14px; }
+#section-ordinary-detail .wb-detail-heading > div { min-width: 0; }
+#section-ordinary-detail .mission-section :is(.goal-copy, .plan-brief p, .notice-strip p) { max-width: 65ch; }
+#section-ordinary-detail #section-research-follow {
+  margin: 16px clamp(16px, 2.4vw, 30px);
+  padding: 16px 0 4px;
+  border-top: 1px solid var(--ux-line);
+}
+#section-ordinary-detail #section-research-follow label { font-weight: 700; color: var(--ux-ink); }
+
+/* 审批先看待办正文，团队工单提供单独的快捷入口。 */
+#view-approvals:not([hidden]) { display: grid; gap: 18px; align-items: start; }
+#live-approvals, #formal-goal-approvals { min-width: 0; }
+#live-approvals .wb-panel { margin: 0; }
+#live-approvals .wb-decision {
+  padding: clamp(16px, 2vw, 24px);
+  border: 1px solid #e8d5b6;
+  border-inline-start: 4px solid #d49a37;
+  background: #fffbf2;
+}
+#live-approvals .wb-decision p { max-width: 68ch; overflow-wrap: anywhere; }
+#live-approvals .wb-decision .wb-actions { clear: both; padding-block-start: 4px; }
+#formal-goal-approvals {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--ux-line);
+  border-radius: 15px;
+  background: white;
+}
+#formal-goal-approvals .goal-home-header { align-items: flex-start; gap: 12px; }
+#formal-goal-approvals h2 { font-size: 17px; }
+#formal-goal-approvals .goal-connection:empty { display: none; }
+#view-approvals > .legacy-panel { margin: 0; }
+@media (min-width: 980px) {
+  #view-approvals:not([hidden]):has(#formal-goal-approvals:not([hidden])) {
+    grid-template-columns: minmax(0, 1fr) minmax(230px, .37fr);
+  }
+  #view-approvals #live-approvals { grid-area: 1 / 1; }
+  #view-approvals #formal-goal-approvals { grid-area: 1 / 2; }
+  #view-approvals > .legacy-panel { grid-column: 1 / -1; }
+}
+
+/* 小队以角色为单位，肖像与职责共同排版，模型名称可完整换行。 */
+#live-agents .mission-agents, #live-activity .mission-agents {
+  padding: clamp(16px, 2.5vw, 32px);
+  min-width: 0;
+}
+#live-agents .role-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+#live-agents .role-arrow { display: none; }
+#live-agents .role-card {
+  display: grid;
+  grid-template-columns: clamp(40px, 4vw, 61px) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: clamp(12px, 1.4vw, 20px);
+  background: #fffcf7;
+  overflow-wrap: anywhere;
+}
+#live-agents .role-card.running { background: #fff1e8; }
+#live-agents .role-card:nth-of-type(1) { --portrait: url("/assets/odyssey/cap-person.png"); }
+#live-agents .role-card:nth-of-type(2) { --portrait: url("/assets/odyssey/mario-sticker.png"); }
+#live-agents .role-card:nth-of-type(3) { --portrait: url("/assets/odyssey/wooded-person.png"); }
+#live-agents .role-icon {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 68px;
+  font-size: 0;
+  background: transparent;
+}
+#live-agents .role-icon::before {
+  content: "";
+  width: 100%;
+  height: 100%;
+  background: var(--portrait) center / contain no-repeat;
+}
+#live-agents .role-card div > span { display: block; color: var(--ux-muted); font-size: 13px; }
+#live-agents .role-card small { color: var(--ux-muted); font-size: 12px; }
+#live-agents .context-hub {
+  text-align: start;
+  padding: 13px 16px;
+  gap: 4px;
+  border-inline-start: 3px solid #9bbcc8;
+  border-radius: 0 8px 8px 0;
+  margin: 15px 0 26px;
+}
+#live-agents .context-hub span, #live-agents .connection-grid p { color: var(--ux-muted); }
+#live-agents .connection-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
+
+/* 冒险日志使用时间线，将事件正文与选单分开。 */
+#live-activity .section-heading > div { min-width: 0; overflow-wrap: anywhere; }
+#live-activity .journal-switch { margin-block: 8px 16px; }
+#live-activity .journal-switch > summary {
+  width: fit-content; padding: 10px 0; min-height: 44px; cursor: pointer;
+  color: var(--ux-text); font-size: 14px; font-weight: 600;
+}
+#live-activity .mission-agents .wb-actions {
+  padding-block: 10px 14px;
+  border-block: 1px solid var(--ux-line);
+}
+#live-activity .mission-agents .wb-actions button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+#live-activity .wb-timeline { max-width: 60rem; margin: 12px 0 0; }
+#live-activity .wb-timeline li {
+  position: relative;
+  margin-inline-start: 5px;
+  border-inline-start: 1px solid #c6d6da;
+  padding-inline-start: 18px;
+  grid-template-columns: minmax(6.2rem, 8rem) minmax(0, 1fr);
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+#live-activity .wb-timeline li::before {
+  content: "";
+  position: absolute;
+  top: 22px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #698896;
+}
+#live-activity .wb-timeline time, #live-activity .wb-timeline small { color: var(--ux-muted); font-size: 12px; }
+#live-activity .wb-timeline strong { color: var(--ux-ink); font-size: 14px; }
+
+/* 知识库保留森之国园丁和场景，降低封面高度，把搜索与阅读提到首屏。 */
+#view-library .library-head {
+  min-height: 124px;
+  padding-block: clamp(16px, 2vw, 25px);
+  background: #eff4e9;
+  color: var(--ux-forest);
+  border-bottom: 1px solid #cedcca;
+}
+#view-library .library-head h2 { color: var(--ux-forest); font-size: clamp(22px, 2.2vw, 30px); }
+#view-library .library-head :is(p, .wb-kicker) { color: #405b49; }
+#view-library .library-head .research-art::after {
+  background: linear-gradient(90deg, #eff4e9 0%, #eff4e97d 31%, transparent 70%);
+}
+#view-library .library-head > div { width: 61%; }
+#view-library .library-head .kingdom-gardener { height: 92%; }
+
+@media (max-width: 760px) {
+  #live-agents .role-flow { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  #live-agents .role-card { grid-template-columns: 52px minmax(0, 1fr); padding: 10px 14px; }
+  #live-agents .role-card > div { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; row-gap: 2px; }
+  #live-agents .role-card > div > :is(strong, span) { grid-column: 1 / -1; }
+  #live-agents .role-card > div > small:last-child { grid-area: 1 / 2; }
+  #live-agents .role-icon { height: 54px; }
+  #live-activity .wb-timeline li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  #formal-goal-approvals .goal-home-header { align-items: center; }
+  #section-ordinary-detail .wb-detail-heading { display: grid; }
+  #section-ordinary-detail .wb-detail-heading > button { justify-self: start; }
+  #view-library .library-head { padding: 14px 16px; min-height: 112px; }
+  #view-library .library-head > div { width: 68%; }
+}
+/* 次级页面把空间留给审批、角色和记录；新建入口始终可用。 */
+.workspace:has(:is(#view-agents,#view-activity,#view-approvals):not([hidden])) #new-task {
+  width:auto; min-height:42px; flex:none; margin:0; padding-inline:12px;
+  color:#435964; background:white; border:1px solid #c5d2d2; box-shadow:none;
+}
+@media(max-width:600px) {
+  .workspace:has(:is(#view-agents,#view-activity,#view-approvals):not([hidden])) .page-heading {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .workspace:has(:is(#view-agents,#view-activity,#view-approvals):not([hidden])) .page-heading > div { min-width:0; }
+}

@@ -349,6 +349,20 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   assert.equal(nav.querySelector('a').textContent,'返回工单工作台');
   assert.equal(ui.events.length,0);
  });
+ await t.test('已交付原单先呈现文件，文件校验值随归档摘要展开',async t=>{
+  const row={...ticket,workbench_name:'展览预约表',journey:{station:'delivery',label:'已交付'},
+   execution:{status:'completed',goal_delivery:{assignment:'test-file',sequence:1,
+    artifact_sha256:'archive-digest',files:{'预约表.txt':'file-digest'}}}};
+  const ui=await mount(t,row,{panel:'artifacts'});
+  const ticketPage=ui.root.querySelector('.goal-ticket');
+  assert.ok(ticketPage.children.indexOf(ui.control('section-artifacts'))<ticketPage.children.indexOf(ui.root.querySelector('.goal-now')));
+  const section=ui.control('section-artifacts');
+  const file=section.querySelector('.goal-file');
+  const digest=section.querySelectorAll('details').find(node=>node.dataset.disclosure==='summary-test-file');
+  assert.ok(section.children.indexOf(file)<section.children.indexOf(digest));
+  assert.deepEqual(digest.querySelectorAll('code').map(node=>node.textContent),['archive-digest','file-digest']);
+  assert.equal(ui.events.length,0);
+ });
  await t.test('只选方向直接提交，空白不作为外发意见',async t=>{
   const ui=await mount(t,{...ticket,pending_preference:question});
   ui.control('option-edit').onchange();

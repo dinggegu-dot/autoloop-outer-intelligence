@@ -100,12 +100,16 @@ def frontend(formal, front):
           <p class="goal-connection" id="formal-home-codex-status" role="status">正在读取团队工单待办。</p>
           <button type="button" class="goal-button" hidden>重新读取团队工单</button>
           <ul class="goal-home-list" hidden></ul>
+          <details class="desk-more-decisions" hidden><summary></summary><ul class="goal-home-list"></ul></details>
           <p class="goal-empty" hidden>当前没有需要你决定的工单。</p>
         </section>
+        <nav id="desk-order-switch" aria-label="选择工单列表" hidden>
+          <div><button type="button" data-desk-list="team" aria-pressed="true" aria-controls="formal-goal-home">团队工单</button>
+          <button type="button" data-desk-list="ordinary" aria-pressed="false" aria-controls="live-tasks">普通工单</button></div>
+          <a href="/workbench">打开工单簿 <span aria-hidden="true">↗</span></a>
+        </nav>
         <section id="formal-goal-home" class="goal-team goal-home" aria-labelledby="formal-goal-home-title" hidden>
-          <div class="goal-home-header"><h2 id="formal-goal-home-title" tabindex="-1">团队工单</h2>
-            <a class="goal-button" href="/workbench">查看全部团队工单</a>
-          </div>
+          <h2 id="formal-goal-home-title" tabindex="-1">团队工单</h2>
           <div class="goal-home-groups"></div>
           <nav class="goal-actions" aria-label="其他团队工单" hidden>
             <a class="goal-button" href="/workbench?station=dock" data-station="dock" hidden>已暂停或停止</a>
@@ -113,14 +117,14 @@ def frontend(formal, front):
           </nav>
         </section>
         <!--OUTER-HOME-QUEUE-END--><div id="live-tasks">''')
-    html = replace_once(html, '<div id="live-approvals">', '''<!--OUTER-HOME-APPROVALS-BEGIN-->
+    html = replace_once(html, '<details id="historical-approval-panel"', '''<!--OUTER-HOME-APPROVALS-BEGIN-->
         <section id="formal-goal-approvals" class="goal-team goal-home" aria-labelledby="formal-goal-approvals-title" hidden>
           <div class="goal-home-header"><h2 id="formal-goal-approvals-title">团队工单</h2>
             <a class="goal-button" href="/workbench?station=decision">查看待决定的团队工单</a>
           </div>
           <p class="goal-connection" role="status"></p>
         </section>
-        <!--OUTER-HOME-APPROVALS-END--><div id="live-approvals">''')
+        <!--OUTER-HOME-APPROVALS-END--><details id="historical-approval-panel"''')
     for old, new in (('>待审批 <span id="game-open"', '>普通工单审批 <span id="game-open"'),
                      ('</span> 待审批 <span class="nav-count red"', '</span> 普通工单审批 <span class="nav-count red"'),
                      ('aria-label="查看待审批事项"', 'aria-label="查看普通工单审批"')):
@@ -233,6 +237,8 @@ def frontend(formal, front):
   syncTeamMode();
   const modeInput=node('#task-mode'), timeInput=node('#task-budget');""")
     tasks = replace_once(tasks, '<h2>任务审批</h2>', '<h2>普通工单审批</h2>')
+    activity_switch = '<div class="wb-actions">${tasks.map(t=>`<button class="secondary-button" data-wb-select="${t.id}">${html(t.name)}</button>`).join(\'\')}</div>'
+    tasks = replace_once(tasks, activity_switch, '<details class="journal-switch"><summary>切换工单（${tasks.length}）</summary>' + activity_switch + '</details>')
     tasks = replace_once(tasks, '当前没有新的任务审批。', '当前没有新的普通工单审批。')
     tasks = replace_once(tasks, '<h2>我的工单</h2>', "<h2>${homeQueue?'普通工单':'我的工单'}</h2>")
     tasks = replace_once(tasks, """  function approvals(task) {
@@ -345,7 +351,10 @@ def frontend(formal, front):
     team = (BOARD / "goal_team.js").read_text().replace("'/api/tasks/", "'/api/outer-canary/tasks/").replace(
         "'/api/outer/'", "'/api/outer-canary/'").replace("'/api/outer'", "'/api/outer-canary/drafts'")
     write(ui / "goal_team.js", team)
-    write(ui / "goal_team.css", (BOARD / "goal_team.css").read_text() + HOME_QUEUE_CSS)
+    styles = [(BOARD / "goal_team.css").read_text(), HOME_QUEUE_CSS,
+              (REPO / "scripts/formal_odyssey_home.css").read_text(),
+              (REPO / "scripts/formal_odyssey_views.css").read_text()]
+    write(ui / "goal_team.css", "\n".join(styles))
     style = replace_once((BOARD / "style.css").read_text(),
                          ".mast{gap:.5rem}.mast nav{margin-left:auto}.mast nav a:last-child{display:none}",
                          ".mast{gap:.5rem;flex-wrap:wrap}.mast nav{margin-left:auto;gap:.6rem}"
