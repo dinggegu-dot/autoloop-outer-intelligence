@@ -1,5 +1,6 @@
 """检查可达 Git 对象和工程需求引用，不输出命中内容。"""
 import ast
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -8,6 +9,11 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 BLOCKED_PATH = re.compile(r'(^|/)(\.runtime|\.env(?:\..*)?|验收证据|private\.json|settings\.json|secrets\.env|config\.local\.json|master\.key)(/|$)|\.(?:key|pem|db|sqlite3?)(?:-wal|-shm)?$')
+# 经审查的界面肖像。只有这两个路径和文件摘要可通过二进制检查。
+AUDITED_IMAGES = {
+    'scripts/assets/odyssey-team/bowser.png': '86bb10f2a62cce0c9e05a7717fac976636a51c88a0d6176a704b843067c09e44',
+    'scripts/assets/odyssey-team/peach.png': '4d7e31f365ae31daa79fbd9b6468ce90e3002f46ad7367cb854e576eadfe9feb',
+}
 CREDENTIALS = [
     re.compile(rb'(?:gh[pousr]_|github_pat_|sk-proj-|xox[baprs]-)[A-Za-z0-9_-]{16,}'),
     re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),
@@ -22,7 +28,8 @@ def check_file(name, data):
     if BLOCKED_PATH.search(name) or data.startswith(b'SQLite format 3\x00'):
         raise ValueError('禁止导入运行资料：' + name)
     if len(data) > 2_000_000 or b'\0' in data:
-        raise ValueError('需要单独审查二进制文件：' + name)
+        if AUDITED_IMAGES.get(name) != hashlib.sha256(data).hexdigest():
+            raise ValueError('需要单独审查二进制文件：' + name)
     if any(pattern.search(data) for pattern in CREDENTIALS):
         raise ValueError('发现疑似私人标识或凭据：' + name)
 

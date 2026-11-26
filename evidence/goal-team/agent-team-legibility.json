@@ -1,0 +1,33 @@
+{
+  "case": "Agent 小队底栏文字遮挡",
+  "observed": {
+    "environment": "正式工作台，Chrome，只读",
+    "approval_label_overflow_width_px": [
+      320,
+      360,
+      375,
+      390,
+      420
+    ]
+  },
+  "verified": {
+    "environment": "隔离工作台，Chrome，只读",
+    "viewport_width_px": [
+      320,
+      360,
+      375,
+      390,
+      420,
+      600,
+      760,
+      768,
+      1024,
+      1440
+    ],
+    "labels_fit": true,
+    "longest_model_and_effort_options_fit": true,
+    "approval_navigation_works": true,
+    "approval_accessible_name": "普通工单审批"
+  },
+  "review": "独立复核原始构建锚点、移动断点、导航行为及可访问名称。"
+}
