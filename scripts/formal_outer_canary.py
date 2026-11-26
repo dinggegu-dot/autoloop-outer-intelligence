@@ -167,8 +167,11 @@ def valid_command(command, body):
     fields = CONTROL_FIELDS.get(command)
     if fields is None or not isinstance(body, dict):
         return False
-    if command in {"pause", "resume", "stop"} and "goal_revision" in body:
-        fields = CONTRACT_FIELDS
+    if command in {"pause", "resume", "stop"} and body.keys() == CONTRACT_FIELDS:
+        # 已打开的旧版网页会发契约版本，尚未形成契约时其版本为零。
+        return (all(FIELD_CHECKS[key](body[key]) for key in VERSION_FIELDS)
+                and all(type(body[key]) is int and 0 <= body[key] <= 2**53 - 1
+                        for key in CONTRACT_FIELDS - VERSION_FIELDS))
     if command == "submit" and body.get("intent") == "proposal":
         return (VERSION_FIELDS | {CONSENT, "intent", "direction_owner"} == body.keys()
                 and all(FIELD_CHECKS[key](value) for key, value in body.items()))

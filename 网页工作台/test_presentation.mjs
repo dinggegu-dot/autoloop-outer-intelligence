@@ -392,6 +392,8 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
  });
  await t.test('等批准、等选方案或等签收时能直接在原单取消',async t=>{
   const states=[
+   {status:'DRAFT',goal_revision:0,acceptance_revision:0,journey:{station:'flight',stop:true}},
+   {status:'AWAITING_CLARIFICATION',acceptance_revision:0,journey:{station:'decision',stop:true}},
    {status:'AWAITING_APPROVAL',journey:{station:'decision',approve:true,stop:true}},
    {status:'AUTHORIZED',execution_status:'awaiting_preference',pending_preference:question,
     journey:{station:'decision',pause:true,stop:true}},
@@ -403,7 +405,7 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
    const ui=await mount(t,{...ticket,...state});
    const cancel=ui.control('stop');
    assert.equal(cancel.textContent,'取消工单');
-   cancel.onclick(); ui.cancel.onclick();
+   cancel.onclick(); assert.equal(ui.cancel.textContent,'保留工单'); ui.cancel.onclick();
    assert.deepEqual(ui.events,[]);
    cancel.onclick(); assert.equal(ui.confirm.textContent,'确认取消');
    ui.confirm.onclick(); await flushGoalUI();
@@ -411,6 +413,8 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
    assert.equal(ui.events[0].path,'/api/outer/stop');
    assert.equal(ui.events[0].body.ticket_id,ticket.id);
    assert.equal(ui.events[0].body.revision,ticket.revision);
+   assert.ok(!Object.hasOwn(ui.events[0].body,'goal_revision'));
+   assert.ok(!Object.hasOwn(ui.events[0].body,'acceptance_revision'));
   }
  });
  await t.test('取消后的工单留在暂停或取消，记录仍可打开',async t=>{

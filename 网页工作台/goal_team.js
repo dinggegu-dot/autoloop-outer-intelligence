@@ -780,7 +780,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
   }
   async function perform(row, command, fields, feedback, success, draft, nextAnchor) {
     if (commandInFlight || !connected || row.id!==focused || selectedSnapshot!==row) return;
-    const useTicketRevision = ['extend_team_budget','lock_blind_ballot','authorize_model_input'].includes(command) ||
+    const useTicketRevision = ['pause','resume','stop','extend_team_budget','lock_blind_ballot','authorize_model_input'].includes(command) ||
       (requiresModelConsent(row) && command==='submit');
     const version = useTicketRevision ? {ticket_id:row.id,revision:row.revision} : binding(row);
     const payload = {...version,...fields};
@@ -806,7 +806,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       notice.textContent = success;
       feedback.textContent = success;
     } catch (error) {
-      notice.textContent = error.message+'。已保留填写内容，正在核对原单状态。';
+      notice.textContent = command==='stop' ? '取消未完成。'+error.message :
+        error.message+'。已保留填写内容，正在核对原单状态。';
       feedback.textContent = notice.textContent;
     } finally {
       commandInFlight = false;
@@ -1843,7 +1844,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     if (view.stop && row.status!=='STOPPED') {
       const cancel=writeButton('取消工单','goal-stop',()=>
         approveAction('取消这张工单？','取消后将结束本单后续工作。原单记录和已交付文件仍可查看。','确认取消',
-          ()=>perform(row,'stop',{},notice,'取消已登记。')));
+          ()=>perform(row,'stop',{},notice,'取消已登记。'),'保留工单'));
       cancel.classList.add('quiet');
       identity.append(cancel);
     }
