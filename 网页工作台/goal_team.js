@@ -5,10 +5,10 @@ const queues = {
   decision: ['等你拍板', '现在没有需要你决定的事'],
   flight: ['正在推进', '当前没有正在推进的工单'],
   delivery: ['已交付', '交付后，成果会出现在这里'],
-  dock: ['已暂停与停止', '没有已暂停或停止的工单'],
+  dock: ['已暂停与取消', '没有已暂停或取消的工单'],
   unknown: ['待核对', '没有待核对的工单'],
 };
-const formalQueueLabels = {decision:'待我决定',dock:'暂停或停止'};
+const formalQueueLabels = {decision:'待我决定',dock:'暂停或取消'};
 const tabs = { progress: '进度', artifacts: '成果与验收', decisions: '决定与记录' };
 const anchors = {
   mission: 'progress', decision: 'progress', scope: 'progress', criteria: 'progress',
@@ -94,7 +94,11 @@ export function projectGoalRow(row,{allowFreeText=true}={}) {
     row.execution?.runs?.some(run=>run.state==='unknown') ||
     row.execution?.goal_execution?.assignments?.some(attempt=>
       ['pending','dispatched'].includes(attempt.state) && attempt.transport==='unknown');
-  if (uncertain) {
+  if (row.status==='STOPPED') {
+    label=stopping?'正在取消':'已取消';
+    station='dock';
+    reason=view.instruction || (stopping?'等待本轮退出。':'仍可查看工单记录和已交付文件。');
+  } else if (uncertain) {
     station='unknown'; label='待核对'; reason='尚无可确认的本轮回执。'; action='查看原因';
   } else if (stopping) {
     station = 'flight'; label = '正在停止'; reason = '等待本轮退出'; action = '看进度';
@@ -1470,13 +1474,14 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const blindMode=blindRequired(row,current);
     const canDownloadHistory=!blindMode || execution?.status==='completed';
     const canDownloadCurrent=current?.state==='pending' && blindLocked(row,current);
-    const protectedBallot=current?.state==='pending' && blindMode && !canDownloadCurrent;
-    const existing=current?.state==='pending' || current?.state==='accepted' ? current : delivery ||
+    const protectedBallot=['pending','cancelled'].includes(current?.state) && blindMode && !canDownloadCurrent;
+    const existing=['pending','accepted','cancelled'].includes(current?.state) ? current : delivery ||
       (current?.state==='returned' ? current : null);
     parent.append(el('h3','成果与验收'));
     if (existing) {
       const name='v'+(existing.sequence || Math.max(1,reviews.length));
-      const state=protectedBallot ?
+      const cancelled=existing.state==='cancelled' || existing.state==='pending' && row.status==='STOPPED';
+      const state=cancelled ? '取消时未签收' : protectedBallot ?
         (currentBlindStatus(row,existing)==='awaiting_ballot'?'待盲评':'匿名材料待核对') :
         ({pending:'待签收',returned:'已退回',accepted:'已签收'}[existing.state] || '已归档');
       const round=row.continuation?.round;
@@ -1484,7 +1489,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       if (!protectedBallot) displayFiles(row,existing,parent,name,canDownloadHistory || (existing===current && canDownloadCurrent));
       if (canContinue(row) && canSendText(row)) continuationForm(row,parent);
       machineChecks(parent,existing.checks || flow.validation?.checks,'machine');
-      if ((existing===current && blindRequired(row,existing)) || sameBlindCandidate(row.blind_review,existing))
+      if (!cancelled && ((existing===current && blindRequired(row,existing)) || sameBlindCandidate(row.blind_review,existing)))
         displayBlindReview(row,existing,parent);
       textList(parent,'本人验收',existing.human_criteria || row.acceptance_contract?.human_review_requirements);
       if (existing.reason) copy(parent,'退回理由',existing.reason);
@@ -1503,15 +1508,16 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       if (!archived.has(item.assignment)) archived.set(item.assignment,{...item,round:row.continuation?.execution_round});
     if (preparing && execution?.goal_delivery && !archived.has(execution.goal_delivery.assignment))
       archived.set(execution.goal_delivery.assignment,{...execution.goal_delivery,round:row.continuation.execution_round});
-    const past=[...archived.values()].reverse();
-    if (past.length && !protectedBallot) {
+    const signedHistoryOnCancel=item=>row.status==='STOPPED' && item.state==='accepted';
+    const past=[...archived.values()].reverse().filter(item=>!protectedBallot || signedHistoryOnCancel(item));
+    if (past.length) {
       const history=details('历史交付版本（'+past.length+'）','past-deliveries',section==='versions');
       history.id='goal-section-versions';
       for (const item of past) {
         const name='v'+(item.sequence || 1);
         const version=details((item.round?'第 '+item.round+' 轮':'授权 v'+item.mandate_revision)+' · 交付 '+name,'archive-'+item.assignment);
         copy(version,'当轮修改要求',item.change_request);
-        copy(version,'退回理由',item.reason); displayFiles(row,item,version,name,canDownloadHistory);
+        copy(version,'退回理由',item.reason); displayFiles(row,item,version,name,canDownloadHistory || signedHistoryOnCancel(item));
         machineChecks(version,item.checks,'machine-'+item.assignment); history.append(version);
       }
       parent.append(history);
@@ -1541,7 +1547,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     box.id='goal-section-feedback';
     const subscribed=row.status!=='STOPPED';
     box.append(el('p',subscribed ? '已订阅本单。补充资料和测试、评审结果会登记到原单。' :
-      '此单已停止。','goal-muted'));
+      '这张工单已取消。','goal-muted'));
     const channels={web:'网页',dsh:'DSH',feishu:'飞书'};
     const bindings=[...new Set((row.subscription?.bindings || []).map(item=>channels[item.source]).filter(channel=>channel && channel!=='网页'))];
     if (bindings.length) box.append(el('p','已关联'+bindings.join('、')+'会话。','goal-muted'));
@@ -1585,7 +1591,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const execution=row.execution, flow=execution?.goal_execution || {};
     const decisions=flow.decisions || [];
     const candidate=deliveriesOf(row).at(-1);
-    const protectedBallot=candidate?.state==='pending' && blindRequired(row,candidate) && !blindLocked(row,candidate);
+    const protectedBallot=['pending','cancelled'].includes(candidate?.state) && blindRequired(row,candidate) && !blindLocked(row,candidate);
     parent.append(el('h3','决定与记录'));
     displayRouterFeedback(row,parent);
     if (row.question?.answer && String(row.question.answer_status).toLowerCase()==='answered')
@@ -1811,7 +1817,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       }
       return;
     }
-    const model=project(row), header=el('header',null,'goal-detail-head');
+    const model=project(row), header=el('header',null,'goal-detail-head'), view=row.journey || {};
     main.dataset.station=model.station;
     const heading=el(formalModelInputConsent?'h1':'h2',model.title); heading.id='goal-ticket-title'; heading.tabIndex=-1;
     const identity=el('div',null,'goal-actions');
@@ -1834,6 +1840,13 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         writeRoute({id:row.id,anchor:section}); drawDetail(row);
       },'quiet'));
     }
+    if (view.stop && row.status!=='STOPPED') {
+      const cancel=writeButton('取消工单','goal-stop',()=>
+        approveAction('取消这张工单？','取消后将结束本单后续工作。原单记录和已交付文件仍可查看。','确认取消',
+          ()=>perform(row,'stop',{},notice,'取消已登记。')));
+      cancel.classList.add('quiet');
+      identity.append(cancel);
+    }
     if (row.continuation?.round>1 && row.continuation.request) {
       const brief=details('第 '+row.continuation.round+' 轮的要求','round-request');
       brief.append(el('p',row.continuation.request,'goal-copy-block'));
@@ -1841,7 +1854,6 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     }
     const workflow=workflowSteps(row,model);
     if (workflow) header.append(workflow);
-    const view=row.journey || {};
     const canDecide=model.station==='decision' && pref && !['PAUSED','STOPPED'].includes(row.status);
     const stagedKey=canDecide && !rejected ? stagedPreferenceKey(row,pref) : '';
     const directionKey=stagedKey && JSON.stringify([stagedKey,canSendText(row)]);
@@ -1849,7 +1861,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const keepDirection=directionKey && openDirection?.key===directionKey;
     const now=keepDirection ? openDirection.now : el('section',null,'goal-now');
     if (formalModelInputConsent) now.hidden=model.station!=='decision' && connected &&
-      !model.reason && !model.next && !view.decision_items?.length && !view.pause && !view.resume && !(row.status==='PAUSED' && view.stop);
+      !model.reason && !model.next && !view.decision_items?.length && !view.pause && !view.resume;
     const summary=el('div');
     const nowTitle=el('h3',model.station==='decision'?'等你决定':'现在与下一步'); nowTitle.id='goal-section-decision'; nowTitle.tabIndex=-1;
     summary.append(nowTitle);
@@ -1887,7 +1899,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     }
     const oldControls=keepDirection ? now.querySelector('details[data-disclosure="controls"]') : null;
     oldControls?.remove();
-    if (view.pause || view.resume || (row.status==='PAUSED'&&view.stop)) {
+    if (view.pause || view.resume) {
       const controls=details('工单操作','controls');
       const actions=el('div',null,'goal-actions');
       const feedback=actionStatus(controls);
@@ -1896,9 +1908,6 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         perform(row,'pause',{},feedback,'已请求暂停，正在核对执行状态。')));
       if (view.resume && !stopping) actions.append(writeButton('继续此单','goal-resume',()=>
         perform(row,'resume',{},feedback,'继续请求已登记。')));
-      if (row.status==='PAUSED' && view.stop) actions.append(writeButton('停止此单','goal-stop',()=>
-        approveAction('停止此单','停止后保留当前原单与已登记的成果。','确认停止',
-          ()=>perform(row,'stop',{},feedback,'停止请求已登记。'))));
       controls.append(actions); now.append(controls);
     }
     const nav=tabNav(row);

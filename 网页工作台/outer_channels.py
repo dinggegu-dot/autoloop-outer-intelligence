@@ -9,7 +9,7 @@ TICKET = re.compile(r'wb-[0-9a-f]{32}')
 STATUS = {
     'DRAFT':'草案', 'ASSESSING':'正在整理目标', 'AWAITING_CLARIFICATION':'需要澄清',
     'AWAITING_APPROVAL':'等待批准', 'VERIFICATION_GAP':'验收方法待补齐',
-    'NEEDS_ATTENTION':'需要处理', 'AUTHORIZED':'已授权', 'PAUSED':'已暂停', 'STOPPED':'已停止',
+    'NEEDS_ATTENTION':'需要处理', 'AUTHORIZED':'已授权', 'PAUSED':'已暂停', 'STOPPED':'已取消',
 }
 
 EXECUTION_STATUS = {'created':'已创建','planning':'正在规划','queued':'等待派工','executing':'正在执行',
@@ -151,9 +151,15 @@ def journey(draft):
     next_step = None
     label = STATUS.get(state,state)
     station, instruction = 'flight', '系统正在整理目标及验收条件。'
-    if state == 'STOPPED' or (state == 'PAUSED' and phase == 'stopping'):
+    if state == 'STOPPED':
         station = 'dock'
-        instruction = '原轮次正在退出。' if phase == 'stopping' else '已停止这张工单。'
+        if phase == 'stopping':
+            label,instruction = '正在取消','取消已登记，等待本轮退出。'
+        else:
+            instruction = '这张工单已取消，仍可查看记录和已交付文件。'
+    elif state == 'PAUSED' and phase == 'stopping':
+        station = 'dock'
+        instruction = '原轮次正在退出。'
     elif state == 'PAUSED' and draft.get('status_before_pause') == 'AWAITING_APPROVAL' and draft.get('task_id'):
         station,label,instruction = 'decision','待批准新版','旧执行已暂停。核对新版目标、验收和预算后再决定。'
     elif state == 'PAUSED':
@@ -226,7 +232,7 @@ def journey(draft):
     return dict(station=station,label=label,instruction=instruction,next=next_step,decision_items=decision_items,
                 phase=work_phase,inner_repair_status=repair_status,modify=bool(can_modify),approve=can_approve,
                 artifact_review=can_review, pause=not terminal and state != 'PAUSED' and phase != 'stopping' and not can_review,
-                resume=can_resume,stop=not terminal and phase != 'stopping' and not can_review)
+                resume=can_resume,stop=not terminal and phase != 'stopping')
 
 
 def artifact_review_card(draft, lines, binding, actions, view):
@@ -236,7 +242,7 @@ def artifact_review_card(draft, lines, binding, actions, view):
     if not reviews:
         return
     review = reviews[-1]
-    states = {'pending':'待签收', 'accepted':'已签收', 'returned':'已退回'}
+    states = {'pending':'待签收', 'accepted':'已签收', 'returned':'已退回', 'cancelled':'取消时未签收'}
     candidates = [r for r in reviews if r['state'] == 'returned']
     lines.extend((
         f"交付 v{review['sequence']} · {states.get(review['state'], review['state'])}",

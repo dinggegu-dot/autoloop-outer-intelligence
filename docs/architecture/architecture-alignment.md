@@ -4,6 +4,8 @@
 
 2026-11-26 的工单流程修订明确了两个边界。接单时由团队把目标整理成可核验的交付，用户偏好和研究中要查的事实分别保留；影响结果的方向选择留给单内团队和用户。工作台用绑定工单版本的字段保存方案选择，旧按钮生成的流程文字在重评时会从验收条款中移除。签收绑定某次交付，同一工单在后续轮次继续接收修改，每轮保留基于哪份已交付文件的记录。[用户操作与验收场景](../product/router-ticket-teams.md)
 
+网页原单可直接取消未结束的工单。取消复用绑定工单版本的停办命令。引擎关闭待办，结算时拒绝旧执行代次的回执。等待签收的当前候选记录为取消时未签收，已签收版本继续由固定归档提供。[用户操作](../product/router-ticket-teams.md)
+
 **结论（2026-11-19）**　保留事件驱动的外层判断、程序控制的授权与状态转换、按派工运行的 Codex 执行器，以及绑定产物版本的独立验收。候选版已经用这套机制交付过两种本地 CLI 工具。把同样的结论推广到陌生的多阶段软件、交互式产品或主观质量，目前缺少真实端到端证据。
 
 本页是后续 Codex 的架构入口。交接稿保留提出决定时的理由，本页记录证据支持到哪里。核对基准是 PR #4 的代码提交 `4bc67be7b93733103bdaa1e445bc0d3281d8c8af`。原稿引用的 `af48958` 比它早一个提交；原稿正文保留，仅规范了 Markdown 换行。核对时 GitHub 显示 PR 为 Open，目标分支为 `main`，源分支为 `codex/v2-outer-intelligence`。Git 远端的 PR head 与本地基准一致。[交接稿 V1.0](design-handoff-v1.0.md) · [PR #4](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/4) · [两版之间的变更](https://github.com/dinggegu-dot/autoloop-outer-intelligence/compare/af48958...4bc67be)

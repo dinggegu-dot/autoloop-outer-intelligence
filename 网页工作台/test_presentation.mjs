@@ -390,6 +390,40 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   assert.equal(ui.events[0].body.question_id,question.id);
   assert.equal(ui.events[0].body.candidate_digest,question.candidate_digest);
  });
+ await t.test('等批准、等选方案或等签收时能直接在原单取消',async t=>{
+  const states=[
+   {status:'AWAITING_APPROVAL',journey:{station:'decision',approve:true,stop:true}},
+   {status:'AUTHORIZED',execution_status:'awaiting_preference',pending_preference:question,
+    journey:{station:'decision',pause:true,stop:true}},
+   {status:'AUTHORIZED',execution_status:'awaiting_artifact_review',
+    journey:{station:'decision',artifact_review:true,stop:true}},
+   {status:'AUTHORIZED',execution_status:'executing',journey:{station:'flight',stop:true}},
+  ];
+  for(const state of states){
+   const ui=await mount(t,{...ticket,...state});
+   const cancel=ui.control('stop');
+   assert.equal(cancel.textContent,'取消工单');
+   cancel.onclick(); ui.cancel.onclick();
+   assert.deepEqual(ui.events,[]);
+   cancel.onclick(); assert.equal(ui.confirm.textContent,'确认取消');
+   ui.confirm.onclick(); await flushGoalUI();
+   assert.equal(ui.events.length,1);
+   assert.equal(ui.events[0].path,'/api/outer/stop');
+   assert.equal(ui.events[0].body.ticket_id,ticket.id);
+   assert.equal(ui.events[0].body.revision,ticket.revision);
+  }
+ });
+ await t.test('取消后的工单留在暂停或取消，记录仍可打开',async t=>{
+  const {projectGoalRow}=await import('./goal_team.js');
+  const stopped={...ticket,status:'STOPPED',journey:{station:'dock',label:'已取消',stop:false}};
+  const ui=await mount(t,stopped);
+  assert.equal(ui.control('stop'),undefined);
+  assert.equal(ui.control('resume'),undefined);
+  assert.equal(ui.root.querySelector('.goal-detail-head').querySelector('.goal-chip').textContent,'已取消');
+  const quitting=projectGoalRow({...stopped,execution_status:'stopping',observation_stale:true});
+  assert.equal(quitting.station,'dock');
+  assert.equal(quitting.label,'正在取消');
+ });
  await t.test('旧验收缺口可沿用原话重新研判，实际提交仍需发送许可',async t=>{
   const ui=await mount(t,{...ticket,status:'VERIFICATION_GAP',journey:{station:'decision',modify:true},
    ticket_team:{id:ticket.id}});

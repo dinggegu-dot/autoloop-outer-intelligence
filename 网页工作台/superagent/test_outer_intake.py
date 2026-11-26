@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from workbench import Problem, Store, Workbench
 
-from superagent.outer_model import ModelFailure
+from superagent.outer_model import ModelFailure, TEAM_INTAKE_SCHEMA
 
 
 class Registry:
@@ -1381,6 +1381,25 @@ class OuterIntakeTest(unittest.TestCase):
             engine.recheck(ticket, stopped['version'], 'legacy-checkpoint')
         self.assertEqual(self.store.get(ticket), stopped)
         self.assertEqual(self.intake.get(ticket, 'owner')['status'], 'STOPPED')
+
+    def test_cancel_during_intake_discards_late_completion_without_affecting_another_ticket(self):
+        from outer_channels import dispatch
+        event, _ = self.router_new('需要取消的测试任务')
+        second, _ = self.router_new('并行的测试任务')
+        ticket = self.intake.get(event['ticket_id'],'owner')
+        record, lease, snapshot = self.intake._claim(ticket['id'])
+        output = self.model('intake_assessor',snapshot,TEAM_INTAKE_SCHEMA)
+        self.assertTrue(dispatch(self.intake,'web','get',{'ticket_id':ticket['id']})['journey']['stop'])
+        stopped = self.control(ticket,'stop','cancel-intake')
+        self.intake._settle(record['id'],lease,snapshot,{'result':output,'usage':{}})
+        self.assertEqual(self.intake.event(event['event_id'],'owner')['state'],'CANCELLED')
+        self.assertEqual(self.intake.get(ticket['id'],'owner')['status'],'STOPPED')
+        self.assertIsNone(self.intake.get(ticket['id'],'owner')['goal_contract'])
+        self.assertTrue(self.intake.control(ticket['id'],'stop',ticket['revision'],'cancel-intake',
+                                           actor_id='owner')['duplicate'])
+        self.assertEqual(stopped['revision'],ticket['revision']+1)
+        self.assertEqual(self.intake.drain_ticket(second['ticket_id'],limit=2),2)
+        self.assertEqual(self.intake.get(second['ticket_id'],'owner')['status'],'AWAITING_APPROVAL')
 
     def test_duplicate_scope_and_selection(self):
         a = self.latest(self.send('one', event='one'))

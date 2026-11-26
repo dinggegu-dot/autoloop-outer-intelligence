@@ -112,7 +112,7 @@ def frontend(formal, front):
           <h2 id="formal-goal-home-title" tabindex="-1">团队工单</h2>
           <div class="goal-home-groups"></div>
           <nav class="goal-actions" aria-label="其他团队工单" hidden>
-            <a class="goal-button" href="/workbench?station=dock" data-station="dock" hidden>已暂停或停止</a>
+            <a class="goal-button" href="/workbench?station=dock" data-station="dock" hidden>已暂停或取消</a>
             <a class="goal-button" href="/workbench?station=unknown" data-station="unknown" hidden>待核对</a>
           </nav>
         </section>
