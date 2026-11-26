@@ -198,6 +198,11 @@
 }
 
 
+/* 标题和说明沿同一内侧边缘排列，避开卡片圆角。 */
+#formal-default-team { --team-header-inset: clamp(16px, 2vw, 24px); }
+#formal-default-team > :is(h2, .view-intro) { margin-inline: var(--team-header-inset); }
+#formal-default-team > h2 { margin-block: var(--team-header-inset) 6px; line-height: 1.35; }
+
 /* 角色肖像只占标题高度，控制项在窄屏仍使用完整触控尺寸。 */
 :is(#draft-form, #formal-default-team) .team-profile-options > summary::before,
 :is(#draft-form, #formal-default-team) .team-profile-role > h3::before {
