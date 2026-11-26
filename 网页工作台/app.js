@@ -2,7 +2,7 @@
 const byId=id=>document.getElementById(id);
 const scriptURL=document.currentScript.src;
 const form=byId('new'), selector=byId('tasks'), detail=byId('detail');
-let goalTeam, syncTeamReview, routerEnabled=false, outerMounted=false;
+let goalTeam, syncTeamReview, teamProfile, routerEnabled=false, outerMounted=false;
 let selected=new URLSearchParams(location.search).get('task')||'', csrf='', creation='', busy=false;
 const node=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
 const notice=text=>{byId('notice').textContent=text;};
@@ -94,6 +94,7 @@ selector.onchange=()=>{
   refresh();
 };
 form.oninput=()=>{creation='';};
+form.addEventListener('reset',()=>setTimeout(()=>teamProfile?.apply(null),0));
 form.onsubmit=async event=>{
   event.preventDefault();if(busy)return;busy=true;
   try{
@@ -106,6 +107,8 @@ form.onsubmit=async event=>{
         return;
       }
       body.allow_model_input=true;
+      const choices=teamProfile?.choices();
+      if (choices) body.team_roles=choices;
     }
     if(body.workflow!=='outer' || !body.team_review_mode)delete body.team_review_mode;
     body.name=body.name.trim() || Array.from(body.goal.trim()).slice(0,80).join('');
@@ -146,6 +149,7 @@ function syncGoalMode(){
   if(!goalTeam)return;
   const marked=form.elements.workflow.checked && !form.elements.workflow.disabled;
   syncTeamReview?.(marked);
+  teamProfile?.show(marked && routerEnabled);
   const consent=byId('router-consent');
   const showConsent=marked && routerEnabled;
   byId('router-consent-field').hidden=!showConsent;
@@ -160,7 +164,7 @@ async function renewSession(){csrf=(await request('/api/session')).csrf;}
 async function start(){try{await renewSession();
   const outer=outerMounted ? null : await request('/api/outer');
   if(outer?.enabled && (outer.goal_team_enabled || outer.drafts?.some(row=>row.approval_terms?.execution_profile))){
-    const [{mountGoalTeam,mountTeamReviewControl},{callHistory}]=await Promise.all([import('./goal_team.js'),import('./outer.js')]);
+    const [{mountGoalTeam,mountTeamReviewControl,mountTeamProfileControl},{callHistory}]=await Promise.all([import('./goal_team.js'),import('./outer.js')]);
     const sheet=node('link','');sheet.rel='stylesheet';sheet.href=new URL('goal_team.css',scriptURL);document.head.append(sheet);
     goalTeam=mountGoalTeam(byId('goal-team'),{
       request,renewSession,initial:outer,callHistory,
@@ -176,7 +180,10 @@ async function start(){try{await renewSession();
     routerEnabled=enabled && outer.goal_team_enabled===true;
     form.elements.workflow.defaultChecked=routerEnabled;
     byId('outer-opt-in-label').textContent=routerEnabled?'由 Router 分派独立团队':'目标模式';
-    if(outer.goal_team_enabled)syncTeamReview=mountTeamReviewControl(byId('outer-opt-in'));
+    if(routerEnabled) {
+      syncTeamReview=mountTeamReviewControl(byId('outer-opt-in'));
+      teamProfile=mountTeamProfileControl(byId('team-review-field'),()=>request('/api/outer/team-options'));
+    }
     syncGoalMode();
     if(new URLSearchParams(location.search).has('new'))launch.click();
     outerMounted=true;

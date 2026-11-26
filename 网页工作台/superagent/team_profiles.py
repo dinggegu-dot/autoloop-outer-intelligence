@@ -17,16 +17,81 @@ ROUTER_TEAM = {
 }
 PROFILES = {1: LEGACY_TEAM, 2: ROUTER_TEAM}
 CURRENT_VERSION = 2
+SELECTED_VERSION = 3
+ROLE_LABELS = {'lead': '负责人', 'advisor': '只读顾问', 'design_advisor': '复杂设计顾问',
+               'implementer': '执行者', 'reviewer': '复核者'}
+EFFORT_LABELS = {'medium': '中等', 'high': '高'}
+V3_AGENTS = {
+    'codex-app-server': {
+        'label': 'Codex', 'provider': 'openai', 'roles': tuple(ROLE_LABELS),
+        'models': {'gpt-6.2-sol': 'GPT‑6.2 Sol', 'gpt-6.2-astra': 'GPT‑6.2 Astra'},
+        'efforts': tuple(EFFORT_LABELS),
+    },
+}
+# 冻结的版本仍可对账，即使以后从新工单目录撤下某个选项。
+CODING_AGENTS = deepcopy(V3_AGENTS)
 
 
-def new_team_profile():
-    return deepcopy(PROFILES[CURRENT_VERSION])
+def selectable_agents():
+    # 当前建单的资料发送许可只覆盖 Codex。
+    return {runtime: agent for runtime, agent in CODING_AGENTS.items()
+            if runtime in ROLE_ADAPTERS and agent['provider'] == 'openai'}
+
+
+def team_options():
+    return {
+        'roles': ROLE_LABELS, 'efforts': EFFORT_LABELS, 'defaults': new_team_profile(),
+        'agents': selectable_agents(),
+    }
+
+
+def new_team_profile(selections=None):
+    if selections is None:
+        return deepcopy(PROFILES[CURRENT_VERSION])
+    profile = _selected_profile(selections, selectable_agents())
+    if not supported(profile):
+        raise ValueError('当前工单版本尚未登记这组小队选项')
+    return profile
+
+
+def _selected_profile(selections, agents):
+    profile = deepcopy(ROUTER_TEAM)
+    if type(selections) is not dict or not selections or selections.keys() - ROLE_LABELS.keys():
+        raise ValueError('小队配置须选择有效的角色')
+    profile.update(version=SELECTED_VERSION, role_runtimes={}, selections=deepcopy(selections))
+    for role, choice in selections.items():
+        if (type(choice) is not dict or set(choice) != {'runtime', 'model', 'effort'}
+                or not all(isinstance(value, str) for value in choice.values())):
+            raise ValueError('小队配置须包含 Coding Agent、模型和思考强度')
+        runtime, model, effort = (choice[key] for key in ('runtime', 'model', 'effort'))
+        agent = agents.get(runtime)
+        if (agent is None
+                or role not in agent['roles'] or model not in agent['models']
+                or (effort and effort not in agent['efforts'])
+                or (not effort and (runtime != ROUTER_TEAM['runtime']
+                    or role_effort(ROUTER_TEAM, role, '') not in agent['efforts']))):
+            raise ValueError('所选角色、Coding Agent、模型或思考强度当前不可用')
+        profile['role_runtimes'][role] = runtime
+        profile['roles'][role] = model
+        if effort:
+            profile['efforts'][role] = effort
+            if role == 'lead':
+                profile['comparison_lead_effort'] = effort
+    return profile
 
 
 def supported(profile):
     if not isinstance(profile, dict) or type(profile.get('version')) is not int:
         return False
-    return profile == PROFILES.get(profile['version'])
+    version = profile['version']
+    if version in PROFILES:
+        return profile == PROFILES[version]
+    if version != SELECTED_VERSION or 'selections' not in profile:
+        return False
+    try:
+        return profile == _selected_profile(profile['selections'], V3_AGENTS)
+    except ValueError:
+        return False
 
 
 def role_effort(profile, role, previous, route=None):
@@ -61,5 +126,7 @@ def invoke_role(profile, role, **kwargs):
 
 
 def codex_models():
-    return {model for profile in PROFILES.values() for role, model in profile['roles'].items()
-            if role_runtime(profile, role) == 'codex-app-server'}
+    return set(V3_AGENTS['codex-app-server']['models']) | {
+        model for profile in PROFILES.values() for role, model in profile['roles'].items()
+        if role_runtime(profile, role) == 'codex-app-server'
+    }

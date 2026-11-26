@@ -129,6 +129,10 @@ def frontend(formal, front):
                      ('</span> 待审批 <span class="nav-count red"', '</span> 普通工单审批 <span class="nav-count red"'),
                      ('aria-label="查看待审批事项"', 'aria-label="查看普通工单审批"')):
         html = replace_once(html, old, new)
+    html = replace_once(html, '<div id="live-agents"></div>', """<section class="panel full-panel" id="formal-default-team">
+  <h2>团队工单默认小队</h2><p class="view-intro">这里保存当前浏览器的常用分工。新建工单时可以单独调整。</p>
+  <span id="formal-default-team-anchor" hidden></span>
+</section><div id="live-agents"></div>""")
     html = replace_once(html, '写下你想得到的结果。默认由 Codex 规划、执行和独立审核，实施前由你确认方案。',
                         '只要写下想得到的结果。需要取舍时，团队会带着方案回来。')
     html = replace_once(html, '描述你想要的结果，以及怎样才算做好。', '例如，帮我做一份适合第一次来访的旅行计划。')
@@ -151,6 +155,7 @@ def frontend(formal, front):
 <option value="review_and_decide">分步交付，第 2 步请我定方向</option>
 </select>
 <p class="draft-warning" id="outer-team-review-hint" hidden>团队分步交付，到第 2 步请你选方向。</p>
+<span id="outer-team-profile-anchor" hidden></span>
 </div><!--OUTER-INTAKE-ADVANCED-END--><fieldset class="model-fields"><legend>角色与模型</legend><div class="wb-actions">''')
     html = replace_once(html, '<p class="draft-warning" id="task-form-status">',
                         '''<!--OUTER-TEAM-OPTIONS-BEGIN--><div id="outer-team-settings" hidden>
@@ -186,6 +191,8 @@ def frontend(formal, front):
                   allow_model_input:true,request_id:requestId ||= crypto.randomUUID()};
           const mode = node('#outer-team-review-mode').value;
           if (mode) body.team_review_mode = mode;
+          const choices = teamProfile ? teamProfile.choices() : savedTeamRoles;
+          if (choices) body.team_roles = choices;
         }
         const result = await post('/api/tasks', body);
         const target = new URL('/workbench', location.origin);
@@ -207,11 +214,50 @@ def frontend(formal, front):
   const teamConsent=node('#outer-team-consent');
   const intakeStatus=node('#outer-intake-status');
   const teamModelFields=form.querySelector('fieldset.model-fields');
+  const teamProfileKey='odyssey.team-profile.v1';
+  let savedTeamRoles=null, teamProfile, teamOptions;
+  try {
+    const saved=JSON.parse(localStorage.getItem(teamProfileKey));
+    if (saved && typeof saved==='object' && !Array.isArray(saved)) savedTeamRoles=saved;
+  } catch {}
+  if (node('#outer-team-profile-anchor')) {
+    import('/outer-canary/goal_team.js').then(({mountTeamProfileControl})=>{
+      const loadOptions=async()=>{
+        if (teamOptions) return teamOptions;
+        await session();
+        const response=await fetch('/api/outer-canary/team-options',{cache:'no-store'});
+        if (!response.ok) throw Error('小队设置不可用');
+        teamOptions=await response.json();
+        return teamOptions;
+      };
+      teamProfile=mountTeamProfileControl(node('#outer-team-profile-anchor'),loadOptions,{initial:savedTeamRoles});
+      const defaultTeam=mountTeamProfileControl(node('#formal-default-team-anchor'),loadOptions,{
+        initial:savedTeamRoles,
+        onSave(choices) {
+          try {
+            if (choices) localStorage.setItem(teamProfileKey,JSON.stringify(choices));
+            else localStorage.removeItem(teamProfileKey);
+          } catch {
+            return '浏览器暂时无法保存默认小队。';
+          }
+          savedTeamRoles=choices;
+          teamProfile.apply(choices);
+          requestId=null;
+          return '已保存。之后新建的团队工单会使用这份分工。';
+        },
+      });
+      defaultTeam.show(true);
+      syncTeamMode();
+    }).catch(()=>{
+      node('#formal-default-team .view-intro').textContent='暂时无法打开设置，请刷新工作台后再试。';
+    });
+  }
   const syncTeamMode=()=>{
     const enabled=Boolean(teamMode?.checked);
     if (!teamMode) return;
     node('#outer-team-settings').hidden=!enabled;
     node('#outer-team-options').hidden=!enabled;
+    teamProfile?.show(enabled);
     node('#task-form-status').hidden=enabled;
     form.querySelector('.create-options > .draft-warning:last-child').hidden=enabled;
     node('#outer-team-review-hint').hidden=node('#outer-team-review-mode').value!=='review_and_decide';
@@ -236,7 +282,10 @@ def frontend(formal, front):
   node('#task-dialog').addEventListener('close',()=>{
     if (teamConsent) {teamConsent.checked=false;intakeStatus.textContent='';}
   });
-  form.addEventListener('reset',()=>setTimeout(syncTeamMode,0));
+  form.addEventListener('reset',()=>setTimeout(()=>{
+    teamProfile?.apply(savedTeamRoles);
+    syncTeamMode();
+  },0));
   syncTeamMode();
   const modeInput=node('#task-mode'), timeInput=node('#task-budget');""")
     tasks = replace_once(tasks, '<h2>任务审批</h2>', '<h2>普通工单审批</h2>')
@@ -320,6 +369,7 @@ def frontend(formal, front):
                              '<a id="map-link" href="/#tasks">工单工作台</a><a href="/workbench">工单簿</a>')
     write(ui / "index.html", candidate)
     app = replace_once((BOARD / "app.js").read_text(), "    form.hidden=!outer.workbench_entry;\n    byId('outer-opt-in').hidden=!outer.workbench_entry;\n", "")
+    app = app.replace("'/api/outer/team-options'", "'/api/outer-canary/team-options'")
     app = replace_once(app, "launch.hidden=false;launch.textContent", "launch.hidden=true;launch.textContent")
     app = replace_once(app, "if(new URLSearchParams(location.search).has('new'))launch.click();", "")
     app = replace_once(app, "request,renewSession,initial:outer,callHistory,",
@@ -364,6 +414,8 @@ def frontend(formal, front):
                          ".mast nav a{display:inline-flex;align-items:center;min-height:44px;padding-inline:.25rem}")
     write(ui / "style.css", style)
     shutil.copy2(BOARD / "task_presentation.js", ui / "task_presentation.js")
+    for character in ("peach.png", "bowser.png"):
+        shutil.copy2(REPO / "scripts/assets/odyssey-team" / character, ui)
 
 
 def backend(app):

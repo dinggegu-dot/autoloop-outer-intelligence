@@ -1,0 +1,32 @@
+{
+  "case": "Codex 小队选择，2026-11-26",
+  "entry": "原 Odyssey 新建工单入口的隔离签名网关",
+  "real_synthetic_order": {
+    "route": "direct",
+    "role": "implementer",
+    "runtime": "codex-app-server",
+    "model": "gpt-6.2-astra",
+    "effort": "high",
+    "artifact_sha256": "d3ca6d3fca8c22dc660d724abebcdfb61ae38797d3cf86a98c7b4448b2c75db6",
+    "artifact_rows": 2,
+    "planner_model": "gpt-6.2-sol"
+  },
+  "browser_checks": {
+    "browser": "Google Chrome",
+    "viewport_width_px": [
+      390,
+      1440
+    ],
+    "saved_default_survives_reload": true,
+    "per_ticket_reset_and_restore": true,
+    "collapsed_form_sends_saved_choice": true,
+    "horizontal_overflow": false,
+    "role_images_served": [
+      "peach.png",
+      "bowser.png"
+    ]
+  },
+  "browser_post": "另用模拟响应检查浏览器提交体；真实合成单已完成，并核对回执及下载摘要。",
+  "model_provider": "Codex",
+  "review": "独立复核新建、授权、冻结和版本兼容，隔离验证有替身与真实模型两部分。"
+}

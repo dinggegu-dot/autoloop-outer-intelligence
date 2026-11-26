@@ -54,9 +54,11 @@ ASSETS = {
     "/outer-canary/style.css": "style.css",
     "/outer-canary/goal_team.js": "goal_team.js",
     "/outer-canary/goal_team.css": "goal_team.css",
+    "/outer-canary/bowser.png": "bowser.png",
+    "/outer-canary/peach.png": "peach.png",
     "/outer-canary/task_presentation.js": "task_presentation.js",
 }
-MIMES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}
+MIMES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png"}
 VERSION_FIELDS = {"ticket_id", "revision", "request_id"}
 CONTRACT_FIELDS = VERSION_FIELDS | {"goal_revision", "acceptance_revision"}
 CONSENT = "allow_model_input"
@@ -102,13 +104,23 @@ def request_bytes(body):
     return json.dumps(body, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
+def valid_team_roles(value):
+    return (isinstance(value, dict) and 1 <= len(value) <= 5
+            and all(isinstance(role, str) and re.fullmatch(r'[a-z_]{1,24}', role)
+                    and isinstance(choice, dict) and set(choice) == {'runtime', 'model', 'effort'}
+                    and all(isinstance(item, str) and re.fullmatch(r'[a-z0-9._-]{0,48}', item)
+                            for item in choice.values())
+                    for role, choice in value.items()))
+
+
 def valid_custom_order(body):
     required = ORDER_TEXT_LIMITS.keys() | {"workflow", "request_id", CONSENT}
-    return (isinstance(body, dict) and required <= body.keys() <= required | {"team_review_mode"}
+    return (isinstance(body, dict) and required <= body.keys() <= required | {"team_review_mode", "team_roles"}
             and body["workflow"] == "outer" and body[CONSENT] is True
             and canonical_uuid(body["request_id"])
             and body["request_id"] not in (SYNTHETIC_ORDER["request_id"], TEAM_ORDER["request_id"])
             and body.get("team_review_mode", "review") in ("adaptive_review", "review", "review_and_decide")
+            and ("team_roles" not in body or valid_team_roles(body["team_roles"]))
             and all(valid_text(body[key], limit, blank=key != "goal") for key, limit in ORDER_TEXT_LIMITS.items())
             and len(request_bytes(body)) <= MAX_REQUEST)
 
@@ -282,7 +294,10 @@ class OuterCanary:
     def get(self, handler, route):
         if route in ASSETS:
             path = self.ui / ASSETS[route]
-            return handler.respond(path.read_bytes(), MIMES[path.suffix] + "; charset=utf-8")
+            mime = MIMES[path.suffix]
+            if mime.startswith("text/"):
+                mime += "; charset=utf-8"
+            return handler.respond(path.read_bytes(), mime)
         if not handler.session():
             return handler.json_response({"error": "会话已过期，请刷新"}, 403)
         query = urlsplit(handler.path).query
@@ -290,6 +305,8 @@ class OuterCanary:
             return handler.json_response({"error": "灰度工单查询参数过长"}, 400)
         suffix = "?" + query if query else ""
         endpoint = route.removeprefix(PREFIX)
+        if endpoint == "team-options":
+            return self.forward(handler, "/api/outer/team-options")
         if endpoint == "drafts":
             return self.forward(handler, "/api/outer")
         if endpoint == "tasks" or re.fullmatch(f"tasks/{TICKET}/(?:artifact|draft-preview)", endpoint):
