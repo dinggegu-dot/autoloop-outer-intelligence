@@ -19,6 +19,8 @@ import subprocess
 import tarfile
 import tempfile
 import time
+from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, ProxyHandler, build_opener
 
 from prepare_formal_canary import FRONT_FILES, prepare
@@ -74,6 +76,21 @@ def wait_check(check, reason, seconds=20):
     raise RuntimeError(reason)
 
 
+def require_readable_afr_article(get, articles):
+    for article in articles:
+        keys = {key: article[key] for key in ("kind", "id", "revision")}
+        try:
+            item = get("/api/afr-handoff/item?" + urlencode(keys))["item"]
+        except HTTPError as error:
+            if error.code != 409:
+                raise
+            # 目录仍可包含已换版的条目。继续核对其他现行固定版本。
+            continue
+        require(all(item.get(key) == value for key, value in keys.items()), "AFR 固定版本无法读取")
+        return
+    require(not articles, "AFR 目录当前没有可读取的固定版本")
+
+
 def read_legacy():
     opener = build_opener(ProxyHandler({}), HTTPCookieProcessor(CookieJar()))
 
@@ -92,11 +109,7 @@ def read_legacy():
     articles = get("/api/afr-handoff/library?kind=article&q=&offset=0")["items"]
     questions = get("/api/afr-handoff/library?kind=question&q=&offset=0")["items"]
     require(type(articles) is list and type(questions) is list, "AFR 目录不可用")
-    if articles:
-        from urllib.parse import urlencode
-        keys = {k: articles[0][k] for k in ("kind", "id", "revision")}
-        item = get("/api/afr-handoff/item?" + urlencode(keys))["item"]
-        require(all(item.get(k) == value for k, value in keys.items()), "AFR 固定版本无法读取")
+    require_readable_afr_article(get, articles)
     known = {task["id"] for task in data["tasks"]}
     if known:
         from urllib.parse import quote
