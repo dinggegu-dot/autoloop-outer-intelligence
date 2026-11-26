@@ -1,0 +1,156 @@
+{
+  "case": "默认小队标题首字被卡片圆角裁切",
+  "browser": "Google Chrome",
+  "before": {
+    "environment": "正式工作台，只读",
+    "measurements": [
+      {
+        "width": 320,
+        "radius": 20,
+        "insetInline": 1,
+        "insetTop": 1,
+        "copyAligned": false,
+        "titleFirstCharacterVisible": false,
+        "fits": true
+      },
+      {
+        "width": 375,
+        "radius": 20,
+        "insetInline": 1,
+        "insetTop": 1,
+        "copyAligned": false,
+        "titleFirstCharacterVisible": false,
+        "fits": true
+      },
+      {
+        "width": 390,
+        "radius": 20,
+        "insetInline": 1,
+        "insetTop": 1,
+        "copyAligned": false,
+        "titleFirstCharacterVisible": false,
+        "fits": true
+      },
+      {
+        "width": 600,
+        "radius": 20,
+        "insetInline": 1,
+        "insetTop": 1,
+        "copyAligned": false,
+        "titleFirstCharacterVisible": false,
+        "fits": true
+      },
+      {
+        "width": 760,
+        "radius": 20,
+        "insetInline": 1,
+        "insetTop": 1,
+        "copyAligned": false,
+        "titleFirstCharacterVisible": false,
+        "fits": true
+      },
+      {
+        "width": 1024,
+        "radius": 20,
+        "insetInline": 1,
+        "insetTop": 1,
+        "copyAligned": false,
+        "titleFirstCharacterVisible": false,
+        "fits": true
+      },
+      {
+        "width": 1440,
+        "radius": 20,
+        "insetInline": 1,
+        "insetTop": 1,
+        "copyAligned": false,
+        "titleFirstCharacterVisible": false,
+        "fits": true
+      }
+    ]
+  },
+  "after": {
+    "environment": "隔离工作台，只读",
+    "measurements": [
+      {
+        "width": 320,
+        "radius": 20,
+        "insetInline": 17,
+        "insetTop": 17,
+        "copyAligned": true,
+        "titleFirstCharacterVisible": true,
+        "fits": true
+      },
+      {
+        "width": 375,
+        "radius": 20,
+        "insetInline": 17,
+        "insetTop": 17,
+        "copyAligned": true,
+        "titleFirstCharacterVisible": true,
+        "fits": true
+      },
+      {
+        "width": 390,
+        "radius": 20,
+        "insetInline": 17,
+        "insetTop": 17,
+        "copyAligned": true,
+        "titleFirstCharacterVisible": true,
+        "fits": true
+      },
+      {
+        "width": 600,
+        "radius": 20,
+        "insetInline": 17,
+        "insetTop": 17,
+        "copyAligned": true,
+        "titleFirstCharacterVisible": true,
+        "fits": true
+      },
+      {
+        "width": 760,
+        "radius": 20,
+        "insetInline": 17,
+        "insetTop": 17,
+        "copyAligned": true,
+        "titleFirstCharacterVisible": true,
+        "fits": true
+      },
+      {
+        "width": 1024,
+        "radius": 20,
+        "insetInline": 21,
+        "insetTop": 21,
+        "copyAligned": true,
+        "titleFirstCharacterVisible": true,
+        "fits": true
+      },
+      {
+        "width": 1440,
+        "radius": 20,
+        "insetInline": 25,
+        "insetTop": 25,
+        "copyAligned": true,
+        "titleFirstCharacterVisible": true,
+        "fits": true
+      }
+    ],
+    "can_open_team_editor": true
+  },
+  "mobile_navigation_regression": {
+    "viewport_width_px": [
+      320,
+      360,
+      375,
+      390,
+      420,
+      600,
+      760,
+      768,
+      1024,
+      1440
+    ],
+    "passed": true
+  }
+}
