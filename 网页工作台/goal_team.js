@@ -305,9 +305,9 @@ export function mountTeamProfileControl(anchor, loadOptions, {initial=null, onSa
         const updateAgent=()=>{
           const agent=agents[runtime.value];
           const inherit=runtime.value===defaultRuntime;
-          const defaultEffort=role==='lead' ? '随任务调整' : efforts[defaults.efforts[role]];
+          const defaultEffort=role==='lead' ? '自动' : efforts[defaults.efforts[role]];
           fill(model,[
-            ...(inherit ? [['','默认 · '+agent.models[defaultModel]]] : []),
+            ...(inherit ? [['','默认 · '+agent.models[defaultModel].replace(/^GPT‑/,'')]] : []),
             ...Object.entries(agent.models),
           ]);
           fill(effort,[
