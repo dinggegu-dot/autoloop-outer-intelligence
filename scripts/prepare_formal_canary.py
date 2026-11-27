@@ -162,7 +162,7 @@ def frontend(formal, front):
 </div><!--OUTER-INTAKE-ADVANCED-END--><fieldset class="model-fields"><legend>角色与模型</legend><div class="wb-actions">''')
     html = replace_once(html, '<p class="draft-warning" id="task-form-status">',
                         '''<!--OUTER-TEAM-OPTIONS-BEGIN--><div id="outer-team-settings" hidden>
-<label class="outer-team-check"><input type="checkbox" id="outer-team-consent"><span>允许把本单填写的名称、目标和完成标准发送给 Codex</span></label>
+<label class="outer-team-check"><input type="checkbox" id="outer-team-consent"><span id="outer-team-consent-label">允许把本单填写的名称、目标和完成标准发送给 Codex</span></label>
 </div><p class="draft-warning" id="outer-intake-status" role="status"></p><!--OUTER-TEAM-OPTIONS-END--><p class="draft-warning" id="task-form-status">''')
     tasks = replace_once((formal / "tasks.js").read_text(), """    if (working) return;
     working = true;
@@ -196,6 +196,7 @@ def frontend(formal, front):
           if (mode) body.team_review_mode = mode;
           const choices = teamProfile ? teamProfile.choices() : savedTeamRoles;
           if (choices) body.team_roles = choices;
+          if (teamUsesGoogle(choices)) body.allow_antigravity_input = true;
         }
         const result = await post('/api/tasks', body);
         const target = new URL('/workbench', location.origin);
@@ -223,6 +224,20 @@ def frontend(formal, front):
     const saved=JSON.parse(localStorage.getItem(teamProfileKey));
     if (saved && typeof saved==='object' && !Array.isArray(saved)) savedTeamRoles=saved;
   } catch {}
+  const teamUsesGoogle=choices=>Object.values(choices || {}).some(choice=>choice?.runtime==='antigravity-cli');
+  const syncConsentRecipient=()=>{
+    if (!teamConsent) return;
+    let choices=savedTeamRoles;
+    try { if (teamProfile) choices=teamProfile.choices(); } catch {}
+    const google=teamUsesGoogle(choices);
+    const recipient=google?'Codex 和 Google Antigravity':'Codex';
+    const label=node('#outer-team-consent-label');
+    const title='允许把本单填写的名称、目标和完成标准发送给 '+recipient;
+    if (label.textContent!==title) {
+      teamConsent.checked=false;
+      label.textContent=title;
+    }
+  };
   if (node('#outer-team-profile-anchor')) {
     import('/outer-canary/goal_team.js').then(({mountTeamProfileControl})=>{
       const loadOptions=async()=>{
@@ -245,6 +260,7 @@ def frontend(formal, front):
           }
           savedTeamRoles=choices;
           teamProfile.apply(choices);
+          syncConsentRecipient();
           requestId=null;
           return '已保存。之后新建的团队工单会使用这份分工。';
         },
@@ -261,6 +277,7 @@ def frontend(formal, front):
     node('#outer-team-settings').hidden=!enabled;
     node('#outer-team-options').hidden=!enabled;
     teamProfile?.show(enabled);
+    syncConsentRecipient();
     node('#task-form-status').hidden=enabled;
     form.querySelector('.create-options > .draft-warning:last-child').hidden=enabled;
     node('#outer-team-review-hint').hidden=node('#outer-team-review-mode').value!=='review_and_decide';
@@ -276,6 +293,7 @@ def frontend(formal, front):
   };
   teamMode?.addEventListener('change',()=>{intakeStatus.textContent='';syncTeamMode();});
   node('#outer-team-review-mode')?.addEventListener('change',syncTeamMode);
+  form.addEventListener('input',syncConsentRecipient);
   teamConsent?.addEventListener('change',()=>{
     if (teamConsent.checked && intakeStatus.textContent.startsWith('请先勾选')) intakeStatus.textContent='';
   });

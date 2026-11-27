@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from workbench import Problem, is_blind_goal, now, require_v1_control
 from superagent.outer_verification import ROUTER_TEAM, SCOPED_COORDINATOR
 from superagent.goal_team_handoff import explicit_keep_answer
-from superagent.team_profiles import role_runtime, supported as supported_team
+from superagent.team_profiles import ANTIGRAVITY, role_runtime, supported as supported_team, uses_antigravity
 from superagent.goal_team_records import (
     ADAPTIVE_REVIEW, MIN_REPAIR_ASSIGNMENT_SECONDS, MIN_TEAM_ASSIGNMENT_SECONDS, PREFERENCE_REVIEW_MODES,
     TEAM_REVIEW_MODES, profile, role_limit,
@@ -1453,6 +1453,7 @@ class GoalEngine:
             evidence = report.get('handoff_verification')
             if (not valid_handoff_verification(bound,checkpoint,pending,evidence)
                     or not handoff_read_recorded(calls[-1].get('tools'),checkpoint,evidence,
+                                                 antigravity=role_runtime(assignment['execution_profile'], 'lead') == ANTIGRAVITY,
                                                  whole_candidate=assignment.get('team_handoff_read_only') is True)):
                 raise Problem('当前候选缺少与本人选择或负责人修改、保留清单对应的核验记录')
         self._verify_retained_artifacts(task, checkpoint)
@@ -1531,7 +1532,8 @@ class GoalEngine:
         validate_handoff_scopes(handoff['instruction'],checkpoint)
         draft_paths = [row['path'] for row in handoff['draft_review']['observations']]
         if (handoff['comparison']['action'] != 'done' or handoff['draft_review']['action'] != 'done'
-                or not draft_read_recorded(calls[3].get('tools'),checkpoint['files'],draft_paths)
+                or not draft_read_recorded(calls[3].get('tools'),checkpoint['files'],draft_paths,
+                                          antigravity=role_runtime(assignment['execution_profile'], 'advisor') == ANTIGRAVITY)
                 or (not asks and ('preference' in report or report['result']['action'] != 'done'
                                   or report['result']['options']))
                 or (asks and not assignment.get('team_decision_allowed'))
@@ -2230,6 +2232,8 @@ class GoalEngine:
                 WHERE t.id=? AND e.state='DONE'
                     AND json_extract(e.result, '$.action')='ATTACH_TO_TICKET'
                     AND json_type(e.body, '$.allow_model_input')='true'
+                    AND (json_type(t.body, '$.allow_antigravity_input') IS NOT 'true'
+                         OR json_type(e.body, '$.allow_antigravity_input')='true')
                 ORDER BY n.rowid
                 """, (task['id'],)).fetchall()
         return [
@@ -2321,6 +2325,13 @@ class GoalEngine:
                     or assignment.get('verification_digest',digest(None)) != digest(flow(task).get('verification_contract'))
                     or assignment.get('outer_binding') != outer_binding(task)):
                 raise Problem('派工已停止或变更，未放行模型',409)
+            selected = assignment.get('execution_profile') or assignment.get('planning_profile')
+            if uses_antigravity(selected):
+                source = db.execute('SELECT body FROM outer_tickets WHERE id=?', (ticket,)).fetchone()
+                scope = json.loads(source[0]) if source else {}
+                if (scope.get('allow_antigravity_input') is not True
+                        or scope.get('approval_terms', {}).get('execution_profile') != selected):
+                    raise Problem('本单未确认 Antigravity 资料发送范围', 409)
             context = assignment.get('coordination_context',{})
             if (context.get('coordinator_profile') == SCOPED_COORDINATOR
                     and context['guard'] != self._coordination_guard(task)):

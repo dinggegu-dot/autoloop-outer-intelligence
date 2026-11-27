@@ -501,7 +501,7 @@ test('正式原单逐次确认自由文本，预算独立确认',async t=>{
   const ui=await mount(t,{...ticket,pending_preference:question},{failFirst:true});
   ui.fill('preference-text','保留标题，调整示例');
   ui.control('submit-preference').onclick();
-  assert.match(ui.dialog.querySelector('p').textContent,/发送给 Codex 模型/);
+  assert.match(ui.dialog.querySelector('h3').textContent,/发送本次内容给 Codex/);
   ui.cancel.onclick();
   await ui.team.refresh();
   assert.equal(ui.events.length,0);

@@ -1,0 +1,91 @@
+{
+  "case": "Google Antigravity 按角色接入，2026-11-27",
+  "entry": "正式工作台源码的隔离 Chrome 与签名回环网关",
+  "provider_app": "Google Antigravity CLI 1.5.18",
+  "browser": {
+    "role_options": 5,
+    "viewport": [
+      390,
+      1440
+    ],
+    "consent_reset": true,
+    "settings_reload": true,
+    "server_verified": true
+  },
+  "real_synthetic_orders": [
+    {
+      "case": "simple",
+      "roles": [
+        {
+          "role": "implementer",
+          "runtime": "antigravity-cli",
+          "model": "gemini-4-hydrogen",
+          "effort": "medium",
+          "read_receipt": false
+        }
+      ],
+      "hash": "be75dadac640d912869fb6c4f68ca8ca73822e1e8bd5ba2afc1167ca9668cbf2",
+      "approved": true,
+      "independent_verified": true,
+      "elapsed_seconds": 38.2
+    },
+    {
+      "case": "complex",
+      "roles": [
+        {
+          "role": "lead",
+          "runtime": "antigravity-cli",
+          "model": "gemini-4-hydrogen",
+          "effort": "medium",
+          "read_receipt": false
+        },
+        {
+          "role": "advisor",
+          "runtime": "antigravity-cli",
+          "model": "gemini-4-hydrogen",
+          "effort": "medium",
+          "read_receipt": false
+        },
+        {
+          "role": "lead",
+          "runtime": "antigravity-cli",
+          "model": "gemini-4-hydrogen",
+          "effort": "medium",
+          "read_receipt": false
+        },
+        {
+          "role": "advisor",
+          "runtime": "antigravity-cli",
+          "model": "gemini-4-hydrogen",
+          "effort": "medium",
+          "read_receipt": true
+        },
+        {
+          "role": "lead",
+          "runtime": "antigravity-cli",
+          "model": "gemini-4-hydrogen",
+          "effort": "medium",
+          "read_receipt": false
+        },
+        {
+          "role": "lead",
+          "runtime": "antigravity-cli",
+          "model": "gemini-4-hydrogen",
+          "effort": "medium",
+          "read_receipt": true
+        }
+      ],
+      "hash": "5f259f12dd19022209bf144c03685e4b2f7eb21844473d1b28ed33aef5391507",
+      "approved": true,
+      "independent_verified": true,
+      "elapsed_seconds": 259.7
+    }
+  ],
+  "authorization": {
+    "missing_google_consent_http": 409,
+    "saved_selection_applied_to_new_ticket": true,
+    "real_app_has_independent_outer_verification": true,
+    "previously_frozen_codex_profiles": "回归核对"
+  },
+  "scope": "通过现有 Google 登录，只有合成工单文字及候选文本进入 Antigravity。写入受控，终验使用原有外层验证器。"
+}

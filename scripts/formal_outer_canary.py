@@ -62,6 +62,7 @@ MIMES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".p
 VERSION_FIELDS = {"ticket_id", "revision", "request_id"}
 CONTRACT_FIELDS = VERSION_FIELDS | {"goal_revision", "acceptance_revision"}
 CONSENT = "allow_model_input"
+GOOGLE_CONSENT = "allow_antigravity_input"
 CONTROL_FIELDS = {
     "get": {"ticket_id"}, "calls": {"ticket_id"}, "call": {"ticket_id", "call_id"}, "event": {"event_id"},
     "approve": CONTRACT_FIELDS,
@@ -115,8 +116,9 @@ def valid_team_roles(value):
 
 def valid_custom_order(body):
     required = ORDER_TEXT_LIMITS.keys() | {"workflow", "request_id", CONSENT}
-    return (isinstance(body, dict) and required <= body.keys() <= required | {"team_review_mode", "team_roles"}
+    return (isinstance(body, dict) and required <= body.keys() <= required | {"team_review_mode", "team_roles", GOOGLE_CONSENT}
             and body["workflow"] == "outer" and body[CONSENT] is True
+            and (GOOGLE_CONSENT not in body or body[GOOGLE_CONSENT] is True)
             and canonical_uuid(body["request_id"])
             and body["request_id"] not in (SYNTHETIC_ORDER["request_id"], TEAM_ORDER["request_id"])
             and body.get("team_review_mode", "review") in ("adaptive_review", "review", "review_and_decide")
@@ -160,6 +162,7 @@ FIELD_CHECKS = {
     "reason": lambda v: valid_text(v, 2000),
     "text": lambda v: valid_text(v, 6000),
     CONSENT: lambda v: v is True,
+    GOOGLE_CONSENT: lambda v: v is True,
     "replace_requirement_ids": valid_requirements,
     "withdraw_requirement_ids": valid_requirements,
     "intent": lambda v: v in ("supplement", "change", "continue", "proposal"),
@@ -179,6 +182,13 @@ def valid_command(command, body):
     fields = CONTROL_FIELDS.get(command)
     if fields is None or not isinstance(body, dict):
         return False
+    if GOOGLE_CONSENT in body:
+        if (command not in {"submit", "answer_preference", "return_artifact"}
+                or body[GOOGLE_CONSENT] is not True or body.get(CONSENT) is not True
+                or len(request_bytes(body)) > MAX_REQUEST):
+            return False
+        # Validate the existing command shape. Forward the original body with both consents.
+        body = {key: value for key, value in body.items() if key != GOOGLE_CONSENT}
     if command in {"pause", "resume", "stop"} and body.keys() == CONTRACT_FIELDS:
         # 已打开的旧版网页会发契约版本，尚未形成契约时其版本为零。
         return (all(FIELD_CHECKS[key](body[key]) for key in VERSION_FIELDS)

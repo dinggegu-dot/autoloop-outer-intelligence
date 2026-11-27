@@ -19,7 +19,7 @@ from .outer_model import (
     ACCEPTANCE_SCHEMA, INTAKE_SCHEMA, TEAM_ACCEPTANCE_SCHEMA, TEAM_INTAKE_SCHEMA, REQUIREMENT_SOURCES, CodexOuterModel, CodexTicketTeamModel, ModelFailure, role_invoke,
 )
 from .outer_verification import ROUTER_TEAM, requires_independent_evidence
-from .team_profiles import new_team_profile
+from .team_profiles import new_team_profile, supported as supported_team, uses_antigravity
 from .ticket_rounds import changes_old_requirement, round_view, start_round, verified_input
 
 
@@ -367,10 +367,12 @@ class OuterIntake:
     def submit(self, *, source, source_event_id, actor_id, text, source_thread_id=None, tenant='default',
                ticket_id=None, expected_ticket_revision=None, question_id=None, replace_requirement_ids=None,
                withdraw_requirement_ids=None, workbench_request=None, goal_team=False, allow_model_input=False,
-               route_team=False, change_request=False, continuation=None, direction_owner=None):
+               route_team=False, change_request=False, continuation=None, direction_owner=None,
+               allow_antigravity_input=False):
         identity = self._source(source, source_event_id, actor_id, tenant, source_thread_id)
         _, _, actor, tenant, thread = identity
         allow_model_input = source == 'web' and allow_model_input is True
+        allow_antigravity_input = allow_model_input and allow_antigravity_input is True
         if direction_owner is None:
             _string(text, '原始需求', 6000)
         else:
@@ -421,6 +423,7 @@ class OuterIntake:
                 **({'direction_owner': direction_owner} if direction_owner is not None else {}),
                 **({'continue_from': continuation} if continuation is not None else {}),
                 **({'allow_model_input': True} if allow_model_input is True else {}),
+                **({'allow_antigravity_input': True} if allow_antigravity_input else {}),
                 **({'force_new': True, 'workbench_request': workbench_request} if workbench_request is not None else {}),
                 **({'goal_team': True} if workbench_request is not None and goal_team else {}),
             }, role='intake_assessor')
@@ -463,6 +466,7 @@ class OuterIntake:
                         raise Problem('消息需要绑定原工单会话', 409)
                     if explicit_decision and allow_model_input is not True:
                         raise Problem('请在工作台确认将这条澄清或修改发送给 Codex', 409)
+                    self._check_antigravity_consent(ticket, allow_model_input, allow_antigravity_input)
                     if explicit_decision and ticket.get('needs_model_consent'):
                         raise Problem('请先核对并授权发送这张工单的原话', 409)
                 if team and not explicit_decision:
@@ -560,6 +564,12 @@ class OuterIntake:
         self._finish(db, event, 'DONE', {'action': 'ATTACH_TO_TICKET'}, ticket, deliver=False)
 
     @staticmethod
+    def _check_antigravity_consent(ticket, sends_to_model, allows_antigravity):
+        if sends_to_model and uses_antigravity(ticket.get('approval_terms', {}).get('execution_profile')):
+            if not (ticket.get('allow_antigravity_input') is True and allows_antigravity is True):
+                raise Problem('请在原单确认将本次内容发送给 Google Antigravity', 409)
+
+    @staticmethod
     def _intake_can_use_materials(ticket):
         if not ticket or not ticket.get('ticket_team') or ticket.get('needs_model_consent'):
             return False
@@ -570,7 +580,11 @@ class OuterIntake:
     def _intake_materials(db,event):
         rows = db.execute("""SELECT id,body FROM outer_events WHERE ticket=? AND actor=? AND tenant=?
             AND state='DONE' AND json_extract(result,'$.action')='ATTACH_TO_TICKET'
-            AND json_type(body,'$.allow_model_input')='true' ORDER BY rowid DESC LIMIT 8""",
+            AND json_type(body,'$.allow_model_input')='true'
+            AND (json_type(body,'$.allow_antigravity_input')='true' OR NOT EXISTS (
+                SELECT 1 FROM outer_tickets t WHERE t.id=outer_events.ticket
+                    AND json_type(t.body,'$.allow_antigravity_input')='true'))
+            ORDER BY rowid DESC LIMIT 8""",
                           (event['ticket'],event['actor'],event['tenant'])).fetchall()
         return [{'event_id':row['id'],'text':_model_text(json.loads(row['body'])['text'],1500)}
                 for row in reversed(rows)]
@@ -975,6 +989,13 @@ class OuterIntake:
         request = message.get('workbench_request')
         if routed:
             frozen = (request or {}).get('execution_profile') or new_team_profile()
+            if not supported_team(frozen):
+                raise Problem('无法识别本单的小队配置', 409)
+            if uses_antigravity(frozen):
+                if (event['source'] != 'web' or request.get('allow_model_input') is not True
+                        or request.get('allow_antigravity_input') is not True):
+                    raise Problem('请先确认本单的 Google Antigravity 资料发送范围', 409)
+                ticket['allow_antigravity_input'] = True
             ticket['ticket_team'] = {'id': ticket_id, 'workflow_profile': ROUTER_TEAM}
             ticket['coordinator_profile'] = 'scoped-v1'
             ticket['approval_terms'].update(execution_profile=frozen, execution_model=frozen['roles']['lead'],
@@ -1765,7 +1786,8 @@ class OuterIntake:
             return ticket
 
     def answer_preference(self, ticket_id, revision, question_id, question_revision, candidate_digest,
-                          answer, request_id, *, actor_id, source='web', tenant='default', allow_model_input=False):
+                          answer, request_id, *, actor_id, source='web', tenant='default', allow_model_input=False,
+                          allow_antigravity_input=False):
         from .goal_engine import decision, digest
 
         identity = self._source(source, request_id, actor_id, tenant, None)
@@ -1785,6 +1807,8 @@ class OuterIntake:
                 'candidate_digest':candidate_digest, 'option_id':option, 'text':text}
         if text and allow_model_input is True:
             data['allow_model_input'] = True
+            if source == 'web' and allow_antigravity_input is True:
+                data['allow_antigravity_input'] = True
         with self._transaction() as db:
             ticket = self._ticket(db, ticket_id, identity[2], identity[3])
             event, duplicate = self._insert(db, identity, ticket_id, data)
@@ -1792,6 +1816,7 @@ class OuterIntake:
                 return self._event_view(event, True)
             if text and ticket.get('ticket_team') and allow_model_input is not True:
                 raise Problem('请在工作台确认将补充意见发送给 Codex', 409)
+            self._check_antigravity_consent(ticket, bool(text), data.get('allow_antigravity_input'))
             self._compare(ticket, revision)
             row = db.execute('SELECT body FROM tasks WHERE id=?', (ticket_id,)).fetchone()
             task = json.loads(row[0]) if row else {}
@@ -1886,7 +1911,8 @@ class OuterIntake:
             return self._event_view(db.execute('SELECT * FROM outer_events WHERE id=?', (event['id'],)).fetchone())
 
     def decide_artifact(self,ticket_id,operation,expected_revision,candidate,artifact_sha256,reason,request_id,
-                        *,actor_id,source='web',tenant='default',source_thread_id=None,allow_model_input=False):
+                        *,actor_id,source='web',tenant='default',source_thread_id=None,allow_model_input=False,
+                        allow_antigravity_input=False):
         from .goal_engine import decision
         if operation not in ('accept','return'):
             raise Problem('未知作品验收决定')
@@ -1896,6 +1922,8 @@ class OuterIntake:
                     revision=expected_revision, candidate=candidate, artifact_sha256=artifact_sha256, reason=reason)
         if reason and allow_model_input is True:
             data['allow_model_input'] = True
+            if source == 'web' and allow_antigravity_input is True:
+                data['allow_antigravity_input'] = True
         with self._transaction() as db:
             ticket = self._ticket(db,ticket_id,actor_id,tenant)
             event,duplicate = self._insert(db,identity,ticket_id,data)
@@ -1903,6 +1931,7 @@ class OuterIntake:
                 return dict(json.loads(event['result']),duplicate=True)
             if reason and ticket.get('ticket_team') and allow_model_input is not True:
                 raise Problem('请在工作台确认将这条退回意见发送给 Codex', 409)
+            self._check_antigravity_consent(ticket, bool(reason), data.get('allow_antigravity_input'))
             self._compare(ticket,expected_revision)
             if source=='feishu':
                 card = self._card(db,source,tenant,identity[4]) or {}

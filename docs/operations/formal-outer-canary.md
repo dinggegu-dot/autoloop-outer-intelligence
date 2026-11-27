@@ -42,6 +42,12 @@ python3 -B scripts/deploy_formal_canary.py --rollback-upgrade /路径/本次升�
 
 独立复核在副本执行了程序回退、账本与归档核对。恢复后的旧程序可通过签名处理器读取原单及归档，试验中的 LaunchAgent 停启使用模拟。[隔离回退记录](../../evidence/goal-team/authorized-workbench-rollback.json)
 
+## Antigravity 角色执行器
+
+macOS 实例可安装 Google 官方 Antigravity CLI 到 `~/.local/share/autoloop/antigravity/agy`，使用已登录的 Antigravity 账户。服务端仅接受本机所有者可执行且非组或公共可写的程序。隔离测试可通过服务进程的 `AUTOLOOP_ANTIGRAVITY_EXECUTABLE` 指向已核验的绝对路径。「Agent 小队」按角色选择。登录失效时，从 Antigravity 恢复登录后回原工单重试。
+
+工作台用临时目录启动单轮 CLI，关闭额度购买、个人工具配置和工作区直接访问。模型只获得本轮批准用于处理的文字和实际候选文本，写入角色通过结构化结果交回文件变更。工具请求或输出格式错误会使本轮受阻。正式浏览器新单的接收方确认单独留证，与本单的批准记录一并核对。
+
 ## 安装与验证
 
 从已审查的 V2 分支运行 `python3 -B scripts/deploy_formal_canary.py --preflight`。预检读取原工单、研究归档、AFR 目录及固定文章版本，核对 SQLite 和运行中的工单数。旧工作台或 AFR 有工作在执行时，等待它们结束再切换。

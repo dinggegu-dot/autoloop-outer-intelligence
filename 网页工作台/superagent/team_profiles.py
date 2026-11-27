@@ -18,6 +18,8 @@ ROUTER_TEAM = {
 PROFILES = {1: LEGACY_TEAM, 2: ROUTER_TEAM}
 CURRENT_VERSION = 2
 SELECTED_VERSION = 3
+MIXED_VERSION = 4
+ANTIGRAVITY = 'antigravity-cli'
 ROLE_LABELS = {'lead': '负责人', 'advisor': '只读顾问', 'design_advisor': '复杂设计顾问',
                'implementer': '执行者', 'reviewer': '复核者'}
 EFFORT_LABELS = {'medium': '中等', 'high': '高'}
@@ -28,14 +30,22 @@ V3_AGENTS = {
         'efforts': tuple(EFFORT_LABELS),
     },
 }
+V4_AGENTS = {
+    **V3_AGENTS,
+    ANTIGRAVITY: {
+        'label': 'Google Antigravity', 'provider': 'google', 'roles': tuple(ROLE_LABELS),
+        'models': {'gemini-4-hydrogen': 'Gemini 4 Hydrogen'}, 'efforts': tuple(EFFORT_LABELS),
+    },
+}
 # 冻结的版本仍可对账，即使以后从新工单目录撤下某个选项。
-CODING_AGENTS = deepcopy(V3_AGENTS)
+CODING_AGENTS = deepcopy(V4_AGENTS)
 
 
 def selectable_agents():
-    # 当前建单的资料发送许可只覆盖 Codex。
+    from .goal_antigravity import executable
+
     return {runtime: agent for runtime, agent in CODING_AGENTS.items()
-            if runtime in ROLE_ADAPTERS and agent['provider'] == 'openai'}
+            if runtime in ROLE_ADAPTERS and (runtime != ANTIGRAVITY or executable() is not None)}
 
 
 def team_options():
@@ -73,6 +83,8 @@ def _selected_profile(selections, agents):
             raise ValueError('所选角色、Coding Agent、模型或思考强度当前不可用')
         profile['role_runtimes'][role] = runtime
         profile['roles'][role] = model
+        if runtime == ANTIGRAVITY:
+            profile['version'] = MIXED_VERSION
         if effort:
             profile['efforts'][role] = effort
             if role == 'lead':
@@ -86,10 +98,11 @@ def supported(profile):
     version = profile['version']
     if version in PROFILES:
         return profile == PROFILES[version]
-    if version != SELECTED_VERSION or 'selections' not in profile:
+    registry = {SELECTED_VERSION: V3_AGENTS, MIXED_VERSION: V4_AGENTS}.get(version)
+    if registry is None or 'selections' not in profile:
         return False
     try:
-        return profile == _selected_profile(profile['selections'], V3_AGENTS)
+        return profile == _selected_profile(profile['selections'], registry)
     except ValueError:
         return False
 
@@ -104,13 +117,22 @@ def role_runtime(profile, role):
     return profile.get('role_runtimes', {}).get(role, profile['runtime'])
 
 
+def uses_antigravity(profile):
+    return ANTIGRAVITY in (profile or {}).get('role_runtimes', {}).values()
+
+
 def _codex_turn(**kwargs):
     from .goal_app_server import invoke
     return invoke(**kwargs)
 
 
+def _antigravity_turn(**kwargs):
+    from .goal_antigravity import invoke
+    return invoke(**kwargs)
+
+
 # 新 coding agent 在此登记同一调用契约的适配器；保持只读/写入、时限和实物回执的语义。
-ROLE_ADAPTERS = {'codex-app-server': _codex_turn}
+ROLE_ADAPTERS = {'codex-app-server': _codex_turn, ANTIGRAVITY: _antigravity_turn}
 
 
 def invoke_role(profile, role, **kwargs):

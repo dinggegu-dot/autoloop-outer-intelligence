@@ -38,13 +38,13 @@
 
 有的工单适合让 Sol 快速完成，有的需要 Astra 多想一层。在「Agent 小队」可保存这个浏览器常用的分工。新建团队工单时，展开「小队配置」可为这一单选择各角色的模型和思考强度。简单工单直接做，复杂工单按原流程比较方案。角色卡保留小头像和清楚的职责，在窄屏按一列排列。
 
-这版所有角色继续使用 Codex。负责人、执行者和复核者默认用 GPT‑6.2 Sol，两类只读顾问默认用 GPT‑6.2 Astra。可分别选择 Sol 或 Astra，并沿用角色默认强度或指定中等、高。Coding Agent 作为每个角色可登记的选项保留，DSH 验证后再决定是否加入。
+Codex 是默认 Coding Agent。负责人、执行者和复核者默认用 GPT‑6.2 Sol，两类只读顾问默认用 GPT‑6.2 Astra。Mac 安装工作台专用 Google Antigravity CLI 后，每个角色也可选 Google Antigravity，使用 Gemini 4 Hydrogen 的中等或高思考强度。可以只换一个角色，也可以搭配多个角色。
 
-新建工单登记所选小队，之后的批准、派工和续办使用同一份分工。已登记的工单继续按原配置运行。原单的「目标与授权」可以查看配置，执行进度可以核对实际调用。
+新建工单登记所选小队，之后的批准、派工和续办使用同一份分工。已登记的工单继续按原配置运行。原单的「目标与授权」可以查看配置，执行进度可以核对实际调用。外层接单、验收条款和协调仍由 Codex 处理，所以选择 Antigravity 后，新单及补充意见会同时写明 Codex 和 Google Antigravity 两个接收方。旧工单使用其登记时的小队及发送授权。
 
-用一张合成文件索引单验收。在首页展开「小队配置」，将执行者改为 Astra、高，其他角色沿用默认。批准后，核对是否直接派给 Astra，并检查实际回执中的模型、强度和下载文件。再用一张默认工单核对旧有分工及复杂任务比较入口。
+用一张合成文件索引单验收。在首页展开「小队配置」，将执行者改为 Google Antigravity，其他角色沿用默认。核对发送许可的接收方，批准后检查实际执行器、模型、强度及下载文件。只读角色用真实候选文本核对，文本写入由工作台按已批准范围应用，然后走原有独立验收。当前 Antigravity 入口处理文本文件，shell、浏览器和外部工具由该角色禁用。
 
-[角色配置与适配器](../../网页工作台/superagent/team_profiles.py) · [合成工单与 Chrome 验收](../../evidence/goal-team/select-ticket-team.json)
+[角色配置与适配器](../../网页工作台/superagent/team_profiles.py) · [Codex 角色选择验收](../../evidence/goal-team/select-ticket-team.json) · [Antigravity 真实工单与 Chrome 验收](../../evidence/goal-team/antigravity-team.json)
 
 ## 验收方式
 
