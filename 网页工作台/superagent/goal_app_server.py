@@ -193,7 +193,7 @@ def _argv(executable, effort, sandbox, workspace, profile):
 
 
 @contextlib.contextmanager
-def _supervise(command, output_dir, staging, env):
+def _supervise(command, output_dir, staging, env, *, cwd=None):
     record_path = output_dir / 'process.json'
     record = {'version': 1, 'state': 'starting', 'pid': None,
               'pgid': None, 'birth': None, 'processes': []}
@@ -228,7 +228,7 @@ def _supervise(command, output_dir, staging, env):
             raise GoalAppServerError('process_pending', 'Earlier role process cleanup is unconfirmed') from None
         checkpoint()
         process = subprocess.Popen(
-            command, cwd=staging, env=env, start_new_session=True,
+            command, cwd=staging if cwd is None else cwd, env=env, start_new_session=True,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         tree = ProcessTree(process.pid)
@@ -354,7 +354,7 @@ class _Connection:
         return GoalAppServerError(code, message, categories=tuple(detail['categories']),
                                   evidence={'app_server_error': detail})
 
-    def read(self, deadline, *, stopping=False):
+    def read_event(self, deadline, accepts, *, stopping=False):
         while True:
             self._remaining(deadline, stopping)
             newline = self.buffer.find(b'\n')
@@ -365,7 +365,7 @@ class _Connection:
                 del self.buffer[:newline + 1]
                 try:
                     event = _decode(line)
-                    if isinstance(event, dict) and ('id' in event or isinstance(event.get('method'), str)):
+                    if isinstance(event, dict) and accepts(event):
                         return event
                 except (ValueError, RecursionError):
                     pass
@@ -373,6 +373,10 @@ class _Connection:
             if self.closed:
                 raise self.error('process_error', 'Codex App Server closed before completion')
             self._poll(deadline, stopping)
+
+    def read(self, deadline, *, stopping=False):
+        return self.read_event(deadline, lambda event: 'id' in event or isinstance(event.get('method'), str),
+                               stopping=stopping)
 
     def request(self, request_id, method, params, deadline, *, collect=None, gate=None):
         self.send(_packet({'id': request_id, 'method': method, 'params': params}), deadline, gate=gate)

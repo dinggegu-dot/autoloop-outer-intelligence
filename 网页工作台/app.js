@@ -2,7 +2,7 @@
 const byId=id=>document.getElementById(id);
 const scriptURL=document.currentScript.src;
 const form=byId('new'), selector=byId('tasks'), detail=byId('detail');
-let goalTeam, syncTeamReview, teamProfile, routerEnabled=false, outerMounted=false;
+let goalTeam, syncTeamReview, teamProfile, syncConsentRecipient, routerEnabled=false, outerMounted=false;
 let selected=new URLSearchParams(location.search).get('task')||'', csrf='', creation='', busy=false;
 const node=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
 const notice=text=>{byId('notice').textContent=text;};
@@ -93,22 +93,23 @@ selector.onchange=()=>{
   history.replaceState(null,'','?task='+encodeURIComponent(selected));
   refresh();
 };
-form.oninput=()=>{creation='';};
-form.addEventListener('reset',()=>setTimeout(()=>teamProfile?.apply(null),0));
+form.oninput=()=>{creation='';syncConsentRecipient?.();};
+form.addEventListener('reset',()=>setTimeout(()=>{teamProfile?.apply(null);syncConsentRecipient?.();},0));
 form.onsubmit=async event=>{
   event.preventDefault();if(busy)return;busy=true;
   try{
     const body=Object.fromEntries(new FormData(form));
     if (routerEnabled && body.workflow==='outer') {
+      const choices=teamProfile?.choices();
       const consent=byId('router-consent');
       if (!consent.checked) {
-        notice('登记前请确认是否同意将本单填写的文字发送给 Codex。');
+        notice('登记前请确认是否同意发送本单填写的文字。');
         consent.focus();
         return;
       }
       body.allow_model_input=true;
-      const choices=teamProfile?.choices();
       if (choices) body.team_roles=choices;
+      if (Object.values(choices || {}).some(choice=>choice.runtime==='antigravity-cli')) body.allow_antigravity_input=true;
     }
     if(body.workflow!=='outer' || !body.team_review_mode)delete body.team_review_mode;
     body.name=body.name.trim() || Array.from(body.goal.trim()).slice(0,80).join('');
@@ -164,7 +165,7 @@ async function renewSession(){csrf=(await request('/api/session')).csrf;}
 async function start(){try{await renewSession();
   const outer=outerMounted ? null : await request('/api/outer');
   if(outer?.enabled && (outer.goal_team_enabled || outer.drafts?.some(row=>row.approval_terms?.execution_profile))){
-    const [{mountGoalTeam,mountTeamReviewControl,mountTeamProfileControl},{callHistory}]=await Promise.all([import('./goal_team.js'),import('./outer.js')]);
+    const [{mountGoalTeam,mountTeamReviewControl,mountTeamProfileControl,teamUsesAntigravity,teamRecipient},{callHistory}]=await Promise.all([import('./goal_team.js'),import('./outer.js')]);
     const sheet=node('link','');sheet.rel='stylesheet';sheet.href=new URL('goal_team.css',scriptURL);document.head.append(sheet);
     goalTeam=mountGoalTeam(byId('goal-team'),{
       request,renewSession,initial:outer,callHistory,
@@ -183,6 +184,16 @@ async function start(){try{await renewSession();
     if(routerEnabled) {
       syncTeamReview=mountTeamReviewControl(byId('outer-opt-in'));
       teamProfile=mountTeamProfileControl(byId('team-review-field'),()=>request('/api/outer/team-options'));
+      syncConsentRecipient=()=>{
+        let google=false;
+        try { google=teamUsesAntigravity(teamProfile.choices()); } catch {}
+        const label=byId('router-consent-label');
+        const title='允许把本单填写的名称、目标和完成标准发送给 '+teamRecipient(google);
+        if (label && label.textContent!==title) {
+          byId('router-consent').checked=false;
+          label.textContent=title;
+        }
+      };
     }
     syncGoalMode();
     if(new URLSearchParams(location.search).has('new'))launch.click();

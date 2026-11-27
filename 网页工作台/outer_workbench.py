@@ -3,7 +3,7 @@ import re
 
 from workbench import Problem
 from superagent.goal_team_records import ADAPTIVE_REVIEW, TEAM_REVIEW_MODES
-from superagent.team_profiles import new_team_profile
+from superagent.team_profiles import new_team_profile, uses_antigravity
 
 
 def create_task(workbench, body, *, source='web', legacy_fixture=False):
@@ -54,6 +54,10 @@ def create_task(workbench, body, *, source='web', legacy_fixture=False):
             fields['execution_profile'] = new_team_profile(choices)
         except ValueError as error:
             raise Problem(str(error)) from None
+        if uses_antigravity(fields['execution_profile']):
+            if body.get('allow_antigravity_input') is not True:
+                raise Problem('请确认将本单已授权内容发送给 Google Antigravity', 409)
+            fields['allow_antigravity_input'] = True
     request = body.get('request_id')
     if not fields['goal'] or not isinstance(request, str) or not re.fullmatch('[a-f0-9-]{36}', request):
         raise Problem('请填写工单目标，并使用有效的请求编号')

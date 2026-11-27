@@ -36,6 +36,8 @@ INNER_REPAIR_STATUS = {
 def dispatch(service, source, command, body):
     """身份来自本机 session 或已经验证的桥签名，调用方不能指定 actor。"""
     consent = {'allow_model_input': True} if source == 'web' and body.get('allow_model_input') is True else {}
+    if consent and body.get('allow_antigravity_input') is True:
+        consent['allow_antigravity_input'] = True
     if command == 'list':
         return [dict(row,journey=journey(row)) for row in service.list(OWNER)]
     if command == 'event':
@@ -46,7 +48,8 @@ def dispatch(service, source, command, body):
     if command == 'submit':
         intent = body.get('intent')
         if intent == 'proposal':
-            if set(body) != {'intent','direction_owner','ticket_id','revision','request_id','allow_model_input'}:
+            expected = {'intent','direction_owner','ticket_id','revision','request_id','allow_model_input'}
+            if set(body) - {'allow_antigravity_input'} != expected:
                 raise Problem('请选择原工单的方案处理方式')
             return service.submit(source=source, source_event_id=body['request_id'], actor_id=OWNER,
                                   text='', ticket_id=body['ticket_id'], expected_ticket_revision=body['revision'],

@@ -194,12 +194,12 @@ def candidate_read_challenge(checkpoint, files, read_paths=None):
             '取证后打开文件内容作判断，摘要里无需复制校验值。\n' + commands + '\n'), checks
 
 
-def draft_read_recorded(tools, files, paths):
+def draft_read_recorded(tools, files, paths, *, antigravity=False):
     observed = set()
     if not isinstance(tools,list):
         return False
     for tool in tools:
-        if (not isinstance(tool,dict) or tool.get('name') != 'shell'
+        if (not isinstance(tool,dict) or tool.get('name') != ('antigravity_context' if antigravity else 'shell')
                 or tool.get('settled') is not True or tool.get('paired') is not True
                 or tool.get('status') != 'completed' or tool.get('exit_code') != 0
                 or not isinstance(tool.get('candidate_reads'),list)):
@@ -219,9 +219,10 @@ def handoff_read_paths(checkpoint, evidence, *, whole_candidate=False):
     return sorted(paths & checkpoint['files'].keys())
 
 
-def handoff_read_recorded(tools, checkpoint, evidence, *, whole_candidate=False):
+def handoff_read_recorded(tools, checkpoint, evidence, *, whole_candidate=False, antigravity=False):
     return draft_read_recorded(tools, checkpoint['files'],
-                               handoff_read_paths(checkpoint,evidence,whole_candidate=whole_candidate))
+                               handoff_read_paths(checkpoint,evidence,whole_candidate=whole_candidate),
+                               antigravity=antigravity)
 
 
 def validate_draft_observations(observations, files=None):

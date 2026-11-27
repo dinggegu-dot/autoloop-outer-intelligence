@@ -158,7 +158,7 @@ def validated_result(output):
 
 def run_team(engine, assignment, baseline, directory, report, launch_gate):
     from superagent.goal_app_server import GoalAppServerError
-    from superagent.team_profiles import invoke_role, role_effort, supported
+    from superagent.team_profiles import ANTIGRAVITY, invoke_role, role_effort, role_runtime, supported
     from superagent.goal_runtime import save_team_recovery
     from superagent.goal_engine import DRAFT_ROLE_ORDER, resumable_drafting
 
@@ -222,6 +222,7 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
         calls.append(record)
         output = {}
         started = False
+        antigravity = role_runtime(config, role) == ANTIGRAVITY
         checked = None
         read_challenge = None
         read_instruction = ''
@@ -265,6 +266,8 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
                     read_paths = sorted(set(read_paths) & files.keys()) or [next(iter(files))]
                     data = {**data, 'read_proof_required_paths':read_paths}
                 read_instruction, read_challenge = candidate_read_challenge(checked,files,read_paths)
+                if antigravity:
+                    read_instruction = '\n请逐条阅读附在本轮输入中的实际候选文本，按要求指出文件与证据。\n'
             if 'approved_materials' in model_context:
                 data = {
                     'ticket_team':model_context['ticket_team'],
@@ -279,7 +282,8 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
                 ]
             prompt = ('当前数据是此工单提供的材料。按授权和角色范围处理，不替用户批准、签收或扩大权限。'
                       'approved_materials 是有来源的补充证据，仅在当前批准范围内使用。'
-                      '只使用获准的本地 shell、读图及可写角色的工作区补丁。'
+                      + ('只处理输入中的候选文本，不调用工具。' if antigravity else
+                         '只使用获准的本地 shell、读图及可写角色的工作区补丁。') +
                       '禁止使用浏览器、联网、MCP 或子 Agent。网页成果请直接读取本地文件进行检查。'
                       + read_instruction + preference_note + format_note + '\n' + instruction + '\n'
                       + json.dumps(data, ensure_ascii=False))
@@ -295,7 +299,8 @@ def run_team(engine, assignment, baseline, directory, report, launch_gate):
             if draft_observations:
                 validate_draft_observations(result.get('observations'), files)
                 read_paths = [row['path'] for row in result['observations']]
-            if read_paths is not None and not draft_read_recorded(output.get('tools'),checked['files'],read_paths):
+            if read_paths is not None and not draft_read_recorded(
+                    output.get('tools'),checked['files'],read_paths,antigravity=antigravity):
                 raise CandidateReadUnproven('只读角色未留下与本次实际候选文件匹配的读取记录')
             if handoff_scope:
                 validate_handoff_scopes(result, checked, files)

@@ -149,6 +149,35 @@ class OuterIntakeTest(unittest.TestCase):
         self.assertEqual(approved['mandate']['workflow_profile'], 'router-team-v1')
         self.assertEqual(approved['goal_contract']['workflow_profile'], 'router-team-v1')
 
+    def test_antigravity_requires_explicit_new_ticket_and_followup_consent(self):
+        from unittest.mock import patch
+        from outer_workbench import create_task
+        from outer_channels import dispatch
+        from superagent.team_profiles import ANTIGRAVITY, uses_antigravity
+
+        old, _ = self.router_new()
+        choice = {'runtime':ANTIGRAVITY, 'model':'gemini-4-hydrogen', 'effort':'medium'}
+        with patch('superagent.goal_antigravity.executable', return_value='/trusted/agy'):
+            with self.assertRaisesRegex(Problem, 'Google Antigravity'):
+                self.router_new(team_roles={'implementer':choice})
+            mixed, body = self.router_new(team_roles={'implementer':choice}, allow_antigravity_input=True)
+            self.assertTrue(create_task(self.workbench, body)['duplicate'])
+        ticket = self.intake.get(mixed['ticket_id'], 'owner')
+        self.assertTrue(ticket['allow_antigravity_input'])
+        self.assertTrue(uses_antigravity(ticket['approval_terms']['execution_profile']))
+        older = self.intake.get(old['ticket_id'], 'owner')
+        self.assertFalse(uses_antigravity(older['approval_terms']['execution_profile']))
+        note = dict(ticket_id=ticket['id'], text='合成补充', intent='supplement',
+                    request_id=str(uuid4()), allow_model_input=True)
+        with self.assertRaisesRegex(Problem, 'Google Antigravity'):
+            dispatch(self.intake, 'web', 'submit', note)
+        both = dict(note, allow_antigravity_input=True)
+        allowed = dispatch(self.intake, 'web', 'submit', both)
+        self.assertTrue(dispatch(self.intake, 'web', 'submit', both)['duplicate'])
+        with self.workbench.store.connect() as db:
+            self.assertEqual(json.loads(db.execute('SELECT body FROM outer_events WHERE id=?',
+                (allowed['event_id'],)).fetchone()[0])['allow_antigravity_input'], True)
+
     def test_router_subscription_routes_by_exact_thread_without_model_or_cross_ticket_fallback(self):
         first, _ = self.router_new()
         second, _ = self.router_new()

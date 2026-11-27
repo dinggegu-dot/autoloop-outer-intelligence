@@ -43,7 +43,22 @@ class TeamProfileTest(TestCase):
                         {'model':'unknown'}, {'effort':'max'}, {'executable':'/usr/bin/sh'}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 profiles.new_team_profile({'lead':dict(choice, **changes)})
-        self.assertEqual(set(profiles.team_options()['agents']), {'codex-app-server'})
+        with patch('superagent.goal_antigravity.executable', return_value=None):
+            self.assertEqual(set(profiles.team_options()['agents']), {'codex-app-server'})
+
+    def test_antigravity_choices_freeze_separately_from_existing_codex_profiles(self):
+        choice = {'runtime':profiles.ANTIGRAVITY, 'model':'gemini-4-hydrogen', 'effort':'high'}
+        with patch('superagent.goal_antigravity.executable', return_value='/trusted/agy'):
+            frozen = profiles.new_team_profile({'advisor':choice, 'implementer':choice})
+        self.assertEqual(frozen['version'], profiles.MIXED_VERSION)
+        self.assertTrue(profiles.supported(frozen))
+        self.assertTrue(profiles.uses_antigravity(frozen))
+        self.assertEqual(profiles.role_runtime(frozen, 'lead'), 'codex-app-server')
+        self.assertFalse(profiles.supported(dict(frozen, version=profiles.SELECTED_VERSION)))
+        with patch('superagent.goal_antigravity.executable', return_value=None):
+            self.assertTrue(profiles.supported(frozen))
+            with self.assertRaises(ValueError):
+                profiles.new_team_profile({'implementer':choice})
 
     def test_alternative_coding_agent_uses_same_readonly_role_contract(self):
         future = dict(profiles.new_team_profile(), version=4, role_runtimes={'advisor':'fixture-agent'})

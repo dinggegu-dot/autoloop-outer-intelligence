@@ -9,8 +9,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 BLOCKED_PATH = re.compile(r'(^|/)(\.runtime|\.env(?:\..*)?|验收证据|private\.json|settings\.json|secrets\.env|config\.local\.json|master\.key)(/|$)|\.(?:key|pem|db|sqlite3?)(?:-wal|-shm)?$')
-# 经审查的界面肖像。只有这两个路径和文件摘要可通过二进制检查。
+# 经审查的界面素材和合成工单截图按路径与摘要登记。
 AUDITED_IMAGES = {
+    'docs/assets/autoloop-workbench.png': '8c9135cf7af4d3d50a32c9edf71f49918d4b6729c7a184b0eba08573b2a833f3',
     'scripts/assets/odyssey-team/bowser.png': '86bb10f2a62cce0c9e05a7717fac976636a51c88a0d6176a704b843067c09e44',
     'scripts/assets/odyssey-team/peach.png': '4d7e31f365ae31daa79fbd9b6468ce90e3002f46ad7367cb854e576eadfe9feb',
 }

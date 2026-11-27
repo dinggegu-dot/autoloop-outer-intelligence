@@ -238,6 +238,13 @@ export function mountTeamReviewControl(anchor, initial='') {
   return sync;
 }
 
+const ANTIGRAVITY_RUNTIME = 'antigravity-cli';
+export const teamUsesAntigravity = choices => Object.values(choices || {}).some(
+  choice => choice?.runtime===ANTIGRAVITY_RUNTIME
+);
+export const teamRecipient = google => google ? 'Codex 和 Google Antigravity' : 'Codex';
+const agentLabel = runtime => ({'codex-app-server':'Codex','antigravity-cli':'Google Antigravity'})[runtime] || runtime;
+
 export function mountTeamProfileControl(anchor, loadOptions, {initial=null, onSave=null}={}) {
   const panel=el('details',null,'team-profile-options');
   const summary=el('summary');
@@ -764,9 +771,11 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     ++loadVersion;
     confirmation = fn; confirmBox.showModal(); cancelButton.focus();
   }
-  function askModelInputConsent(purpose, label, submit, consequence='') {
-    approveAction('允许发送本次内容给 Codex 模型？',
-      [purpose,consequence].filter(Boolean).join('\n'),label,()=>submit({allow_model_input:true}));
+  function askModelInputConsent(row, purpose, label, submit, consequence='') {
+    const google=row.allow_antigravity_input===true;
+    approveAction('允许发送本次内容给 '+teamRecipient(google)+'？',
+      [purpose,consequence].filter(Boolean).join('\n'),label,
+      ()=>submit({allow_model_input:true,...(google?{allow_antigravity_input:true}:{})}));
   }
   function route() {
     const query = new URLSearchParams(location.search);
@@ -1011,7 +1020,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         const strength=role==='lead' && config.efforts && config.comparison_lead_effort!==config.efforts.lead
           ? '常规'+efforts[config.efforts.lead]+'，比选'+efforts[config.comparison_lead_effort]
           : efforts[config.efforts?.[role]];
-        return [roleNames[role] || role,runtime==='codex-app-server' ? 'Codex' : runtime,model,strength].filter(Boolean).join(' · ');
+        return [roleNames[role] || role,agentLabel(runtime),model,strength].filter(Boolean).join(' · ');
       }));
       if(config.max_roles_per_assignment)copy(budget,'每次派工角色轮次上限',String(config.max_roles_per_assignment));
       if(config.max_roles_per_ticket)copy(budget,'整单角色轮次上限',String(mandate.team_role_limit ?? config.max_roles_per_ticket));
@@ -1148,7 +1157,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         answer:{option_id,text},...consent,
       },feedback,'选择已记录，正在刷新原单。',draft);
       if (requiresModelConsent(row) && text) {
-        askModelInputConsent('你填写的意见将发送给 Codex 模型，用于继续处理这张工单。','同意并提交',submit);
+        askModelInputConsent(row,'你的意见会用于继续处理这张工单。','同意并提交',submit);
       } else submit();
     };
     const actions=el('div',null,'goal-actions');
@@ -1185,7 +1194,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const submit=text=>{
       const send=(consent={})=>perform(row,'submit',{text,question_id:q.question_id,...consent},feedback,'澄清回复已登记。',draft);
       if (requiresModelConsent(row)) {
-        askModelInputConsent('这条澄清答复将发送给 Codex 模型，用于补齐原单条件。','同意并提交',send);
+        askModelInputConsent(row,'这条澄清答复会用于补齐原单条件。','同意并提交',send);
       } else send();
     };
     const options=el('div',null,'goal-actions');
@@ -1214,7 +1223,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     const actions=el('div',null,'goal-actions');
     const send=(direction_owner,description)=>{
       const submit=consent=>perform(row,'submit',{intent:'proposal',direction_owner,...consent},feedback,'已记录方案选择，团队正在整理本单。',null,'progress');
-      askModelInputConsent('团队会重新查看这张单已获准使用的要求。','同意并继续',submit,description);
+      askModelInputConsent(row,'团队会重新查看这张单已获准使用的要求。','同意并继续',submit,description);
     };
     actions.append(writeButton('先给我方案','goal-request-team-plan',()=>send('owner','比较后由我选择方案'),true),
       writeButton('让团队选方案','goal-delegate-team-plan',()=>send('team','比较后由团队采用推荐方案')));
@@ -1265,7 +1274,8 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     if (row.ticket_team) {
       const names={lead:'负责人',implementer:'执行者',advisor:'只读顾问',design_advisor:'只读顾问',reviewer:'独立验收者'};
       const used=[...new Set((execution?.team_activity || []).filter(call=>call.status==='completed' && names[call.role] && call.model)
-        .map(call=>[names[call.role],call.model,{medium:'中等',high:'高'}[call.effort]].filter(Boolean).join(' ')))];
+        .map(call=>[names[call.role],call.runtime===ANTIGRAVITY_RUNTIME ? agentLabel(call.runtime) : '',
+          call.model,{medium:'中等',high:'高'}[call.effort]].filter(Boolean).join(' ')))];
       if (used.length) parent.append(el('p','已完成的角色调用 · '+used.join(' · '),'goal-muted'));
     }
     if (!steps.length) parent.append(el('p','尚无已登记的执行步骤。','goal-muted'));
@@ -1569,7 +1579,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       const submit=(consent={})=>perform(row,'return_artifact',{...reviewed,reason,...consent},
         feedback,'已记录 '+name+' 的退回理由。',draft,'artifacts');
       if (requiresModelConsent(row)) {
-        askModelInputConsent('退回 '+name+' 后，退回理由将发送给 Codex 模型，用于继续修改这版交付。','同意并退回',submit);
+        askModelInputConsent(row,'退回 '+name+' 后，理由会用于继续修改这版交付。','同意并退回',submit);
       } else submit();
     }));
     parent.append(rejection);
@@ -1690,7 +1700,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
       if (!text) { feedback.textContent='先写下这次想改的地方或想追问的问题。'; field.focus(); return; }
       const submit=consent=>perform(row,'submit',{intent:'continue',text,candidate:base.assignment,
         artifact_sha256:base.artifact_sha256,...consent},feedback,'本轮要求已提交到原单。',draft,'progress');
-      askModelInputConsent('团队将收到这次要求，在这张工单上接着处理。','同意并开始',submit);
+      askModelInputConsent(row,'小队会用这次要求和选定的已交付版本，在原单继续修改。','同意并开始',submit);
     },true));
     parent.append(form);
   }
@@ -1727,7 +1737,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         const submit=(consent={})=>perform(row,'submit',{intent:'supplement',text,...consent},
           status,'补充已登记到原单。',draft);
         if (requiresModelConsent(row))
-          askModelInputConsent('这次补充会发送给 Codex，作为本单团队处理时的参考。','同意并补充',submit);
+          askModelInputConsent(row,'这次补充会作为本单小队处理时的参考。','同意并补充',submit);
         else submit();
       }));
     }
@@ -1799,13 +1809,17 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
     diagnostics.id='goal-section-outer-history';
     for (const item of execution?.team_activity || []) {
       const roleLabel={lead:'负责人',advisor:'只读顾问',design_advisor:'设计顾问',implementer:'执行者',reviewer:'独立复核者'}[item.role] || item.role;
-      const activity=details([roleLabel,item.model,item.effort].filter(Boolean).join(' · '),'activity-'+(item.turn || item.assignment));
+      const google=item.runtime===ANTIGRAVITY_RUNTIME;
+      const activity=details([roleLabel,google?agentLabel(item.runtime):'',item.model,item.effort].filter(Boolean).join(' · '),
+        'activity-'+(item.turn || item.assignment));
       copy(activity,'回执',item.summary);
       const tokens=item.usage?.total_tokens;
       activity.append(el('p',Number.isSafeInteger(tokens) && tokens>=0 ? '已上报 '+tokens.toLocaleString('zh-CN')+' tokens' : '用量未报告','goal-muted'));
       copy(activity,'会话与轮次',[item.session,item.turn].filter(Boolean).join(' / '));
       copy(activity,'派工',item.assignment);
-      textList(activity,'工具记录',item.tools);
+      if (google) {
+        textList(activity,'已提交给本轮的候选文本',item.tools?.flatMap(tool=>(tool.candidate_reads || []).map(file=>file.path)));
+      } else textList(activity,'工具记录',item.tools);
       diagnostics.append(activity);
     }
     parent.append(diagnostics);
@@ -1859,7 +1873,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         feedback,row.ticket_team?'变更请求已登记。':'补充或修改已登记。',draft);
       const replacement=replace_requirement_ids.length ? '替换选中的 '+replace_requirement_ids.length+' 项要求，并重新核对契约。' : '';
       if (requiresModelConsent(row)) {
-        askModelInputConsent('你填写的要求将发送给 Codex 模型，用于重新整理本单的目标和验收条件。',
+        askModelInputConsent(row,'你填写的要求会用于重新整理本单的目标和验收条件。',
           '同意并提交',submit,replacement);
       } else if(replacement)approveAction('确认替换原要求',replacement,'确认替换',submit);
       else submit();
@@ -1877,7 +1891,7 @@ export function mountGoalTeam(root, {request, renewSession, initial, regularOpen
         const text='撤回所选模型建议';
         const submit=consent=>perform(row,'submit',{text,intent:'change',withdraw_requirement_ids,...consent},
           status,'撤回请求已登记。',withdrawn);
-        askModelInputConsent('团队会收到撤回 '+withdraw_requirement_ids.length+' 项建议的请求，并重新整理本单的目标和验收条件。',
+        askModelInputConsent(row,'团队会收到撤回 '+withdraw_requirement_ids.length+' 项建议的请求，并重新整理本单的目标和验收条件。',
           '同意并撤回',submit);
       }));
       update.append(withdrawal);
