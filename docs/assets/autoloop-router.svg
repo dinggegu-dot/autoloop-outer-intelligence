@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1120" width="1280" height="1120" role="img" aria-labelledby="title desc" xml:lang="zh-CN">
+<title id="title">Router 层怎么安排工单</title><desc id="desc">Router 登记工单和订阅，按批准和名额派工。A 单的后续消息回 A 团队，A 单等用户时 B 单可使用空位。</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="#486674"/></marker></defs>
+<g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<rect x="0" y="0" width="1280" height="1120" rx="0" fill="#f3f6f7" stroke="none" stroke-width="1.4"/>
+<text x="48" y="82" font-size="53" font-weight="700" fill="#17313e">Router 层怎么安排工单</text>
+<text x="50" y="132" font-size="24" font-weight="400" fill="#3d5a68">每张单有自己的团队。资料、选择和回执都跟着原工单走。</text>
+<rect x="38" y="165" width="1204" height="217" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="166" width="1202" height="58" rx="17" fill="#e6eef8" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="201" width="1202" height="22" rx="0" fill="#e6eef8" stroke="none" stroke-width="1.4"/>
+<text x="62" y="204" font-size="28" font-weight="700" fill="#28578a">新单怎么分出去</text>
+<text x="1218" y="203" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">工单与小队绑定</text>
+<g class="node" data-box="62 245 340 115">
+<rect x="62" y="245" width="340" height="115" rx="14" fill="#e9f0f2" stroke="#aec3cd" stroke-width="1.4"/>
+<text x="80" y="281" font-size="25" font-weight="700" fill="#2b5062">在工作台提交目标</text>
+<text x="80" y="313" font-size="20" font-weight="400" fill="#3d5a68">保留用户原话。</text>
+<text x="80" y="342" font-size="20" font-weight="400" fill="#3d5a68">确认哪些文字可发送给 Codex。</text>
+</g>
+<g class="node" data-box="470 245 340 115">
+<rect x="470" y="245" width="340" height="115" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="488" y="281" font-size="25" font-weight="700" fill="#28578a">登记工单与订阅</text>
+<text x="488" y="313" font-size="20" font-weight="400" fill="#3d5a68">把每张单绑定给自己的团队。</text>
+<text x="488" y="342" font-size="20" font-weight="400" fill="#3d5a68">接单团队整理目标和验收。</text>
+</g>
+<g class="node" data-box="878 245 340 115">
+<rect x="878" y="245" width="340" height="115" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="896" y="281" font-size="25" font-weight="700" fill="#28578a">本轮批准后按名额派工</text>
+<text x="896" y="313" font-size="20" font-weight="400" fill="#3d5a68">带上已批准范围、资料和权限。</text>
+</g>
+<polyline points="402,302 470,302" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="810,302 878,302" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="38" y="410" width="1204" height="254" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="411" width="1202" height="58" rx="17" fill="#e5f1eb" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="446" width="1202" height="22" rx="0" fill="#e5f1eb" stroke="none" stroke-width="1.4"/>
+<text x="62" y="449" font-size="28" font-weight="700" fill="#176457">后来补的消息去哪里</text>
+<text x="1218" y="448" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">以工单为归属</text>
+<g class="node" data-box="62 492 340 106">
+<rect x="62" y="492" width="340" height="106" rx="14" fill="#e9f0f2" stroke="#aec3cd" stroke-width="1.4"/>
+<text x="80" y="528" font-size="25" font-weight="700" fill="#2b5062">在 A 单补充或做选择</text>
+<text x="80" y="560" font-size="20" font-weight="400" fill="#3d5a68">继续在原单操作。</text>
+</g>
+<g class="node" data-box="470 492 340 106">
+<rect x="470" y="492" width="340" height="106" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="488" y="528" font-size="25" font-weight="700" fill="#28578a">订阅找到 A 单的归属</text>
+<text x="488" y="560" font-size="20" font-weight="400" fill="#3d5a68">把消息和这一轮工单关联。</text>
+</g>
+<g class="node" data-box="878 492 340 106">
+<rect x="878" y="492" width="340" height="106" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="896" y="528" font-size="25" font-weight="700" fill="#176457">A 单的团队接着办</text>
+<text x="896" y="560" font-size="20" font-weight="400" fill="#3d5a68">沿用这张单的授权与进度。</text>
+</g>
+<polyline points="402,545 470,545" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="810,545 878,545" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="64" y="637" font-size="20" font-weight="400" fill="#3d5a68">B 单继续使用自己的资料和决定。</text>
+<rect x="38" y="692" width="1204" height="352" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="693" width="1202" height="58" rx="17" fill="#f0ebf6" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="728" width="1202" height="22" rx="0" fill="#f0ebf6" stroke="none" stroke-width="1.4"/>
+<text x="62" y="731" font-size="28" font-weight="700" fill="#645281">一张等你决定，其他单怎么继续</text>
+<text x="1218" y="730" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">有空位再安排已获批的工单</text>
+<g class="node" data-box="62 775 340 112">
+<rect x="62" y="775" width="340" height="112" rx="14" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="80" y="811" font-size="25" font-weight="700" fill="#645281">A 单在原单等你决定</text>
+<text x="80" y="843" font-size="20" font-weight="400" fill="#3d5a68">原单显示待选方向和稿件。</text>
+</g>
+<g class="node" data-box="470 775 340 112">
+<rect x="470" y="775" width="340" height="112" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="488" y="811" font-size="25" font-weight="700" fill="#28578a">释放当前执行名额</text>
+<text x="488" y="843" font-size="20" font-weight="400" fill="#3d5a68">保留本单待答事项和稿件。</text>
+</g>
+<g class="node" data-box="878 775 340 112">
+<rect x="878" y="775" width="340" height="112" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="896" y="811" font-size="25" font-weight="700" fill="#176457">B 单有空位即可继续</text>
+<text x="896" y="843" font-size="20" font-weight="400" fill="#3d5a68">B 单仍按自己的授权办理。</text>
+</g>
+<polyline points="402,832 470,832" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="810,832 878,832" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g class="node" data-box="62 924 1156 91">
+<rect x="62" y="924" width="1156" height="91" rx="14" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="80" y="960" font-size="25" font-weight="700" fill="#775221">候选成果和回执回到各自原单</text>
+<text x="80" y="992" font-size="20" font-weight="400" fill="#3d5a68">外层按本轮已批准的标准独立验收。需要本人判断时，由你在原单签收或退回。</text>
+</g>
+<path d="M48 1066H1232" stroke="#cfdee3"/>
+<rect x="49" y="1086" width="15" height="15" rx="3" fill="#e9f0f2" stroke="#aec3cd" stroke-width="1.4"/>
+<text x="74" y="1099" font-size="17" font-weight="400" fill="#2b5062">原单操作</text>
+<rect x="299" y="1086" width="15" height="15" rx="3" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="324" y="1099" font-size="17" font-weight="400" fill="#28578a">登记与调度</text>
+<rect x="549" y="1086" width="15" height="15" rx="3" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="574" y="1099" font-size="17" font-weight="400" fill="#176457">团队继续</text>
+<rect x="799" y="1086" width="15" height="15" rx="3" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="824" y="1099" font-size="17" font-weight="400" fill="#645281">等待决定</text>
+</g>
+</svg>
