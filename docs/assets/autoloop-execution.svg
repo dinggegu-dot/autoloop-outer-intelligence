@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1304" width="1280" height="1304" role="img" aria-labelledby="title desc" xml:lang="zh-CN">
+<title id="title">执行层怎么把工单做完</title><desc id="desc">简单任务由执行者制作并自测。复杂任务由负责人和顾问独立提案、比较、制作和审稿，按需请用户选择，再实施和复验。两条路线交回外层独立验收。</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="#486674"/></marker></defs>
+<g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<rect x="0" y="0" width="1280" height="1304" rx="0" fill="#f3f6f7" stroke="none" stroke-width="1.4"/>
+<text x="48" y="82" font-size="53" font-weight="700" fill="#17313e">执行层怎么把工单做完</text>
+<text x="50" y="132" font-size="24" font-weight="400" fill="#3d5a68">Codex 小队接手本轮派工，按任务的实际取舍决定怎么做。</text>
+<rect x="38" y="165" width="1204" height="212" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="166" width="1202" height="58" rx="17" fill="#e9f0f2" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="201" width="1202" height="22" rx="0" fill="#e9f0f2" stroke="none" stroke-width="1.4"/>
+<text x="62" y="204" font-size="28" font-weight="700" fill="#2b5062">接手本轮派工</text>
+<text x="1218" y="203" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">按这张工单已登记的小队配置</text>
+<g class="node" data-box="62 245 548 111">
+<rect x="62" y="245" width="548" height="111" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="80" y="281" font-size="25" font-weight="700" fill="#28578a">接收本步任务与本轮许可</text>
+<text x="80" y="313" font-size="20" font-weight="400" fill="#3d5a68">核对批准目标、验收项、资料与工作区权限。</text>
+</g>
+<g class="node" data-box="670 245 548 111">
+<rect x="670" y="245" width="548" height="111" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="688" y="281" font-size="25" font-weight="700" fill="#28578a">负责人判断本步怎么做</text>
+<text x="688" y="313" font-size="20" font-weight="400" fill="#3d5a68">有实质取舍或用户明确要求时，安排方案比选。</text>
+</g>
+<polyline points="610,300 670,300" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="38" y="405" width="1204" height="604" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="406" width="1202" height="58" rx="17" fill="#e5f1eb" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="441" width="1202" height="22" rx="0" fill="#e5f1eb" stroke="none" stroke-width="1.4"/>
+<text x="62" y="444" font-size="28" font-weight="700" fill="#176457">两条制作路线</text>
+<text x="1218" y="443" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">根据本步需要调用对应角色</text>
+<text x="62" y="495" font-size="26" font-weight="700" fill="#176457">简单路线 · 直接制作</text>
+<g class="node" data-box="62 516 548 96">
+<rect x="62" y="516" width="548" height="96" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="80" y="552" font-size="25" font-weight="700" fill="#176457">执行者按批准的要求直接做</text>
+<text x="80" y="584" font-size="20" font-weight="400" fill="#3d5a68">在允许的工作区完成本步。</text>
+</g>
+<g class="node" data-box="670 516 548 96">
+<rect x="670" y="516" width="548" height="96" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="688" y="552" font-size="25" font-weight="700" fill="#176457">执行者自测，提交候选成果</text>
+<text x="688" y="584" font-size="20" font-weight="400" fill="#3d5a68">把文件和自测结果一起交回。</text>
+</g>
+<polyline points="610,565 670,565" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="62" y="656" font-size="26" font-weight="700" fill="#645281">复杂路线 · 先比选，再落到实物</text>
+<g class="node" data-box="62 681 340 129">
+<rect x="62" y="681" width="340" height="129" rx="14" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="80" y="717" font-size="25" font-weight="700" fill="#645281">独立提案与比选</text>
+<text x="80" y="749" font-size="20" font-weight="400" fill="#3d5a68">负责人和只读顾问各提一案。</text>
+<text x="80" y="778" font-size="20" font-weight="400" fill="#3d5a68">负责人比较并说明取舍。</text>
+</g>
+<g class="node" data-box="470 681 340 129">
+<rect x="470" y="681" width="340" height="129" rx="14" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="488" y="717" font-size="25" font-weight="700" fill="#645281">出初稿并审稿</text>
+<text x="488" y="749" font-size="20" font-weight="400" fill="#3d5a68">负责人制作，顾问读实物。</text>
+<text x="488" y="778" font-size="20" font-weight="400" fill="#3d5a68">需要时回原单看稿、选方向。</text>
+</g>
+<g class="node" data-box="878 681 340 129">
+<rect x="878" y="681" width="340" height="129" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="896" y="717" font-size="25" font-weight="700" fill="#176457">按方向制作并复验</text>
+<text x="896" y="749" font-size="20" font-weight="400" fill="#3d5a68">执行者制作、自测。</text>
+<text x="896" y="778" font-size="20" font-weight="400" fill="#3d5a68">负责人打开实际候选复验。</text>
+</g>
+<polyline points="402,746 470,746" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="810,746 878,746" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g class="node" data-box="878 863 340 112">
+<rect x="878" y="863" width="340" height="112" rx="14" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="896" y="899" font-size="25" font-weight="700" fill="#775221">发现明确问题就返修</text>
+<text x="896" y="931" font-size="20" font-weight="400" fill="#3d5a68">执行者按范围修，提交新版。</text>
+<text x="896" y="960" font-size="20" font-weight="400" fill="#3d5a68">负责人再打开新版复验。</text>
+</g>
+<polyline points="1048,810 1048,863" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)" stroke-dasharray="7 6"/>
+<polyline points="1218,920 1230,920 1230,746 1218,746" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)" stroke-dasharray="7 6"/>
+<text x="62" y="875" font-size="22" font-weight="400" fill="#3d5a68">需要本人决定时，选择和补充都回到原单。</text>
+<text x="62" y="916" font-size="19" font-weight="400" fill="#3d5a68">负责人、执行者、复核者默认 Sol。两类只读顾问默认 Astra。</text>
+<text x="62" y="949" font-size="19" font-weight="400" fill="#3d5a68">各角色可在建单时选 GPT‑6.2 Sol 或 Astra 与思考强度。</text>
+<rect x="38" y="1037" width="1204" height="195" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="1038" width="1202" height="58" rx="17" fill="#faf2e5" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="1073" width="1202" height="22" rx="0" fill="#faf2e5" stroke="none" stroke-width="1.4"/>
+<text x="62" y="1076" font-size="28" font-weight="700" fill="#775221">两条路线都把结果交回外层</text>
+<text x="1218" y="1075" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">执行层在这里交接</text>
+<g class="node" data-box="62 1118 548 92">
+<rect x="62" y="1118" width="548" height="92" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="80" y="1154" font-size="25" font-weight="700" fill="#176457">封存候选，带回本轮执行回执</text>
+<text x="80" y="1186" font-size="20" font-weight="400" fill="#3d5a68">回执对应实际文件和当前工单版本。</text>
+</g>
+<g class="node" data-box="670 1118 548 92">
+<rect x="670" y="1118" width="548" height="92" rx="14" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="688" y="1154" font-size="25" font-weight="700" fill="#775221">外层按已批准标准独立验收</text>
+<text x="688" y="1186" font-size="20" font-weight="400" fill="#3d5a68">按需要在原单签收，验过的版本可归档下载。</text>
+</g>
+<polyline points="610,1165 670,1165" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M48 1257H1232" stroke="#cfdee3"/>
+<rect x="49" y="1277" width="15" height="15" rx="3" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="74" y="1290" font-size="17" font-weight="400" fill="#28578a">派工与权限</text>
+<rect x="299" y="1277" width="15" height="15" rx="3" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="324" y="1290" font-size="17" font-weight="400" fill="#176457">制作与候选</text>
+<rect x="549" y="1277" width="15" height="15" rx="3" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="574" y="1290" font-size="17" font-weight="400" fill="#645281">比选和审稿</text>
+<rect x="799" y="1277" width="15" height="15" rx="3" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="824" y="1290" font-size="17" font-weight="400" fill="#775221">返修与验收</text>
+</g>
+</svg>

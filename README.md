@@ -2,7 +2,7 @@
 
 Autoloop 是一个在本机运行的任务工作台。你写下想要的结果，Router 会把这张工单交给自己的 Codex 小队。补要求、看方案、做决定和下载成果，都可以回到同一张工单。签收以后也能在原单继续改。
 
-[工单怎么跑](#从目标到交付) · [小队怎么分工](#router-和-codex-小队怎么分工) · [使用效果](#使用效果) · [本机预览](#本机预览)
+[工单怎么跑](#从目标到交付) · [Router 层](#router-层怎么安排工单) · [执行层](#执行层怎么把工单做完) · [使用效果](#使用效果) · [本机预览](#本机预览)
 
 ## 从目标到交付
 
@@ -10,15 +10,21 @@ Autoloop 是一个在本机运行的任务工作台。你写下想要的结果�
 
 [![Autoloop 工单从接单、批准、制作和复验到归档、下载及同单续办的流程](docs/assets/autoloop-workflow.svg)](docs/assets/autoloop-workflow.svg)
 
-团队按本轮批准的标准独立验收。需要本人判断时，你在原单签收或退回这一版。下一轮可以从原单最新交付的文件继续，已归档的历史版仍可下载。[工单流程与续办](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/be19e116fb4f6abe6e1ad8aeef550c2e75326fe8/docs/product/router-ticket-teams.md)
+外层按本轮批准的标准独立验收实际候选。需要本人判断时，你在原单签收或退回这一版。下一轮可以从原单最新交付的文件继续，已归档的历史版仍可下载。[工单流程与续办](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/be19e116fb4f6abe6e1ad8aeef550c2e75326fe8/docs/product/router-ticket-teams.md)
 
-## Router 和 Codex 小队怎么分工
+## Router 层怎么安排工单
 
-Router 登记工单、安排执行名额。工单订阅会把你后来补充的资料、选择和反馈送回负责这张工单的小队。一张单等你决定时会让出名额，其他已批准的工单有空位就能继续。
+Router 登记工单、安排执行名额。工单订阅会把你后来补充的资料、选择和反馈送回负责这张单的小队。一张单等你决定时，会让出名额给其他已批准的工单。
 
-[![Router 负责工单、订阅和调度，Codex 小队负责计划、制作和复验](docs/assets/autoloop-two-layers.svg)](docs/assets/autoloop-two-layers.svg)
+[![Router 层的工单登记、派工与订阅。当 A 单等待决定，获批的 B 单可使用空出的名额](docs/assets/autoloop-router.svg)](docs/assets/autoloop-router.svg)
 
-团队工单的角色都由 Codex 运行。负责人、执行者和复核者默认使用 GPT‑6.2 Sol，只读顾问和复杂设计顾问默认使用 GPT‑6.2 Astra。可在「Agent 小队」保存当前浏览器的常用分工，也可以在新建时为这张单单独选模型和思考强度。[小队配置与实际调用回执](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/be19e116fb4f6abe6e1ad8aeef550c2e75326fe8/evidence/goal-team/select-ticket-team.json)
+## 执行层怎么把工单做完
+
+Codex 小队接手本轮派工。做法清楚时，执行者直接制作和自测。有实质取舍时，负责人和只读顾问各提方案，比较后出初稿、审稿，必要时请你在原单看稿选方向。简单路线自测后交回候选，复杂路线由负责人复验后再交回。两条路线都由外层独立验收。
+
+[![执行层的两条路线。简单任务直接制作和自测，复杂任务经过比选、审稿、制作与复验，有问题时返修](docs/assets/autoloop-execution.svg)](docs/assets/autoloop-execution.svg)
+
+负责人、执行者和复核者默认使用 GPT‑6.2 Sol，只读顾问和复杂设计顾问默认使用 GPT‑6.2 Astra。可在「Agent 小队」保存常用分工，也可以在新建时为本单单独选模型和思考强度。[小队配置与实际调用回执](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/be19e116fb4f6abe6e1ad8aeef550c2e75326fe8/evidence/goal-team/select-ticket-team.json)
 
 ## 使用效果
 
