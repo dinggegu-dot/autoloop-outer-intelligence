@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1126" width="1280" height="1126" role="img" aria-labelledby="title desc" xml:lang="zh-CN">
+<title id="title">Router 和 Codex 小队怎么分工</title><desc id="desc">左侧是 Router 的建单、调度、订阅和回执。右侧是工单小队的负责人、只读顾问、执行者与复核者。每张工单使用自己的配置和授权。</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="#486674"/></marker></defs>
+<g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<rect x="0" y="0" width="1280" height="1126" rx="0" fill="#f3f6f7" stroke="none" stroke-width="1.4"/>
+<text x="48" y="82" font-size="53" font-weight="700" fill="#17313e">Router 和 Codex 小队怎么分工</text>
+<text x="50" y="132" font-size="24" font-weight="400" fill="#3d5a68">Router 管工单、授权和派工。每张工单自己的小队负责把事做完。</text>
+<rect x="38" y="166" width="1204" height="204" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="167" width="1202" height="58" rx="17" fill="#e9f0f2" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="202" width="1202" height="22" rx="0" fill="#e9f0f2" stroke="none" stroke-width="1.4"/>
+<text x="62" y="205" font-size="28" font-weight="700" fill="#2b5062">两层用同一张工单交接</text>
+<g class="node" data-box="62 244 548 105">
+<rect x="62" y="244" width="548" height="105" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="80" y="280" font-size="25" font-weight="700" fill="#28578a">Autoloop 管工单与边界</text>
+<text x="80" y="312" font-size="20" font-weight="400" fill="#3d5a68">按工单保存授权、后续消息、进度和版本。</text>
+</g>
+<g class="node" data-box="670 244 548 105">
+<rect x="670" y="244" width="548" height="105" rx="14" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="688" y="280" font-size="25" font-weight="700" fill="#645281">Codex 负责运行角色会话</text>
+<text x="688" y="312" font-size="20" font-weight="400" fill="#3d5a68">按本单批准的资料与工作区权限执行。</text>
+</g>
+<polyline points="610,297 670,297" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="38" y="398" width="1204" height="620" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="399" width="1202" height="58" rx="17" fill="#e5f1eb" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="434" width="1202" height="22" rx="0" fill="#e5f1eb" stroke="none" stroke-width="1.4"/>
+<text x="62" y="437" font-size="28" font-weight="700" fill="#176457">各自负责哪些事</text>
+<text x="1218" y="436" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">每张工单都有自己的授权和小队配置</text>
+<rect x="62" y="478" width="548" height="467" rx="15" fill="#f1f5f9" stroke="none" stroke-width="1.4"/>
+<rect x="670" y="478" width="548" height="467" rx="15" fill="#f0f6f3" stroke="none" stroke-width="1.4"/>
+<text x="85" y="522" font-size="27" font-weight="700" fill="#28578a">Router · 登记、调度与订阅</text>
+<text x="693" y="522" font-size="27" font-weight="700" fill="#176457">工单小队 · 计划、制作与复验</text>
+<g class="node" data-box="82 543 508 114">
+<rect x="82" y="543" width="508" height="114" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="100" y="579" font-size="25" font-weight="700" fill="#28578a">登记本单，按可用名额派工</text>
+<text x="100" y="611" font-size="20" font-weight="400" fill="#3d5a68">一张工单分到自己的小队，</text>
+<text x="100" y="640" font-size="20" font-weight="400" fill="#3d5a68">制作前核对本轮批准与权限。</text>
+</g>
+<g class="node" data-box="82 674 508 114">
+<rect x="82" y="674" width="508" height="114" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="100" y="710" font-size="25" font-weight="700" fill="#28578a">订阅把后续消息送回本单</text>
+<text x="100" y="742" font-size="20" font-weight="400" fill="#3d5a68">补充资料、决定和反馈跟着工单走。</text>
+<text x="100" y="771" font-size="20" font-weight="400" fill="#3d5a68">其他工单按各自的资料继续。</text>
+</g>
+<g class="node" data-box="82 805 508 114">
+<rect x="82" y="805" width="508" height="114" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="100" y="841" font-size="25" font-weight="700" fill="#28578a">记录回执，给其他单留出名额</text>
+<text x="100" y="873" font-size="20" font-weight="400" fill="#3d5a68">一单等你决定时，释放执行名额。</text>
+<text x="100" y="902" font-size="20" font-weight="400" fill="#3d5a68">已获批准的其他单有空位即可继续。</text>
+</g>
+<g class="node" data-box="690 543 508 82">
+<rect x="690" y="543" width="508" height="82" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="708" y="579" font-size="25" font-weight="700" fill="#176457">负责人 · 默认 Sol</text>
+<text x="708" y="611" font-size="20" font-weight="400" fill="#3d5a68">整理做法，复验实际候选。</text>
+</g>
+<g class="node" data-box="690 639 508 82">
+<rect x="690" y="639" width="508" height="82" rx="14" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="708" y="675" font-size="25" font-weight="700" fill="#645281">只读与复杂设计顾问 · 默认 Astra</text>
+<text x="708" y="707" font-size="20" font-weight="400" fill="#3d5a68">确需取舍时独立提案，也可以审稿。</text>
+</g>
+<g class="node" data-box="690 735 508 82">
+<rect x="690" y="735" width="508" height="82" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="708" y="771" font-size="25" font-weight="700" fill="#176457">执行者 · 默认 Sol</text>
+<text x="708" y="803" font-size="20" font-weight="400" fill="#3d5a68">按本单计划制作、自测和返修。</text>
+</g>
+<g class="node" data-box="690 831 508 82">
+<rect x="690" y="831" width="508" height="82" rx="14" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="708" y="867" font-size="25" font-weight="700" fill="#775221">复核者 · 默认 Sol</text>
+<text x="708" y="899" font-size="20" font-weight="400" fill="#3d5a68">需要复核时，打开实际文件检查。</text>
+</g>
+<text x="82" y="985" font-size="20" font-weight="400" fill="#3d5a68">新建时可为本单选择 GPT‑6.2 Sol 或 Astra 和思考强度。本单续办按登记的小队配置。</text>
+<path d="M48 1057H1232" stroke="#cfdee3"/>
+<rect x="49" y="1077" width="15" height="15" rx="3" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="74" y="1090" font-size="17" font-weight="400" fill="#28578a">工单和调度</text>
+<rect x="299" y="1077" width="15" height="15" rx="3" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="324" y="1090" font-size="17" font-weight="400" fill="#176457">计划与制作</text>
+<rect x="549" y="1077" width="15" height="15" rx="3" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="574" y="1090" font-size="17" font-weight="400" fill="#645281">独立方案和审稿</text>
+<rect x="799" y="1077" width="15" height="15" rx="3" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="824" y="1090" font-size="17" font-weight="400" fill="#775221">复核</text>
+</g>
+</svg>

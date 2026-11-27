@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1166" width="1280" height="1166" role="img" aria-labelledby="title desc" xml:lang="zh-CN">
+<title id="title">Autoloop 的工单怎么跑</title><desc id="desc">用户提交并批准目标。Router 调度。简单任务直接做，复杂任务比较方案后制作与复验。独立验收后在原单归档和继续修改。</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="#486674"/></marker></defs>
+<g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<rect x="0" y="0" width="1280" height="1166" rx="0" fill="#f3f6f7" stroke="none" stroke-width="1.4"/>
+<text x="48" y="82" font-size="53" font-weight="700" fill="#17313e">Autoloop 的工单怎么跑</text>
+<text x="50" y="132" font-size="24" font-weight="400" fill="#3d5a68">从写下目标到签收成果，后续修改可以回到同一张工单。</text>
+<rect x="38" y="166" width="1204" height="213" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="167" width="1202" height="58" rx="17" fill="#e6eef8" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="202" width="1202" height="22" rx="0" fill="#e6eef8" stroke="none" stroke-width="1.4"/>
+<text x="62" y="205" font-size="28" font-weight="700" fill="#28578a">接单与授权</text>
+<text x="1218" y="204" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">从工单工作台发起</text>
+<rect x="38" y="406" width="1204" height="385" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="407" width="1202" height="58" rx="17" fill="#e5f1eb" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="442" width="1202" height="22" rx="0" fill="#e5f1eb" stroke="none" stroke-width="1.4"/>
+<text x="62" y="445" font-size="28" font-weight="700" fill="#176457">制作与复验</text>
+<text x="1218" y="444" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">按任务是否有实质取舍选择做法</text>
+<rect x="38" y="818" width="1204" height="273" rx="18" fill="#fbfcfc" stroke="#cfdee3" stroke-width="1.4"/>
+<rect x="39" y="819" width="1202" height="58" rx="17" fill="#faf2e5" stroke="none" stroke-width="1.4"/>
+<rect x="39" y="854" width="1202" height="22" rx="0" fill="#faf2e5" stroke="none" stroke-width="1.4"/>
+<text x="62" y="857" font-size="28" font-weight="700" fill="#775221">验收、归档与续办</text>
+<text x="1218" y="856" font-size="19" font-weight="400" fill="#3d5a68" text-anchor="end">成果和决定都绑定到这一版</text>
+<g class="node" data-box="62 248 340 108">
+<rect x="62" y="248" width="340" height="108" rx="14" fill="#e9f0f2" stroke="#aec3cd" stroke-width="1.4"/>
+<text x="80" y="284" font-size="25" font-weight="700" fill="#2b5062">写下想要的结果</text>
+<text x="80" y="316" font-size="20" font-weight="400" fill="#3d5a68">说明目标，已想好的条件可补上。</text>
+</g>
+<g class="node" data-box="470 248 340 108">
+<rect x="470" y="248" width="340" height="108" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="488" y="284" font-size="25" font-weight="700" fill="#28578a">Router 登记工单</text>
+<text x="488" y="316" font-size="20" font-weight="400" fill="#3d5a68">原话和后续消息都归在本单。</text>
+</g>
+<g class="node" data-box="878 248 340 108">
+<rect x="878" y="248" width="340" height="108" rx="14" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="896" y="284" font-size="25" font-weight="700" fill="#775221">批准本轮范围</text>
+<text x="896" y="316" font-size="20" font-weight="400" fill="#3d5a68">核对所需成果、验收和权限。</text>
+</g>
+<polyline points="402,302 470,302" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="810,302 878,302" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1048,356 1048,391 231,391 231,406" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g class="node" data-box="62 550 340 118">
+<rect x="62" y="550" width="340" height="118" rx="14" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="80" y="586" font-size="25" font-weight="700" fill="#28578a">判断任务怎么做</text>
+<text x="80" y="618" font-size="20" font-weight="400" fill="#3d5a68">有实质取舍或明确要求时，</text>
+<text x="80" y="647" font-size="20" font-weight="400" fill="#3d5a68">安排方案比选。</text>
+</g>
+<g class="node" data-box="470 488 340 111">
+<rect x="470" y="488" width="340" height="111" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="488" y="524" font-size="25" font-weight="700" fill="#176457">简单步骤直接做</text>
+<text x="488" y="556" font-size="20" font-weight="400" fill="#3d5a68">执行者直接制作、自测。</text>
+</g>
+<g class="node" data-box="470 625 340 143">
+<rect x="470" y="625" width="340" height="143" rx="14" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="488" y="661" font-size="25" font-weight="700" fill="#645281">复杂步骤先比方案</text>
+<text x="488" y="693" font-size="20" font-weight="400" fill="#3d5a68">负责人和只读顾问各提一案。</text>
+<text x="488" y="722" font-size="20" font-weight="400" fill="#3d5a68">负责人出初稿，顾问审稿。</text>
+<text x="488" y="751" font-size="20" font-weight="400" fill="#3d5a68">需要时回原单看稿选方向。</text>
+</g>
+<g class="node" data-box="878 550 340 118">
+<rect x="878" y="550" width="340" height="118" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="896" y="586" font-size="25" font-weight="700" fill="#176457">提交候选成果</text>
+<text x="896" y="618" font-size="20" font-weight="400" fill="#3d5a68">复杂单按所选方向制作，</text>
+<text x="896" y="647" font-size="20" font-weight="400" fill="#3d5a68">再由负责人打开实物复验。</text>
+</g>
+<polyline points="402,609 435,609 435,543 470,543" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="402,609 435,609 435,692 470,692" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="810,543 844,543 844,609 878,609" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="810,692 844,692 844,609 878,609" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1048,668 1048,803 231,803 231,818" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g class="node" data-box="62 900 340 123">
+<rect x="62" y="900" width="340" height="123" rx="14" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="80" y="936" font-size="25" font-weight="700" fill="#775221">按本单标准验收</text>
+<text x="80" y="968" font-size="20" font-weight="400" fill="#3d5a68">按批准的检查项独立核验。</text>
+<text x="80" y="997" font-size="20" font-weight="400" fill="#3d5a68">需要本人判断时签收或退回。</text>
+</g>
+<g class="node" data-box="470 900 340 123">
+<rect x="470" y="900" width="340" height="123" rx="14" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="488" y="936" font-size="25" font-weight="700" fill="#176457">从原单拿成果</text>
+<text x="488" y="968" font-size="20" font-weight="400" fill="#3d5a68">归档后可下载对应版本。</text>
+</g>
+<g class="node" data-box="878 900 340 123">
+<rect x="878" y="900" width="340" height="123" rx="14" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="896" y="936" font-size="25" font-weight="700" fill="#645281">在原单接着改</text>
+<text x="896" y="968" font-size="20" font-weight="400" fill="#3d5a68">从最新交付版提交本轮要求。</text>
+<text x="896" y="997" font-size="20" font-weight="400" fill="#3d5a68">已签收的历史版可以继续下载。</text>
+</g>
+<polyline points="402,962 470,962" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="810,962 878,962" fill="none" stroke="#486674" stroke-width="2.2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="63" y="1064" font-size="19" font-weight="400" fill="#3d5a68">退回后，团队按本版要求修订。需要新增范围时，回原单重新确认。</text>
+<path d="M48 1113H1232" stroke="#cfdee3"/>
+<rect x="49" y="1133" width="15" height="15" rx="3" fill="#e6eef8" stroke="#9cb7d7" stroke-width="1.4"/>
+<text x="74" y="1146" font-size="17" font-weight="400" fill="#28578a">工单与调度</text>
+<rect x="299" y="1133" width="15" height="15" rx="3" fill="#e5f1eb" stroke="#9cbeae" stroke-width="1.4"/>
+<text x="324" y="1146" font-size="17" font-weight="400" fill="#176457">制作与候选</text>
+<rect x="549" y="1133" width="15" height="15" rx="3" fill="#f0ebf6" stroke="#c0aed3" stroke-width="1.4"/>
+<text x="574" y="1146" font-size="17" font-weight="400" fill="#645281">方案与续办</text>
+<rect x="799" y="1133" width="15" height="15" rx="3" fill="#faf2e5" stroke="#cfb18b" stroke-width="1.4"/>
+<text x="824" y="1146" font-size="17" font-weight="400" fill="#775221">授权与验收</text>
+</g>
+</svg>
