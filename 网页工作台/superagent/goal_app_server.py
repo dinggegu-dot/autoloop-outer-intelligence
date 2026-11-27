@@ -17,14 +17,14 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 if __package__:
-    from .team_profiles import codex_models
+    from .team_profiles import CODEX_EFFORTS, codex_models
     from .codex_worker import MODEL, _decode, _matches
     from .goal_codex import (
         GoalCodexError, ProcessTree, _exit_categories, _GATE, _publish,
         _SAMPLE_SECONDS, _SIGNALS, _stop, _write_record, trusted_cli_environment,
     )
 else:
-    from team_profiles import codex_models
+    from team_profiles import CODEX_EFFORTS, codex_models
     from codex_worker import MODEL, _decode, _matches
     from goal_codex import (
         GoalCodexError, ProcessTree, _exit_categories, _GATE, _publish,
@@ -33,7 +33,7 @@ else:
 
 
 _MODELS = codex_models()
-_EFFORTS = {'medium', 'high'}
+_EFFORTS = set(CODEX_EFFORTS)
 _SANDBOXES = {
     'read-only': {'type': 'readOnly', 'networkAccess': False},
     'workspace-write': {

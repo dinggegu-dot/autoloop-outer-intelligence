@@ -25,7 +25,7 @@ class RevisionTest(unittest.TestCase):
         self.wb.revise(self.id,self.body);self.wb.reconcile()
         t=self.store.get(self.id)
         self.assertEqual(t['version'],2);self.assertEqual(t['phase'],'plan');self.assertIsNone(t['approval']);self.assertIsNone(t['review']);self.assertEqual(t['calls'],7);self.assertEqual(t['elapsed_seconds'],20);self.assertEqual(t['decisions'][0]['version'],1)
-        self.assertEqual(t['role_models']['execute'],'deepseek-dsh')
+        self.assertEqual(t['role_models']['execute'],DEFAULT_ROLES['execute'])
         (self.store.workspace(self.id)/'report.md').write_text('第二版内容')
         self.assertEqual(self.wb.artifact(self.id,'report.md',1).read_text(),'第一版原件')
         self.assertEqual(self.wb.preview(self.id,'report.md',1)['content'],'第一版原件')
@@ -94,7 +94,7 @@ class RevisionTest(unittest.TestCase):
             with self.assertRaises(Problem):self.wb.preview(self.id,name)
 
     def test_trusted_role_policy(self):
-        self.assertEqual(role_model(self.store.get(self.id),'execute'),'deepseek-dsh')
+        self.assertEqual(role_model(self.store.get(self.id),'execute'),DEFAULT_ROLES['execute'])
         with self.assertRaises(Problem):self.wb.revise(self.id,{**self.body,'role_models':{**DEFAULT_ROLES,'execute':'arbitrary-shell'}})
         self.assertEqual(role_model({'model':'gpt-6-astra'},'execute'),'gpt-6-astra')
 

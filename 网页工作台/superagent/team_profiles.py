@@ -19,33 +19,70 @@ PROFILES = {1: LEGACY_TEAM, 2: ROUTER_TEAM}
 CURRENT_VERSION = 2
 SELECTED_VERSION = 3
 MIXED_VERSION = 4
+CATALOGUE_VERSION = 5
+CODEX = 'codex-app-server'
 ANTIGRAVITY = 'antigravity-cli'
 ROLE_LABELS = {'lead': '负责人', 'advisor': '只读顾问', 'design_advisor': '复杂设计顾问',
                'implementer': '执行者', 'reviewer': '复核者'}
-EFFORT_LABELS = {'medium': '中等', 'high': '高'}
+EFFORT_LABELS = {'low': '低', 'medium': '中等', 'high': '高', 'xhigh': '超高', 'max': '最高', 'auto': '自动'}
+CODEX_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 V3_AGENTS = {
-    'codex-app-server': {
+    CODEX: {
         'label': 'Codex', 'provider': 'openai', 'roles': tuple(ROLE_LABELS),
         'models': {'gpt-6.2-sol': 'GPT‑6.2 Sol', 'gpt-6.2-astra': 'GPT‑6.2 Astra'},
-        'efforts': tuple(EFFORT_LABELS),
+        'efforts': ('medium', 'high'),
     },
 }
 V4_AGENTS = {
     **V3_AGENTS,
     ANTIGRAVITY: {
         'label': 'Google Antigravity', 'provider': 'google', 'roles': tuple(ROLE_LABELS),
-        'models': {'gemini-4-hydrogen': 'Gemini 4 Hydrogen'}, 'efforts': tuple(EFFORT_LABELS),
+        'models': {'gemini-4-hydrogen': 'Gemini 4 Hydrogen'}, 'efforts': ('medium', 'high'),
     },
 }
-# 冻结的版本仍可对账，即使以后从新工单目录撤下某个选项。
-CODING_AGENTS = deepcopy(V4_AGENTS)
+GOOGLE_MODELS = {
+    'gemini-4-neon': ('Gemini 4 Neon', ('low', 'medium', 'high', 'xhigh')),
+    'gemini-4-carbon': ('Gemini 4 Carbon', ('low', 'medium', 'high')),
+    'gemini-4-hydrogen': ('Gemini 4 Hydrogen', ('low', 'medium', 'high', 'xhigh')),
+    'claude-sonnet-5-5': ('Claude Sonnet 5.5（Thinking）', ('auto',)),
+    'claude-opus-5-5': ('Claude Opus 5.5（Thinking）', ('auto',)),
+}
+LEGACY_GOOGLE_MODELS = {
+    'gemini-4-argon': ('Gemini 4 Argon', ('low', 'medium', 'high')),
+    'gemini-3.8-flash': ('Gemini 3.8 Flash', ('low', 'medium', 'high')),
+    'gpt-oss-120b': ('GPT-OSS 120B', ('medium',)),
+    'claude-sonnet-4-6': ('Claude Sonnet 4.6（Thinking）', ('auto',)),
+    'claude-opus-4-6': ('Claude Opus 4.6（Thinking）', ('auto',)),
+}
+GOOGLE_MODEL_REGISTRY = {**GOOGLE_MODELS, **LEGACY_GOOGLE_MODELS}
+V5_AGENTS = {
+    CODEX: {**V3_AGENTS[CODEX], 'models': {
+        'gpt-6.2-astra': 'GPT‑6.2 Astra', 'gpt-6.2-sol': 'GPT‑6.2 Sol', 'gpt-6.1-terra': 'GPT‑6.1 Terra',
+    }, 'efforts': CODEX_EFFORTS},
+    ANTIGRAVITY: {**V4_AGENTS[ANTIGRAVITY],
+                  'models': {model: spec[0] for model, spec in GOOGLE_MODEL_REGISTRY.items()},
+                  'model_efforts': {model: spec[1] for model, spec in GOOGLE_MODEL_REGISTRY.items()}},
+}
+# 账号能选择的目录与历史档案的合同分开。
+CODING_AGENTS = deepcopy(V5_AGENTS)
 
 
-def selectable_agents():
-    from .goal_antigravity import executable
+def selectable_agents(*, include_antigravity=True):
+    from .goal_antigravity import available_models, executable
 
-    return {runtime: agent for runtime, agent in CODING_AGENTS.items()
-            if runtime in ROLE_ADAPTERS and (runtime != ANTIGRAVITY or executable() is not None)}
+    agents = {CODEX: CODING_AGENTS[CODEX]} if CODEX in CODING_AGENTS else {}
+    if not include_antigravity or ANTIGRAVITY not in CODING_AGENTS:
+        return agents
+    found = available_models() if executable() is not None else {}
+    google = CODING_AGENTS[ANTIGRAVITY]
+    offered = {model: tuple(effort for effort in google['model_efforts'][model] if effort in found.get(model, {}))
+               for model in google['models']}
+    agents[ANTIGRAVITY] = {**google,
+        'models': {model: name for model, name in google['models'].items() if offered[model]},
+        'model_efforts': {model: efforts for model, efforts in offered.items() if efforts},
+        'unavailable_models': {model: google['models'][model] for model in GOOGLE_MODELS if not offered[model]},
+    }
+    return agents
 
 
 def team_options():
@@ -58,32 +95,35 @@ def team_options():
 def new_team_profile(selections=None):
     if selections is None:
         return deepcopy(PROFILES[CURRENT_VERSION])
-    profile = _selected_profile(selections, selectable_agents())
+    mixed = isinstance(selections, dict) and any(isinstance(choice, dict) and choice.get('runtime') == ANTIGRAVITY
+                                                for choice in selections.values())
+    profile = _selected_profile(selections, selectable_agents(include_antigravity=mixed), version=CATALOGUE_VERSION)
     if not supported(profile):
         raise ValueError('当前工单版本尚未登记这组小队选项')
     return profile
 
 
-def _selected_profile(selections, agents):
+def _selected_profile(selections, agents, *, version=SELECTED_VERSION):
     profile = deepcopy(ROUTER_TEAM)
     if type(selections) is not dict or not selections or selections.keys() - ROLE_LABELS.keys():
         raise ValueError('小队配置须选择有效的角色')
-    profile.update(version=SELECTED_VERSION, role_runtimes={}, selections=deepcopy(selections))
+    profile.update(version=version, role_runtimes={}, selections=deepcopy(selections))
     for role, choice in selections.items():
         if (type(choice) is not dict or set(choice) != {'runtime', 'model', 'effort'}
                 or not all(isinstance(value, str) for value in choice.values())):
             raise ValueError('小队配置须包含 Coding Agent、模型和思考强度')
         runtime, model, effort = (choice[key] for key in ('runtime', 'model', 'effort'))
         agent = agents.get(runtime)
+        permitted = agent.get('model_efforts', {}).get(model, agent['efforts']) if agent else ()
         if (agent is None
                 or role not in agent['roles'] or model not in agent['models']
-                or (effort and effort not in agent['efforts'])
+                or (effort and effort not in permitted)
                 or (not effort and (runtime != ROUTER_TEAM['runtime']
-                    or role_effort(ROUTER_TEAM, role, '') not in agent['efforts']))):
-            raise ValueError('所选角色、Coding Agent、模型或思考强度当前不可用')
+                    or role_effort(ROUTER_TEAM, role, '') not in permitted))):
+            raise ValueError('所选 Agent、模型或推理强度当前不可用，请刷新小队设置')
         profile['role_runtimes'][role] = runtime
         profile['roles'][role] = model
-        if runtime == ANTIGRAVITY:
+        if runtime == ANTIGRAVITY and version == SELECTED_VERSION:
             profile['version'] = MIXED_VERSION
         if effort:
             profile['efforts'][role] = effort
@@ -98,11 +138,12 @@ def supported(profile):
     version = profile['version']
     if version in PROFILES:
         return profile == PROFILES[version]
-    registry = {SELECTED_VERSION: V3_AGENTS, MIXED_VERSION: V4_AGENTS}.get(version)
+    registry = {SELECTED_VERSION: V3_AGENTS, MIXED_VERSION: V4_AGENTS, CATALOGUE_VERSION: V5_AGENTS}.get(version)
     if registry is None or 'selections' not in profile:
         return False
     try:
-        return profile == _selected_profile(profile['selections'], registry)
+        return profile == _selected_profile(profile['selections'], registry,
+                                            version=CATALOGUE_VERSION if version == CATALOGUE_VERSION else SELECTED_VERSION)
     except ValueError:
         return False
 
@@ -148,7 +189,7 @@ def invoke_role(profile, role, **kwargs):
 
 
 def codex_models():
-    return set(V3_AGENTS['codex-app-server']['models']) | {
+    return set(V5_AGENTS[CODEX]['models']) | {
         model for profile in PROFILES.values() for role, model in profile['roles'].items()
         if role_runtime(profile, role) == 'codex-app-server'
     }

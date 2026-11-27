@@ -49,6 +49,7 @@ def register(root, config, replace=False):
 
 def probe(root):
     """显式命令才运行一次真实 DeepSeek，仅操作隔离探针目录，限时 60 秒。"""
+    from agent_catalog import DEFAULT_ROLES
     from workbench import Store
     from task_runner import Runner
     config=load_connection(root)
@@ -56,7 +57,8 @@ def probe(root):
     atomic_json(runroot/CONFIG_NAME,config)
     store=Store(runroot)
     task,_=store.create({'name':'DSH 接入探针','goal':'只在当前工作区创建 readiness.txt，内容严格为 DSH_READY。用 shell 读回验证后返回 JSON 回执，artifacts 包含 readiness.txt。不得执行其他业务。',
-                         'acceptance':'真实文件存在且内容为 DSH_READY','request_id':str(uuid.uuid4())})
+                         'acceptance':'真实文件存在且内容为 DSH_READY','request_id':str(uuid.uuid4()),
+                         'role_models':{**DEFAULT_ROLES,'execute':'deepseek-dsh'}})
     store.change(task['id'],lambda t:t.update(time_budget_seconds=60))
     # 不通过 Autoloop 派发、不审批业务；直接验证一次实施引擎。
     result=Runner(store,task['id'],1,{},allow_unverified_dsh=True).call('execute')

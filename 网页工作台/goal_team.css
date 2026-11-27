@@ -497,16 +497,16 @@ body:has(.goal-formal) > .mast nav a[href="/workbench"] { background: #edf3f8; }
 }
 
 .team-profile-options {
-  --team-ink: #18323f;
-  --team-muted: #4d6270;
-  --team-line: #dbe5eb;
-  --team-focus: #297096;
-  --team-theme: #bf3d31;
+  --team-ink: #202123;
+  --team-muted: #5c5e63;
+  --team-line: #dedfe2;
+  --team-focus: #3464a2;
+  --team-theme: #27282b;
   margin-block: 8px;
   padding: 0 12px;
-  border-radius: 16px;
+  border-radius: 12px;
   color: var(--team-ink);
-  background: #f3f7fa;
+  background: #f7f7f8;
 }
 .team-profile-options > summary {
   display: flex;
@@ -539,17 +539,15 @@ body:has(.goal-formal) > .mast nav a[href="/workbench"] { background: #edf3f8; }
 .team-profile-options > p:empty, .team-profile-options button[hidden] { display: none; }
 .team-profile-rows {
   display: grid;
-  gap: 10px;
 }
 .team-profile-role {
   display: grid;
-  grid-template-columns: minmax(0,1.35fr) minmax(0,1fr);
-  gap: 6px 10px;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 8px 12px;
   min-inline-size: 0;
   margin: 0;
   padding: 10px 12px 12px;
-  border-radius: 14px;
-  background: var(--team-card, #fff);
+  border-top: 1px solid var(--team-line);
 }
 .team-profile-role > h3 {
   display: flex;
@@ -602,21 +600,30 @@ body:has(.goal-formal) > .mast nav a[href="/workbench"] { background: #edf3f8; }
   border: 0;
   border-radius: 9px;
   color: var(--team-ink);
-  background: #e8eef3;
+  background: #ebebed;
   cursor: pointer;
   font: inherit;
   font-size: .875rem;
   font-weight: 650;
 }
-.team-profile-actions > button:hover { background: #dce8ee; }
+.team-profile-actions > button:hover { background: #e1e2e4; }
 .team-profile-actions > .team-profile-save { background: var(--team-theme); color: #fff; }
-.team-profile-actions > .team-profile-save:hover { background: #a43027; }
+.team-profile-actions > .team-profile-save:hover { background: #414247; }
+.team-profile-actions > .team-profile-save:disabled { opacity: .55; cursor: default; }
 #formal-default-team { margin-block-end: 16px; }
-#formal-default-team .team-profile-options { margin-block-end: 0; }
-@media (min-width: 1000px) {
-  #formal-default-team .team-profile-rows { grid-template-columns: repeat(2,minmax(0,1fr)); }
+#formal-default-team .team-profile-options { margin-block-end: 0; container-type: inline-size; }
+@container (min-width: 650px) {
+  #formal-default-team .team-profile-role {
+    grid-template-columns: minmax(6.5rem, 1fr) minmax(9rem, 1.2fr) minmax(11rem, 1.5fr) minmax(7.5rem, 1fr);
+    align-items: center;
+  }
+  #formal-default-team .team-profile-role > h3 { grid-column: 1; }
 }
 
-@media (max-width: 359px) {
-  .team-profile-role { grid-template-columns: minmax(0,1fr); }
+@container (max-width: 460px) {
+  #formal-default-team .team-profile-role { grid-template-columns: minmax(0,1fr); }
+  #formal-default-team .team-profile-role label {
+    grid-template-columns: 4rem minmax(0,1fr);
+    align-items: center;
+  }
 }

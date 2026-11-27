@@ -1,9 +1,25 @@
 """显式试点开关和普通新建工单入口共用的接单规则。"""
+import json
 import re
 
 from workbench import Problem
 from superagent.goal_team_records import ADAPTIVE_REVIEW, TEAM_REVIEW_MODES
-from superagent.team_profiles import new_team_profile, uses_antigravity
+from superagent.team_profiles import new_team_profile, supported, uses_antigravity
+
+
+def _registered_profile(store, source, request_id, choices):
+    with store.connect() as db:
+        existing = db.execute(
+            """SELECT json_extract(body,'$.workbench_request.execution_profile')
+               FROM outer_events WHERE source=? AND tenant='default' AND source_event_id=?""",
+            (source, request_id),
+        ).fetchone()
+    if existing is None or existing[0] is None:
+        return new_team_profile(choices)
+    profile = json.loads(existing[0])
+    if not supported(profile) or profile.get('selections') != choices:
+        raise ValueError('同一个请求编号不能更换小队配置')
+    return profile
 
 
 def create_task(workbench, body, *, source='web', legacy_fixture=False):
@@ -44,6 +60,11 @@ def create_task(workbench, body, *, source='web', legacy_fixture=False):
         if source != 'web' or not team_enabled or (mode == ADAPTIVE_REVIEW and not route_team):
             raise Problem('当前入口未启用团队审稿', 409)
         fields['team_review_mode'] = mode
+    request = body.get('request_id')
+    if not fields['goal'] or not isinstance(request, str) or not re.fullmatch('[a-f0-9-]{36}', request):
+        raise Problem('请填写工单目标，并使用有效的请求编号')
+    if body.get('ticket_id') is not None:
+        raise Problem('工作台试点入口仅用于新建工单', 409)
     if 'team_roles' in body:
         if source != 'web' or not route_team:
             raise Problem('当前入口未启用小队配置', 409)
@@ -51,18 +72,13 @@ def create_task(workbench, body, *, source='web', legacy_fixture=False):
             choices = body['team_roles']
             if choices is None:
                 raise ValueError('请选择有效的小队配置')
-            fields['execution_profile'] = new_team_profile(choices)
+            fields['execution_profile'] = _registered_profile(workbench.store, source, request, choices)
         except ValueError as error:
             raise Problem(str(error)) from None
         if uses_antigravity(fields['execution_profile']):
             if body.get('allow_antigravity_input') is not True:
                 raise Problem('请确认将本单已授权内容发送给 Google Antigravity', 409)
             fields['allow_antigravity_input'] = True
-    request = body.get('request_id')
-    if not fields['goal'] or not isinstance(request, str) or not re.fullmatch('[a-f0-9-]{36}', request):
-        raise Problem('请填写工单目标，并使用有效的请求编号')
-    if body.get('ticket_id') is not None:
-        raise Problem('工作台试点入口仅用于新建工单', 409)
     if source == 'web' and body.get('allow_model_input') is True:
         # 只保留建单授权证据，模型快照仍读取名称、目标和完成标准。
         fields['allow_model_input'] = True
