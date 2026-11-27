@@ -203,43 +203,10 @@
 #formal-default-team > :is(h2, .view-intro) { margin-inline: var(--team-header-inset); }
 #formal-default-team > h2 { margin-block: var(--team-header-inset) 6px; line-height: 1.35; }
 
-/* 角色肖像只占标题高度，控制项在窄屏仍使用完整触控尺寸。 */
-:is(#draft-form, #formal-default-team) .team-profile-options > summary::before,
-:is(#draft-form, #formal-default-team) .team-profile-role > h3::before {
-  content: "";
-  flex: none;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: var(--team-portrait) center / contain no-repeat var(--team-badge, #e9eff4);
+#formal-default-team .team-profile-options {
+  margin-inline: var(--team-header-inset);
 }
-:is(#draft-form, #formal-default-team) .team-profile-options > summary::before {
-  --team-portrait: url("/assets/odyssey/red-cappy.png");
-  --team-badge: #fcecea;
-  width: 28px;
-  height: 28px;
-}
-.team-profile-role[data-team-role="lead"] {
-  --team-portrait: url("/assets/odyssey/cap-person.png");
-  --team-card: #fdfefe;
-}
-.team-profile-role[data-team-role="advisor"] {
-  --team-portrait: url("/outer-canary/peach.png");
-  --team-badge: #fcecf2;
-  --team-card: #fff9fb;
-}
-.team-profile-role[data-team-role="design_advisor"] {
-  --team-portrait: url("/assets/odyssey/metro-person.png");
-  --team-badge: #faedeb;
-  --team-card: #fffafa;
-}
-.team-profile-role[data-team-role="implementer"] {
-  --team-portrait: url("/assets/odyssey/mario-sticker.png");
-  --team-badge: #ffede8;
-  --team-card: #fffaf6;
-}
-.team-profile-role[data-team-role="reviewer"] {
-  --team-portrait: url("/outer-canary/bowser.png");
-  --team-badge: #ebf1e5;
-  --team-card: #f9fcf7;
+#view-agents #live-agents[hidden],
+.workspace:has(#view-agents:not([hidden])) .page-heading #page-subtitle {
+  display: none;
 }

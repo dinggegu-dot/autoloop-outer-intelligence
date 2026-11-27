@@ -20,6 +20,7 @@ from execution_policy import ProgressWindow
 
 
 RESULT={'status':'completed','summary':'完成','checks':['已读回文件'],'artifacts':['answer.txt'],'question':'','requested_action':''}
+DSH_ROLES={'plan':'gpt-6-astra','execute':'deepseek-dsh','review':'deepseek-dsh'}
 
 
 class ProtocolTest(unittest.TestCase):
@@ -70,7 +71,8 @@ class EngineIntegrationTest(unittest.TestCase):
         self.fake.write_text('#!'+sys.executable+'\nimport sys\nprint("0.2.2-rc.2")\n')
         self.fake.chmod(0o700)
         self.config={'version':1,'program':str(self.fake),'home':str(self.home),'provider':'deepseek-account','model':'deepseek-flash'}
-        self.task,_=self.store.create({'name':'双引擎测试','goal':'生成真实文件','request_id':str(uuid.uuid4())})
+        self.body={'name':'双引擎测试','goal':'生成真实文件','request_id':str(uuid.uuid4())}
+        self.task,_=self.store.create({**self.body,'role_models':DSH_ROLES})
         self.id=self.task['id']
 
     def connected(self):
@@ -118,12 +120,24 @@ print(json.dumps({'type':'final','reason':{'kind':'completed'},'text':json.dumps
         self.assertEqual(connection_status(self.root)['state'],'unconfigured')
 
     def test_defaults_legacy_and_connection_cannot_be_task_payload(self):
-        self.assertEqual(self.task['role_models'],DEFAULT_ROLES)
+        new,_=self.store.create({**self.body,'request_id':str(uuid.uuid4())})
+        self.assertEqual(new['role_models'],DEFAULT_ROLES)
+        self.assertEqual({route['engine'] for route in resolve_routes(new,self.root).values()},{'codex'})
         old={**self.task,'role_models':LEGACY_ROLES}
         self.assertEqual(resolve_routes(old,self.root)['execute']['engine'],'codex')
-        self.assertEqual(validate_roles(DEFAULT_ROLES)['review'],'deepseek-dsh')
+        self.assertEqual(validate_roles(DSH_ROLES)['review'],'deepseek-dsh')
         with self.assertRaises(ValueError):validate_roles({**DEFAULT_ROLES,'plan':'deepseek-dsh'})
         with self.assertRaises(ValueError):validate_roles({**DEFAULT_ROLES,'execute':'/bin/sh'})
+
+    def test_implicit_replay_keeps_historical_model_assignments(self):
+        from agent_catalog import preserve_implicit_roles
+
+        replay,created=self.store.create(self.body)
+        self.assertFalse(created)
+        self.assertEqual(replay['role_models'],DSH_ROLES)
+        self.assertEqual(preserve_implicit_roles(self.body,self.store)['role_models'],DSH_ROLES)
+        with self.assertRaises(Problem):
+            self.store.create({**self.body,'role_models':DEFAULT_ROLES})
 
     def test_registered_but_unverified_blocks_astra(self):
         atomic_json(self.root/CONFIG_NAME,self.config)
@@ -210,7 +224,7 @@ time.sleep(60)
         launch.assert_not_called()
 
     def test_complete_pipeline_routes_astra_dsh_astra_and_repairs(self):
-        self.store.change(self.id,lambda t:t.update(role_models={**DEFAULT_ROLES,'review':'gpt-6-astra'}))
+        self.store.change(self.id,lambda t:t.update(role_models={**DSH_ROLES,'review':'gpt-6-astra'}))
         self.connected();self.fake_executor()
         fake_codex=self.root/'fake-codex'
         fake_codex.write_text('#!'+sys.executable+'''\nimport sys,json

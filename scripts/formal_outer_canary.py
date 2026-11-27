@@ -242,7 +242,8 @@ class OuterCanary:
         self.origin = f"http://127.0.0.1:{self.port}"
 
     def _request(self, method, route, headers, body=None):
-        connection = HTTPConnection("127.0.0.1", self.port, timeout=5)
+        timeout = 12 if route in ("/api/outer/team-options", "/api/tasks") else 5
+        connection = HTTPConnection("127.0.0.1", self.port, timeout=timeout)
         ticket = client_ticket(self.secret, method, route)
         try:
             connection.request(method, route, body, {**headers, "X-Odyssey-Canary-Gateway": ticket})

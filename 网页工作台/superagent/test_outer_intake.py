@@ -157,11 +157,16 @@ class OuterIntakeTest(unittest.TestCase):
 
         old, _ = self.router_new()
         choice = {'runtime':ANTIGRAVITY, 'model':'gemini-4-hydrogen', 'effort':'medium'}
-        with patch('superagent.goal_antigravity.executable', return_value='/trusted/agy'):
+        with patch('superagent.goal_antigravity.executable', return_value='/trusted/agy'), patch(
+                'superagent.goal_antigravity.available_models',
+                return_value={'gemini-4-hydrogen': {'medium': 'gemini-4-hydrogen-medium'}}):
             with self.assertRaisesRegex(Problem, 'Google Antigravity'):
                 self.router_new(team_roles={'implementer':choice})
             mixed, body = self.router_new(team_roles={'implementer':choice}, allow_antigravity_input=True)
+        with patch('superagent.goal_antigravity.executable', return_value=None):
             self.assertTrue(create_task(self.workbench, body)['duplicate'])
+            with self.assertRaisesRegex(Problem, '不能更换小队配置'):
+                create_task(self.workbench, dict(body, team_roles={'advisor':choice}))
         ticket = self.intake.get(mixed['ticket_id'], 'owner')
         self.assertTrue(ticket['allow_antigravity_input'])
         self.assertTrue(uses_antigravity(ticket['approval_terms']['execution_profile']))

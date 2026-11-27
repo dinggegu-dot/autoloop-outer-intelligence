@@ -9,12 +9,14 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from uuid import NAMESPACE_URL, uuid5
 
 from . import goal_checks
 from .goal_app_server import GoalAppServerError, _Connection, _result_matches, _supervise, _uuid
 from .outer_verification import capture
+from .team_profiles import GOOGLE_MODEL_REGISTRY
 
 
 _SETTINGS = {
@@ -31,6 +33,8 @@ _SETTINGS = {
 }
 _MAX_CONTEXT_BYTES = 180_000
 _SANDBOX = Path('/usr/bin/sandbox-exec')
+_model_cache = {}
+_model_lock = threading.Lock()
 _ARTIFACT_CHANGE = {
     'type': 'object',
     'properties': {
@@ -95,6 +99,47 @@ def _seatbelt(program, staging, private_directories):
         f'(deny file-write* (literal {json.dumps(str(program))}))',
         f'(allow file-read* file-write* (subpath {json.dumps(str(staging), ensure_ascii=False)}))',
     ])
+
+
+def _model_aliases(output):
+    ids = {line.split('\t', 1)[0] for line in output.splitlines() if '\t' in line}
+    result = {}
+    for model, (_, efforts) in GOOGLE_MODEL_REGISTRY.items():
+        for effort in efforts:
+            aliases = (f'{model}-thinking', model) if effort == 'auto' else (f'{model}-{effort}',)
+            slug = next((alias for alias in aliases if alias in ids), None)
+            if slug:
+                result.setdefault(model, {})[effort] = slug
+    return result
+
+
+def _environment(staging):
+    return {'PATH': '/usr/bin:/bin', 'HOME': str(_owner_home()), 'TMPDIR': str(staging), 'LANG': 'en_US.UTF-8'}
+
+
+def available_models():
+    program = executable()
+    if program is None:
+        return {}
+    with _model_lock:
+        expires, models = _model_cache.get(program, (0, {}))
+        if time.monotonic() < expires:
+            return models
+        with tempfile.TemporaryDirectory(prefix='autoloop-google-models-') as temporary:
+            staging = Path(temporary).resolve()
+            policy = staging / 'list.sb'
+            try:
+                policy.write_text(_seatbelt(program, staging, ()))
+                listing = subprocess.run(
+                    [str(_SANDBOX), '-f', str(policy), str(program), '--log-file', str(staging / 'cli.log'), 'models'],
+                    env=_environment(staging), cwd=staging, stdin=subprocess.DEVNULL,
+                    capture_output=True, text=True, timeout=8, check=True,
+                )
+                models = _model_aliases(listing.stdout)
+            except (OSError, subprocess.SubprocessError):
+                models = {}
+        _model_cache[program] = (time.monotonic() + (60 if models else 8), models)
+        return models
 
 
 def _inputs(workspace):
@@ -164,12 +209,13 @@ def _get_event(connection, deadline):
     return connection.read_event(deadline, lambda event: event.get('event') in ('init', 'step_update', 'result'))
 
 
-def _exchange(connection, *, staging, model, schema, packet, deadline, launch_gate, evidence):
+def _exchange(connection, *, staging, model, schema, packet, deadline, launch_gate, evidence,
+              cli_model=None):
     init = _get_event(connection, deadline)
     if init['event'] == 'result' and 'authentication' in init.get('result', {}).get('error', '').lower():
         raise GoalAppServerError('auth_required', '请在本机 Google Antigravity 中确认登录后重试')
     config = init.get('init') or {}
-    if (init['event'] != 'init' or config.get('cwd') != str(staging) or config.get('model') != model
+    if (init['event'] != 'init' or config.get('cwd') != str(staging) or config.get('model') != (cli_model or model)
             or config.get('permission_mode') != 'strict' or config.get('json_schema') != schema):
         raise GoalAppServerError('config_mismatch', 'Antigravity did not apply the approved role settings')
     session = _uuid(init.get('conversation_id'))
@@ -214,6 +260,13 @@ def invoke(*, model, effort, sandbox, prompt, schema, workspace, output_dir, dea
     evidence = dict(requested_model=model, effort=effort, sandbox=sandbox, started_ns=time.time_ns(),
                     usage=None, tools=[])
     try:
+        model_flags = ['--model', model, '--effort', effort]
+        cli_model = None
+        if effort == 'auto':
+            cli_model = available_models().get(model, {}).get(effort)
+            if cli_model is None:
+                raise GoalAppServerError('provider_unavailable', '当前 Antigravity 账号无法使用本单选定的模型')
+            model_flags = ['--model', cli_model]
         workspace = Path(workspace).resolve(strict=True)
         checkpoint, files, occupied = _inputs(workspace)
         response_schema = _response_schema(schema, writable)
@@ -240,19 +293,19 @@ def invoke(*, model, effort, sandbox, prompt, schema, workspace, output_dir, dea
                 raise GoalAppServerError('timeout', 'Antigravity 的角色调用已超过时限')
             command = [
                 str(_SANDBOX), '-f', str(policy), str(program), '--settings', str(settings),
-                '--sandbox', '--disable-slash-commands', '--model', model, '--effort', effort,
+                '--sandbox', '--disable-slash-commands', *model_flags,
                 '--print=', '--input-format', 'stream-json', '--output-format', 'stream-json',
                 '--json-schema', str(schema_path), '--print-timeout', f'{remaining}s',
                 '--log-file', str(staging / 'cli.log'),
             ]
-            env = {'PATH': '/usr/bin:/bin', 'HOME': str(_owner_home()), 'TMPDIR': str(staging), 'LANG': 'en_US.UTF-8'}
+            env = _environment(staging)
             # Process receipts remain in the existing recovery directory. Publication is atomic on the same volume.
             with tempfile.TemporaryDirectory(prefix='role-antigravity-', dir=output_dir) as record:
                 with _supervise(command, output_dir, Path(record), env, cwd=staging) as (process, check, sample):
                     with selectors.DefaultSelector() as streams:
                         reply = _exchange(_Connection(process, streams, check, sample), staging=staging, model=model,
                                           schema=response_schema, packet=packet, deadline=deadline,
-                                          launch_gate=launch_gate, evidence=evidence)
+                                          launch_gate=launch_gate, evidence=evidence, cli_model=cli_model)
         with launch_gate():
             if writable:
                 _apply(workspace, checkpoint, occupied, files, reply['changes'])

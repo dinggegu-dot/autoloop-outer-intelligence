@@ -1,6 +1,11 @@
 """可信角色目录。任务只能选择已登记模型，不能提交命令或凭据。"""
-MODELS = {'gpt-6-astra':'Astra', 'deepseek-dsh':'DeepSeek · DSH', 'gpt-6.1-terra':'Terra', 'gpt-6.1-sol':'Sol'}
-DEFAULT_ROLES = {'plan':'gpt-6-astra','execute':'deepseek-dsh','review':'deepseek-dsh'}
+import json
+from pathlib import Path
+
+
+CODEX_MODELS = {'gpt-6.2-astra': 'GPT‑6.2 Astra', 'gpt-6.2-sol': 'GPT‑6.2 Sol', 'gpt-6.1-terra': 'GPT‑6.1 Terra'}
+MODELS = {**CODEX_MODELS, 'gpt-6-astra': 'Astra', 'deepseek-dsh': 'DeepSeek · DSH', 'gpt-6.1-sol': 'Sol'}
+DEFAULT_ROLES = {'plan': 'gpt-6.2-astra', 'execute': 'gpt-6.2-sol', 'review': 'gpt-6.2-sol'}
 LEGACY_ROLES = {'plan':'gpt-6-astra','execute':'gpt-6.1-terra','review':'gpt-6-astra'}
 ROLE_LABELS = {'plan':'方案设计','execute':'实施执行','review':'独立验收'}
 
@@ -17,9 +22,20 @@ def role_model(task,role):
     return task.get('role_models',{}).get(role,task.get('model','gpt-6-astra'))
 
 
+def preserve_implicit_roles(body, store):
+    """正式工作台还使用旧 Store。无角色参数的重试沿用原工单登记。"""
+    request_id = body.get('request_id')
+    if 'role_models' in body or not isinstance(request_id, str):
+        return body
+    with store.connect() as db:
+        previous = db.execute('SELECT body FROM tasks WHERE request_id=?', (request_id,)).fetchone()
+    if previous:
+        return {**body, 'role_models': json.loads(previous[0]).get('initial_role_models', LEGACY_ROLES)}
+    return body
+
+
 def catalogue(root=None):
     from engine_adapters import connection_status
-    from pathlib import Path
     dsh=connection_status(root or Path(__file__).resolve().parent/'.runtime')
     return {'models':[{'id':key,'name':name} for key,name in MODELS.items()],
             'roles':ROLE_LABELS,'defaults':DEFAULT_ROLES,'adapter':'role-engine-router','dsh':dsh,

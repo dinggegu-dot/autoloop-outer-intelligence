@@ -114,7 +114,6 @@ form.onsubmit=async event=>{
     if(body.workflow!=='outer' || !body.team_review_mode)delete body.team_review_mode;
     body.name=body.name.trim() || Array.from(body.goal.trim()).slice(0,80).join('');
     body.request_id=creation||=crypto.randomUUID();
-    if(body.workflow!=='outer')body.role_models={plan:'gpt-6-astra',execute:'gpt-6-astra',review:'gpt-6-astra'};
     const result=await request('/api/tasks',body);
     if(result.workflow==='outer' && goalTeam){
       creation='';form.reset();syncGoalMode();form.hidden=true;goalTeam.register(result);

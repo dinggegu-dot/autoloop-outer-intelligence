@@ -1,7 +1,7 @@
 // 纯展示函数：内容全部转义，流程状态来自任务记录。
 export const escapeText = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const e=escapeText;
-export const modelName=id=>({'gpt-6-astra':'Astra','deepseek-dsh':'DeepSeek · DSH','gpt-6.1-terra':'Terra','gpt-6.1-sol':'Sol'}[id]||id||'未配置');
+export const modelName=id=>({'gpt-6.2-astra':'GPT‑6.2 Astra','gpt-6.2-sol':'GPT‑6.2 Sol','gpt-6.1-terra':'GPT‑6.1 Terra','gpt-6-astra':'Astra','deepseek-dsh':'DeepSeek · DSH','gpt-6.1-sol':'Sol'}[id]||id||'未配置');
 export const modelFor=(task,role)=>task.role_models?.[role]||task.model;
 export const roleNames={plan:'方案设计',execute:'实施执行',review:'独立验收'};
 export const panels={overview:'总览',plan:'方案与执行',results:'成果',changes:'调整与记录'};

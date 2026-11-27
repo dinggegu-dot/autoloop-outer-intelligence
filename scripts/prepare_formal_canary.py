@@ -1,8 +1,11 @@
 """构建正式工作台的 Codex 团队入口和签名回环服务。"""
 import argparse
 import hashlib
+from html import escape
 import json
 from pathlib import Path
+import re
+import runpy
 import shutil
 
 from prepare_formal_outer_pilot import BOARD, REPO, replace_once, source_only
@@ -54,6 +57,17 @@ def write(path, text):
 
 def frontend(formal, front):
     server = (formal / "server.py").read_text()
+    server = replace_once(server, "import research_library", """from importlib.util import module_from_spec, spec_from_file_location
+import sys
+
+# 加载与侧服务同版的角色目录。其余正式工作台模块仍沿用本机版本。
+catalogue_spec = spec_from_file_location('agent_catalog', Path(__file__).resolve().parent / 'outer-canary/agent_catalog.py')
+agent_catalog = module_from_spec(catalogue_spec)
+sys.modules['agent_catalog'] = agent_catalog
+catalogue_spec.loader.exec_module(agent_catalog)
+import research_library""")
+    server = replace_once(server, "                    result = workbench.create(body)",
+                          "                    result = workbench.create(agent_catalog.preserve_implicit_roles(body, workbench.store))")
     server = replace_once(server, "            if path.startswith('/api/afr-handoff/'):", """
             canary = getattr(self.server, 'outer_canary', None)
             if (path == '/api/tasks' and body.get('workflow') == 'outer') or path.startswith('/api/outer-canary/'):
@@ -88,6 +102,9 @@ def frontend(formal, front):
                 body = body.replace(b'<!--' + region + b'-BEGIN-->', b'<template>', 1)
                 body = body.replace(b'<!--' + region + b'-END-->', b'</template>', 1)
         self.respond(body, types[file.suffix])""".lstrip("\n"))
+    server = replace_once(server, "        files['/intake_dialog.js']='intake_dialog.js'",
+                          "        files['/intake_dialog.js']='intake_dialog.js'\n"
+                          "        files['/outer-canary/task_presentation.js']='outer-canary/task_presentation.js'")
     html = (formal / "index.html").read_text()
     html = replace_once(html, '</head>', '''<!--OUTER-HOME-ASSETS-BEGIN--><link rel="stylesheet" href="/outer-canary/goal_team.css"><!--OUTER-HOME-ASSETS-END-->
 </head>''')
@@ -133,9 +150,16 @@ def frontend(formal, front):
                      ('aria-label="查看待审批事项"', 'aria-label="查看普通工单审批"')):
         html = replace_once(html, old, new)
     html = replace_once(html, '<div id="live-agents"></div>', """<section class="panel full-panel" id="formal-default-team">
-  <h2>团队工单默认小队</h2><p class="view-intro">这里保存当前浏览器的常用分工。新建工单时可以单独调整。</p>
+  <h2>团队工单设置</h2><p class="view-intro">为每个角色选择 Agent、模型和推理强度。保存后用于此浏览器新建的团队工单。</p>
   <span id="formal-default-team-anchor" hidden></span>
-</section><div id="live-agents"></div>""")
+</section><div id="live-agents" hidden></div>""")
+    catalog = runpy.run_path(str(BOARD / "agent_catalog.py"))
+    codex_models = catalog["CODEX_MODELS"]
+    default_roles = catalog["DEFAULT_ROLES"]
+    for prefix in ("create", "change"):
+        for role, default in default_roles.items():
+            html = codex_select(html, f"{prefix}-{role}", codex_models, default)
+    html = codex_select(html, "reviewer-model", codex_models, "")
     html = replace_once(html, '写下你想得到的结果。默认由 Codex 规划、执行和独立审核，实施前由你确认方案。',
                         '只要写下想得到的结果。需要取舍时，团队会带着方案回来。')
     html = replace_once(html, '描述你想要的结果，以及怎样才算做好。', '例如，帮我做一份适合第一次来访的旅行计划。')
@@ -147,7 +171,10 @@ def frontend(formal, front):
 <button id="outer-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成索引试单</button>
 <button id="outer-team-canary-submit" type="submit" formnovalidate class="secondary-button">提交合成简报试单</button>
 </div></details><!--OUTER-CANARY-END--></form></dialog>''')
-    html = replace_once(html, '</textarea><fieldset class="model-fields"><legend>角色与模型</legend><div class="wb-actions">',
+    html, count = re.subn(r'<div class="wb-actions"><button[^>]* data-role-preset="codex">.*?</div>', '', html, count=1)
+    if count != 1:
+        raise ValueError("未找到旧的普通工单模型预设")
+    html = replace_once(html, '</textarea><fieldset class="model-fields"><legend>角色与模型</legend><label for="create-plan">',
                         '''</textarea><!--OUTER-INTAKE-ADVANCED-BEGIN-->
 <label class="outer-team-check"><input type="checkbox" id="outer-goal-team" checked><span>交给工单团队处理</span></label>
 <div id="outer-team-options" hidden>
@@ -159,7 +186,7 @@ def frontend(formal, front):
 </select>
 <p class="draft-warning" id="outer-team-review-hint" hidden>团队分步交付，到第 2 步请你选方向。</p>
 <span id="outer-team-profile-anchor" hidden></span>
-</div><!--OUTER-INTAKE-ADVANCED-END--><fieldset class="model-fields"><legend>角色与模型</legend><div class="wb-actions">''')
+</div><!--OUTER-INTAKE-ADVANCED-END--><fieldset class="model-fields"><legend>角色与模型</legend><label for="create-plan">''')
     html = replace_once(html, '<p class="draft-warning" id="task-form-status">',
                         '''<!--OUTER-TEAM-OPTIONS-BEGIN--><div id="outer-team-settings" hidden>
 <label class="outer-team-check"><input type="checkbox" id="outer-team-consent"><span id="outer-team-consent-label">允许把本单填写的名称、目标和完成标准发送给 Codex</span></label>
@@ -213,13 +240,33 @@ def frontend(formal, front):
     }
     working = true;
     const button = form.querySelector('[type=submit]');""")
+    tasks = replace_once(tasks, "from './task_presentation.js';", "from './outer-canary/task_presentation.js';")
+    tasks = replace_once(tasks, "  const form = document.querySelector('#draft-form');",
+                         """  const form = document.querySelector('#draft-form');
+  headings.agents[0]='Agent 小队';
+  if (location.hash==='#agents') navigate('agents');
+  const defaultRoles=""" + json.dumps(default_roles) + ";")
+    tasks, count = re.subn(r"    if\(button\.dataset\.rolePreset\)\{.*?\n    \}\n", "", tasks, count=1, flags=re.S)
+    if count != 1:
+        raise ValueError("未找到旧的模型预设操作")
+    tasks, count = re.subn(r"\+\(Array\.from\(form\.elements\).*?DSH 连接。'\)", "", tasks, count=1)
+    if count != 1:
+        raise ValueError("未找到旧的模型预设提示")
+    tasks = replace_once(tasks, "reviewerForm.elements.model.value='deepseek-dsh';",
+                         "reviewerForm.elements.model.value='';")
+    tasks = replace_once(tasks, "    for(const role of ['plan','execute','review'])changeForm.elements['model_'+role].value=modelFor(task,role);",
+                         """    for(const [role,defaultModel] of Object.entries(defaultRoles)){
+      const select=changeForm.elements['model_'+role];
+      const current=modelFor(task,role);
+      select.value=[...select.options].some(o=>o.value===current)?current:defaultModel;
+    }""")
     tasks = replace_once(tasks, "  const modeInput=node('#task-mode'), timeInput=node('#task-budget');",
                          """  const teamMode=node('#outer-goal-team');
   const teamConsent=node('#outer-team-consent');
   const intakeStatus=node('#outer-intake-status');
   const teamModelFields=form.querySelector('fieldset.model-fields');
   const teamProfileKey='odyssey.team-profile.v1';
-  let savedTeamRoles=null, teamProfile, teamOptions;
+  let savedTeamRoles=null, teamProfile;
   try {
     const saved=JSON.parse(localStorage.getItem(teamProfileKey));
     if (saved && typeof saved==='object' && !Array.isArray(saved)) savedTeamRoles=saved;
@@ -241,12 +288,10 @@ def frontend(formal, front):
   if (node('#outer-team-profile-anchor')) {
     import('/outer-canary/goal_team.js').then(({mountTeamProfileControl})=>{
       const loadOptions=async()=>{
-        if (teamOptions) return teamOptions;
         await session();
         const response=await fetch('/api/outer-canary/team-options',{cache:'no-store'});
         if (!response.ok) throw Error('小队设置不可用');
-        teamOptions=await response.json();
-        return teamOptions;
+        return response.json();
       };
       teamProfile=mountTeamProfileControl(node('#outer-team-profile-anchor'),loadOptions,{initial:savedTeamRoles});
       const defaultTeam=mountTeamProfileControl(node('#formal-default-team-anchor'),loadOptions,{
@@ -435,8 +480,20 @@ def frontend(formal, front):
                          ".mast nav a{display:inline-flex;align-items:center;min-height:44px;padding-inline:.25rem}")
     write(ui / "style.css", style)
     shutil.copy2(BOARD / "task_presentation.js", ui / "task_presentation.js")
+    shutil.copy2(BOARD / "agent_catalog.py", ui / "agent_catalog.py")
     for character in ("peach.png", "bowser.png"):
         shutil.copy2(REPO / "scripts/assets/odyssey-team" / character, ui)
+
+
+def codex_select(html, control_id, models, default):
+    options = ['<option value="" disabled selected>请选择模型</option>'] if not default else []
+    for value, label in models.items():
+        selected = " selected" if value == default else ""
+        options.append(f'<option value="{value}"{selected}>{escape(label)}</option>')
+    start, rest = html.split(f'<select id="{control_id}"', 1)
+    attributes, rest = rest.split(">", 1)
+    _, ending = rest.split("</select>", 1)
+    return start + f'<select id="{control_id}"{attributes} required>' + "".join(options) + "</select>" + ending
 
 
 def backend(app):

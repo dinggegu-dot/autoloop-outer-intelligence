@@ -265,7 +265,7 @@ class Store:
                     raise Problem('同一个请求编号不能提交不同内容', 409)
                 if prior.get('initial_execution_mode', 'bounded') != mode or prior.get('initial_budget_minutes', 30) != minutes:
                     raise Problem('同一个请求编号不能提交不同执行政策', 409)
-                if prior.get('initial_role_models',LEGACY_ROLES)!=roles:
+                if 'role_models' in body and prior.get('initial_role_models',LEGACY_ROLES)!=roles:
                     raise Problem('同一个请求编号不能提交不同模型分工',409)
                 return prior, False
             task['source'] = source

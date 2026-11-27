@@ -265,24 +265,26 @@ export function mountTeamProfileControl(anchor, loadOptions, {initial=null, onSa
   panel.append(summary,status,rows,actions,feedback);
   anchor.after(panel);
   const fields=new Map();
-  const unavailableMessage='已保存的部分小队选项当前不可用。请恢复默认后重新选择。';
-  let loading=false, pending=initial, unavailable=false, help='';
+  const unavailableMessage='部分选项当前不可用。请为相应角色重新选择。';
+  let loading=false, pending=initial;
+  const unresolved=new Set();
 
   const choices=()=>{
-    if (!fields.size || unavailable) return pending;
+    if (!fields.size) return pending;
     const result={};
-    for (const [role,field] of fields) {
-      const {runtime,model,effort,defaults}=field;
-      if (runtime.value===defaults.runtime && !model.value && !effort.value) continue;
-      result[role]={runtime:runtime.value,model:model.value || defaults.model,effort:effort.value};
+    for (const [role,{runtime,model,effort,defaults}] of fields) {
+      if (runtime.value===defaults.runtime && model.value===defaults.model && !effort.value) continue;
+      result[role]={runtime:runtime.value,model:model.value,effort:effort.value};
     }
     return Object.keys(result).length ? result : null;
   };
-  const refreshSummary=()=>{
+  const invalid=()=>unresolved.size || [...fields.values()].some(field=>!field.model.value);
+  const refresh=()=>{
     const selection=choices();
-    const label=onSave ? '编辑默认小队' : '小队配置';
-    summary.textContent=selection ? label+' · 已调整 '+Object.keys(selection).length+' 个角色'
-      : label+(onSave?'':'（选填）');
+    const label=onSave ? '默认小队' : '小队配置';
+    summary.textContent=label+(!onSave && !selection ? '（选填）' : '');
+    status.textContent=fields.size && invalid() ? unavailableMessage : '';
+    save.disabled=Boolean(invalid());
   };
   const labelSelect=(label,select)=>{
     const control=el('label');
@@ -308,63 +310,81 @@ export function mountTeamProfileControl(anchor, loadOptions, {initial=null, onSa
         row.append(el('h3',name));
         const roleAgents=Object.entries(agents).filter(([,agent])=>agent.roles.includes(role));
         fill(runtime,roleAgents.map(([id,agent])=>[id,agent.label]));
-        runtime.value=defaultRuntime;
-        const updateAgent=()=>{
+        const updateEffort=(selected)=>{
           const agent=agents[runtime.value];
+          const available=agent.model_efforts?.[model.value] || (model.value ? agent.efforts : []);
           const inherit=runtime.value===defaultRuntime;
-          const defaultEffort=role==='lead' ? '自动' : efforts[defaults.efforts[role]];
-          fill(model,[
-            ...(inherit ? [['','默认 · '+agent.models[defaultModel].replace(/^GPT‑/,'')]] : []),
-            ...Object.entries(agent.models),
-          ]);
+          const defaultEffort=role==='lead' ? '按任务选择' : efforts[defaults.efforts[role]];
           fill(effort,[
-            ...(inherit ? [['','默认 · '+defaultEffort]] : []),
-            ...agent.efforts.map(value=>[value,efforts[value]]),
+            ...(inherit ? [['',defaultEffort+'（默认）']] : []),
+            ...available.map(value=>[value,efforts[value]]),
           ]);
+          effort.disabled=!model.value;
+          if (selected !== undefined && [...effort.options].some(option=>option.value===selected)) effort.value=selected;
         };
-        updateAgent();
-        runtime.addEventListener('input',updateAgent);
-        if (roleAgents.length>1) row.append(labelSelect('Coding Agent',runtime));
-        row.append(labelSelect('模型',model),labelSelect('思考强度',effort));
-        for (const field of [model,effort]) field.addEventListener('input',refreshSummary);
-        runtime.addEventListener('input',refreshSummary);
+        const updateAgent=(selected,selectedEffort)=>{
+          const agent=agents[runtime.value];
+          const models=Object.entries(agent.models);
+          const available=selected===undefined || Object.hasOwn(agent.models,selected);
+          fill(model,[
+            ...(!models.length || !available ? [['',models.length?'请选择模型':'当前无可用模型']] : []),
+            ...models,
+          ]);
+          const locked=Object.entries(agent.unavailable_models || {});
+          if (locked.length) {
+            const group=el('optgroup');
+            group.label='Ultra 目录 · 当前账号不可用';
+            group.disabled=true;
+            for (const [value,label] of locked) group.append(new Option(label,value));
+            model.append(group);
+          }
+          if (selected!==undefined && available) model.value=selected;
+          else if (runtime.value===defaultRuntime && available) model.value=defaultModel;
+          updateEffort(selectedEffort);
+          return available && (selectedEffort===undefined || effort.value===selectedEffort);
+        };
+        runtime.addEventListener('input',()=>{
+          updateAgent();
+          unresolved.delete(role);
+          refresh();
+        });
+        model.addEventListener('input',()=>{
+          updateEffort();
+          unresolved.delete(role);
+          refresh();
+        });
+        effort.addEventListener('input',()=>{
+          unresolved.delete(role);
+          refresh();
+        });
+        row.append(labelSelect('Agent',runtime),labelSelect('模型',model),labelSelect('推理强度',effort));
         rows.append(row);
         fields.set(role,{runtime,model,effort,defaults:{runtime:defaultRuntime,model:defaultModel},updateAgent});
       }
-      const labels=Object.values(agents).map(agent=>agent.label);
-      help=(labels.length===1 ? '当前 Coding Agent 为 '+labels[0]+'。' : '')
-        +'每张工单按需要调用相应角色。';
       apply(pending);
       reset.hidden=false;
       save.hidden=!onSave;
     } catch {
-      status.textContent='暂时无法读取小队选项。重新展开可重试，也可以直接用默认小队。';
+      rows.replaceChildren();
+      fields.clear();
+      status.textContent='暂时无法读取小队选项。重新展开可重试。';
     } finally {
       loading=false;
     }
   };
   const apply=selection=>{
     pending=selection;
-    unavailable=fields.size && Object.keys(selection || {}).some(role=>!fields.has(role));
+    unresolved.clear();
     for (const [role,field] of fields) {
       const choice=selection?.[role];
       field.runtime.value=choice?.runtime || field.defaults.runtime;
       if (!field.runtime.value) {
-        unavailable=true;
+        unresolved.add(role);
         field.runtime.value=field.defaults.runtime;
       }
-      field.updateAgent();
-      field.model.value=choice?.model===field.defaults.model && !choice?.effort ? '' : (choice?.model || '');
-      field.effort.value=choice?.effort || '';
-      for (const select of [field.model,field.effort]) {
-        if (select.selectedIndex<0) {
-          unavailable=true;
-          select.selectedIndex=0;
-        }
-      }
+      if (!field.updateAgent(choice?.model,choice?.effort)) unresolved.add(role);
     }
-    status.textContent=unavailable ? unavailableMessage : help;
-    refreshSummary();
+    refresh();
   };
   reset.addEventListener('click',()=>{
     apply(null);
@@ -372,20 +392,21 @@ export function mountTeamProfileControl(anchor, loadOptions, {initial=null, onSa
     panel.dispatchEvent(new Event('input',{bubbles:true}));
   });
   save.addEventListener('click',()=>{
-    feedback.textContent=unavailable ? unavailableMessage : onSave(choices());
+    feedback.textContent=invalid() ? unavailableMessage : onSave(choices());
   });
   panel.addEventListener('input',()=>{feedback.textContent='';});
   panel.addEventListener('toggle',load);
-  refreshSummary();
+  refresh();
   return {
     choices() {
-      if (unavailable) throw Error(unavailableMessage);
+      if (invalid()) throw Error(unavailableMessage);
       return choices();
     },
     apply,
     show(enabled) {
       panel.hidden=!enabled;
       if (!enabled) panel.open=false;
+      else if (onSave) panel.open=true;
     },
   };
 }
