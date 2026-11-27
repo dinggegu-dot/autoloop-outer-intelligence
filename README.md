@@ -16,13 +16,13 @@ Autoloop 是一个在本机运行的任务工作台。你写下想要的结果�
 
 Router 登记工单、安排执行名额。工单订阅会把你后来补充的资料、选择和反馈送回负责这张单的小队。一张单等你决定时，会让出名额给其他已批准的工单。
 
-[![Router 层的工单登记、派工与订阅。当 A 单等待决定，获批的 B 单可使用空出的名额](docs/assets/autoloop-router.svg)](docs/assets/autoloop-router.svg)
+[![Router 把活动简报和报名表分给 A、B 两个小队。补给 B 的消息沿订阅回原单，A 等待时已获批的 B 有空位可继续](docs/assets/autoloop-router.svg)](docs/assets/autoloop-router.svg)
 
 ## 执行层怎么把工单做完
 
 Codex 小队接手本轮派工。做法清楚时，执行者直接制作和自测。有实质取舍时，负责人和只读顾问各提方案，比较后出初稿、审稿，必要时请你在原单看稿选方向。简单路线自测后交回候选，复杂路线由负责人复验后再交回。两条路线都由外层独立验收。
 
-[![执行层的两条路线。简单任务直接制作和自测，复杂任务经过比选、审稿、制作与复验，有问题时返修](docs/assets/autoloop-execution.svg)](docs/assets/autoloop-execution.svg)
+[![执行层的两条路线。简单任务直接做，复杂任务沿你、负责人、只读顾问、执行者四条泳道比选、审稿、返修，再交回外层验收](docs/assets/autoloop-execution.svg)](docs/assets/autoloop-execution.svg)
 
 负责人、执行者和复核者默认使用 GPT‑6.2 Sol，只读顾问和复杂设计顾问默认使用 GPT‑6.2 Astra。可在「Agent 小队」保存常用分工，也可以在新建时为本单单独选模型和思考强度。[小队配置与实际调用回执](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/be19e116fb4f6abe6e1ad8aeef550c2e75326fe8/evidence/goal-team/select-ticket-team.json)
 
