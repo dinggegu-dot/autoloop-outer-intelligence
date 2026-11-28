@@ -14,3 +14,6 @@ private.json
 master.key
 .DS_Store
 /网页工作台/assets/odyssey
+
+# 本机 AFR 交接配置
+**/afr-handoff.local.json
