@@ -1,16 +1,16 @@
 # 目标漫游局 · Autoloop 工作台
 
-Autoloop 是一个在本机运行的任务工作台。你写下想要的结果，Router 会把这张工单交给自己的 Codex 小队。补要求、看方案、做决定和下载成果，都可以回到同一张工单。签收以后也能在原单继续改。
+Autoloop 是一个在本机运行的任务工作台。你写下想要的结果，Router 会把工单交给这张单的小队，默认使用 Codex。补要求、看方案、做决定和下载成果，都可以回到同一张工单。签收以后也能在原单继续改。
 
-[工单怎么跑](#从目标到交付) · [Router 层](#router-层怎么安排工单) · [执行层](#执行层怎么把工单做完) · [使用效果](#使用效果) · [本机预览](#本机预览)
+[工单怎么跑](#从目标到交付) · [Router 层](#router-层怎么安排工单) · [执行层](#执行层怎么把工单做完) · [Agent 小队](#agent-小队) · [使用效果](#使用效果) · [本机预览](#本机预览)
 
 ## 从目标到交付
 
-从「新建工单」写下目标，确认允许发送给 Codex 的文字。团队会先把目标整理成可交付的成果和验收条件，等你批准本轮范围。简单任务走直接制作和自测。遇到实质取舍，负责人和只读顾问各提方案。负责人综合出初稿，顾问审稿。需要你选方向时，可以在原单边看稿边选。
+从「新建工单」写下目标，核对页面列出的资料接收方，再确认发送权限。团队会先把目标整理成可交付的成果和验收条件，等你批准本轮范围。简单任务走直接制作和自测。遇到实质取舍，负责人和只读顾问各提方案。负责人综合出初稿，顾问审稿。需要你选方向时，可以在原单边看稿边选。
 
 [![Autoloop 工单从接单、批准、制作和复验到归档、下载及同单续办的流程](docs/assets/autoloop-workflow.svg)](docs/assets/autoloop-workflow.svg)
 
-外层按本轮批准的标准独立验收实际候选。需要本人判断时，你在原单签收或退回这一版。下一轮可以从原单最新交付的文件继续，已归档的历史版仍可下载。[工单流程与续办](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/be19e116fb4f6abe6e1ad8aeef550c2e75326fe8/docs/product/router-ticket-teams.md)
+外层按本轮批准的标准独立验收实际候选。需要本人判断时，你在原单签收或退回这一版。下一轮可以从原单最新交付的文件继续，已归档的历史版仍可下载。[工单流程与续办](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/6be1112efb671544a4987f550c814c94147f977e/docs/product/router-ticket-teams.md)
 
 ## Router 层怎么安排工单
 
@@ -20,11 +20,22 @@ Router 登记工单、安排执行名额。工单订阅会把你后来补充的�
 
 ## 执行层怎么把工单做完
 
-Codex 小队接手本轮派工。做法清楚时，执行者直接制作和自测。有实质取舍时，负责人和只读顾问各提方案，比较后出初稿、审稿，必要时请你在原单看稿选方向。简单路线自测后交回候选，复杂路线由负责人复验后再交回。两条路线都由外层独立验收。
+工单小队接手本轮派工。做法清楚时，执行者直接制作和自测。有实质取舍时，负责人和只读顾问各提方案，比较后出初稿、审稿，必要时请你在原单看稿选方向。简单路线自测后交回候选，复杂路线由负责人复验后再交回。两条路线都由外层独立验收。
 
 [![执行层的两条路线。简单任务直接做，复杂任务沿你、负责人、只读顾问、执行者四条泳道比选、审稿、返修，再交回外层验收](docs/assets/autoloop-execution.svg)](docs/assets/autoloop-execution.svg)
 
-负责人、执行者和复核者默认使用 GPT‑6.2 Sol，只读顾问和复杂设计顾问默认使用 GPT‑6.2 Astra。可在「Agent 小队」保存常用分工，也可以在新建时为本单单独选模型和思考强度。[小队配置与实际调用回执](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/be19e116fb4f6abe6e1ad8aeef550c2e75326fe8/evidence/goal-team/select-ticket-team.json)
+## Agent 小队
+
+在「Agent 小队」可以为五个角色分别选择 Agent、模型和推理强度。保存后，新建团队工单会沿用这份分工，也可以在新建时只调整当前工单。
+
+- **Codex** 是普通工单和团队工单的系统默认。可选 GPT‑6.2 Astra、GPT‑6.2 Sol 和 GPT‑6.1 Terra。小队里，负责人、执行者和复核者默认用 Sol，两类顾问默认用 Astra。
+- **Google Antigravity** 可按角色选用。工作台按 Ultra 模型目录展示，并根据本机账号开放的模型和推理强度提供选择。暂不可用的型号会置灰。
+
+下图截取自工作台的设置面板。示例中的执行者选用了 Google Antigravity。
+
+[![Agent 小队设置。五个角色分行选择 Agent、模型和推理强度，执行者选用 Google Antigravity 与 Gemini 4 Hydrogen](docs/assets/autoloop-agent-team.png)](docs/assets/autoloop-agent-team.png)
+
+[角色配置说明](https://github.com/dinggegu-dot/autoloop-outer-intelligence/blob/6be1112efb671544a4987f550c814c94147f977e/docs/product/router-ticket-teams.md#角色与替换) · [本次源码更新与验收](https://github.com/dinggegu-dot/autoloop-outer-intelligence/pull/51)
 
 ## 使用效果
 
